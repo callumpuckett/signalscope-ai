@@ -27,6 +27,7 @@ STRIPE_SUCCESS_URL = os.environ.get(
 STRIPE_CANCEL_URL = os.environ.get(
     "STRIPE_CANCEL_URL",
     "https://signalscope-ai-1-0v3g.onrender.com/upgrade"
+)
 
 if stripe and STRIPE_SECRET_KEY:
     stripe.api_key = STRIPE_SECRET_KEY
