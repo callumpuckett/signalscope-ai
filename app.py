@@ -20,9 +20,13 @@ OWNER_EMAIL = os.environ.get("SIGNALSCOPE_OWNER_EMAIL", "").strip().lower()
 OWNER_PASSWORD = os.environ.get("SIGNALSCOPE_OWNER_PASSWORD", "")
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_PRICE_ID = os.environ.get("STRIPE_PRICE_ID", "")
-STRIPE_SUCCESS_URL = os.environ.get("STRIPE_SUCCESS_URL", "")
-STRIPE_CANCEL_URL = os.environ.get("STRIPE_CANCEL_URL", "")
+STRIPE_SUCCESS_URL = os.environ.get(
+    "STRIPE_SUCCESS_URL",
+    "https://signalscope-ai-1-0v3g.onrender.com/checkout-success"
 )
+STRIPE_CANCEL_URL = os.environ.get(
+    "STRIPE_CANCEL_URL",
+    "https://signalscope-ai-1-0v3g.onrender.com/upgrade"
 
 if stripe and STRIPE_SECRET_KEY:
     stripe.api_key = STRIPE_SECRET_KEY
