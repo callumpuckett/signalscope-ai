@@ -1111,14 +1111,7 @@ def upgrade():
 
 
 @app.route("/create-checkout-session", methods=["POST"])
-def create_checkout_session(): checkout_session = stripe.checkout.Session.create(
-    mode="subscription",
-    line_items=[{"price": STRIPE_PRICE_ID, "quantity": 1}],
-    success_url=STRIPE_SUCCESS_URL or url_for("checkout_success", _external=True),
-    cancel_url=STRIPE_CANCEL_URL or url_for("upgrade", _external=True),
-    customer_email=OWNER_EMAIL or None,
-    allow_promotion_codes=True,
-)
+def create_checkout_session():
     if not stripe_checkout_configured():
         return render_template_string("""
 <!doctype html>
@@ -1145,14 +1138,14 @@ def create_checkout_session(): checkout_session = stripe.checkout.Session.create
     </div>
 </body>
 </html>
-        """, 400)
+        """), 400
 
     try:
         checkout_session = stripe.checkout.Session.create(
             mode="subscription",
             line_items=[{"price": STRIPE_PRICE_ID, "quantity": 1}],
-            success_url=STRIPE_SUCCESS_URL,
-            cancel_url=STRIPE_CANCEL_URL,
+            success_url=STRIPE_SUCCESS_URL or url_for("checkout_success", _external=True),
+            cancel_url=STRIPE_CANCEL_URL or url_for("upgrade", _external=True),
             customer_email=OWNER_EMAIL or None,
             allow_promotion_codes=True,
         )
@@ -1183,7 +1176,7 @@ def create_checkout_session(): checkout_session = stripe.checkout.Session.create
     </div>
 </body>
 </html>
-""", error=str(exc)), 400
+        """, error=str(exc)), 400
 
 @app.route("/checkout-success")
 def checkout_success():
