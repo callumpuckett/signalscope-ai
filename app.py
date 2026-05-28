@@ -15,19 +15,13 @@ except ImportError:
     stripe = None
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SIGNALSCOPE_SECRET_KEY", "signalscope-local-dev-secret-key-change-before-production")
-
+app.secret_key = os.environ.get("SIGNALSCOPE_SECRET_KEY") or os.environ.get("SECRET_KEY", "signalscope-local-dev-secret-key-change-before-production")
 OWNER_EMAIL = os.environ.get("SIGNALSCOPE_OWNER_EMAIL", "").strip().lower()
 OWNER_PASSWORD = os.environ.get("SIGNALSCOPE_OWNER_PASSWORD", "")
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_PRICE_ID = os.environ.get("STRIPE_PRICE_ID", "")
-STRIPE_SUCCESS_URL = os.environ.get(
-    "STRIPE_SUCCESS_URL",
-    "http://127.0.0.1:8080/checkout-success"
-)
-STRIPE_CANCEL_URL = os.environ.get(
-    "STRIPE_CANCEL_URL",
-    "http://127.0.0.1:8080/upgrade"
+STRIPE_SUCCESS_URL = os.environ.get("STRIPE_SUCCESS_URL", "")
+STRIPE_CANCEL_URL = os.environ.get("STRIPE_CANCEL_URL", "")
 )
 
 if stripe and STRIPE_SECRET_KEY:
@@ -1051,7 +1045,12 @@ if(labels.length>0){
 @app.route("/health")
 @app.route("/healthz")
 def health():
-    return {"status": "ok", "app": "SignalScope AI"}, 200
+    return {
+        "status": "ok",
+        "app": "SignalScope AI",
+        "stripe_configured": stripe_checkout_configured(),
+        "owner_login_configured": owner_login_configured(),
+    }, 200
 @app.route("/favicon.ico")
 def favicon():
     return "", 204
@@ -1107,7 +1106,14 @@ def upgrade():
 
 
 @app.route("/create-checkout-session", methods=["POST"])
-def create_checkout_session():
+def create_checkout_session(): checkout_session = stripe.checkout.Session.create(
+    mode="subscription",
+    line_items=[{"price": STRIPE_PRICE_ID, "quantity": 1}],
+    success_url=STRIPE_SUCCESS_URL or url_for("checkout_success", _external=True),
+    cancel_url=STRIPE_CANCEL_URL or url_for("upgrade", _external=True),
+    customer_email=OWNER_EMAIL or None,
+    allow_promotion_codes=True,
+)
     if not stripe_checkout_configured():
         return render_template_string("""
 <!doctype html>
