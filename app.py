@@ -1,7 +1,10 @@
 from flask import Flask, render_template_string, redirect, url_for, request, session
 from datetime import datetime, time as dt_time
 from zoneinfo import ZoneInfo
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 import csv
+import json
 import os
 
 try:
@@ -24,6 +27,7 @@ STRIPE_SUCCESS_URL = os.environ.get(
     "STRIPE_SUCCESS_URL",
     "https://signalscope-ai-1-0v3g.onrender.com/checkout-success"
 )
+NEWSAPI_KEY = os.environ.get("NEWSAPI_KEY", "").strip()
 STRIPE_CANCEL_URL = os.environ.get(
     "STRIPE_CANCEL_URL",
     "https://signalscope-ai-1-0v3g.onrender.com/upgrade"
@@ -551,6 +555,121 @@ def build_symbol_universe(recommendations):
 
 
 
+MARKET_NEWS_QUERY = " OR ".join([
+    "stock market",
+    "Federal Reserve",
+    "interest rates",
+    "inflation",
+    "AI stocks",
+    "Nvidia",
+    "Apple",
+    "Microsoft",
+    "Tesla",
+    "oil prices",
+    "Middle East",
+    "semiconductors",
+    "cryptocurrency",
+])
+
+NEWS_STOCK_KEYWORDS = {
+    "AAPL": ["apple", "iphone", "ios", "app store"],
+    "MSFT": ["microsoft", "azure", "openai", "copilot"],
+    "NVDA": ["nvidia", "gpu", "ai chip", "semiconductor"],
+    "AMD": ["amd", "advanced micro devices", "gpu", "semiconductor"],
+    "TSLA": ["tesla", "elon musk", "ev", "electric vehicle"],
+    "AMZN": ["amazon", "aws", "prime", "ecommerce"],
+    "GOOGL": ["google", "alphabet", "youtube", "gemini"],
+    "META": ["meta", "facebook", "instagram", "whatsapp"],
+    "JPM": ["jpmorgan", "banking", "banks"],
+    "GS": ["goldman", "banking", "banks"],
+    "XOM": ["exxon", "oil", "energy"],
+    "BP.L": ["bp", "oil", "energy"],
+    "SHEL.L": ["shell", "oil", "energy"],
+    "SMH": ["semiconductor", "chip", "chips"],
+    "QQQ": ["nasdaq", "growth stocks", "technology stocks"],
+    "SPY": ["s&p 500", "stock market", "wall street"],
+    "BTC-USD": ["bitcoin", "crypto", "cryptocurrency"],
+    "ETH-USD": ["ethereum", "crypto", "cryptocurrency"],
+}
+
+BULLISH_WORDS = ["rise", "rises", "jump", "jumps", "surge", "surges", "gain", "gains", "beats", "record", "upgrade", "bullish", "strong", "growth", "rally"]
+BEARISH_WORDS = ["fall", "falls", "drop", "drops", "slump", "slumps", "warning", "miss", "cuts", "cut", "lawsuit", "probe", "risk", "weak", "bearish", "selloff"]
+
+
+def fetch_live_market_news(limit=8):
+    if not NEWSAPI_KEY:
+        return []
+
+    params = urlencode({
+        "q": MARKET_NEWS_QUERY,
+        "language": "en",
+        "sortBy": "publishedAt",
+        "pageSize": limit,
+        "apiKey": NEWSAPI_KEY,
+    })
+    url = f"https://newsapi.org/v2/everything?{params}"
+
+    try:
+        req = Request(url, headers={"User-Agent": "SignalScopeAI/1.0"})
+        with urlopen(req, timeout=6) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+
+        articles = payload.get("articles", [])
+        output = []
+
+        for article in articles:
+            title = (article.get("title") or "").strip()
+            source = ((article.get("source") or {}).get("name") or "Market News").strip()
+            article_url = (article.get("url") or "/").strip()
+            published_at = (article.get("publishedAt") or "").strip()
+
+            if not title:
+                continue
+
+            output.append({
+                "title": title,
+                "source": source,
+                "url": article_url,
+                "published_at": published_at,
+            })
+
+        return output
+    except Exception:
+        return []
+
+
+def score_news_impact(title):
+    text = title.lower()
+    bullish_hits = sum(1 for word in BULLISH_WORDS if word in text)
+    bearish_hits = sum(1 for word in BEARISH_WORDS if word in text)
+
+    if bullish_hits > bearish_hits:
+        direction = "Bullish pressure"
+        signal_influence = "may support BUY/HOLD conviction"
+        score = min(92, 62 + bullish_hits * 8)
+    elif bearish_hits > bullish_hits:
+        direction = "Bearish pressure"
+        signal_influence = "may support HOLD/SELL caution"
+        score = min(92, 62 + bearish_hits * 8)
+    else:
+        direction = "Market sensitivity"
+        signal_influence = "may influence watchlist positioning"
+        score = 58
+
+    return direction, signal_influence, f"{score}/100"
+
+
+def match_news_to_stocks(title):
+    text = title.lower()
+    matches = []
+
+    for ticker, keywords in NEWS_STOCK_KEYWORDS.items():
+        if any(keyword in text for keyword in keywords):
+            matches.append(ticker)
+
+    return matches[:5] or ["SPY", "QQQ"]
+
+
 def get_market_impact_radar():
     return [
         {
@@ -606,6 +725,26 @@ def get_market_impact_radar():
 # --- News-style market impact ticker function ---
 def build_live_headlines(recommendations, impact_radar):
     headlines = []
+
+    live_articles = fetch_live_market_news()
+
+    for article in live_articles:
+        title = article.get("title", "Market headline")
+        matched_stocks = match_news_to_stocks(title)
+        primary_stock = matched_stocks[0] if matched_stocks else "SPY"
+        stock_text = ", ".join(matched_stocks)
+        direction, signal_influence, impact_score = score_news_impact(title)
+        source = article.get("source", "Market News")
+
+        headlines.append({
+            "label": "LIVE NEWS",
+            "text": f"{source}: {title} — may affect {stock_text}",
+            "url": f"/stock/{primary_stock}",
+            "premium_text": f"{source}: {title} — {impact_score} impact score. {direction}; {signal_influence}. Linked: {stock_text}.",
+        })
+
+    if headlines:
+        return headlines[:8]
 
     for item in impact_radar:
         stocks = item.get("stocks", [])
@@ -669,6 +808,7 @@ def prepare_dashboard_data():
         "ticker_updated": datetime.now().strftime("%H:%M"),
         "impact_radar": impact_radar,
         "live_headlines": build_live_headlines(recommendations, impact_radar),
+        "newsapi_configured": bool(NEWSAPI_KEY),
     }
 
 
@@ -808,7 +948,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
         <div class="live-alert-header">
             <span class="live-dot"></span>
             Market News Impact Feed
-            <span style="color:#94a3b8;font-weight:800;letter-spacing:0;text-transform:none;">Updated {{ ticker_updated }}</span>
+            <span style="color:#94a3b8;font-weight:800;letter-spacing:0;text-transform:none;">Updated {{ ticker_updated }}{% if newsapi_configured %} • Live news enabled{% else %} • Theme mode{% endif %}</span>
         </div>
         <div class="live-alert-track">
             {% for headline in live_headlines %}
