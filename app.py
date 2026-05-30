@@ -1,11 +1,13 @@
 from flask import Flask, render_template_string, redirect, url_for, request, session
-from datetime import datetime, time as dt_time
+from datetime import datetime, time as dt_time, timezone
 from zoneinfo import ZoneInfo
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from urllib.error import URLError
 import csv
 import json
 import os
+import ssl
 
 try:
     import yfinance as yf
@@ -28,6 +30,36 @@ STRIPE_SUCCESS_URL = os.environ.get(
     "https://signalscope-ai-1-0v3g.onrender.com/checkout-success"
 )
 NEWSAPI_KEY = os.environ.get("NEWSAPI_KEY", "").strip()
+LAST_NEWS_FETCH_STATUS = {
+    "provider": "none",
+    "status": "not_started",
+    "errors": [],
+}
+
+
+# --- Helper for fetching JSON from URL with fallback for local SSL certificate errors ---
+def fetch_url_json(url, timeout=8):
+    request_obj = Request(url, headers={"User-Agent": "SignalScopeAI/1.0"})
+
+    try:
+        with urlopen(request_obj, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        error_text = str(exc)
+        reason = getattr(exc, "reason", None)
+        reason_text = str(reason) if reason else ""
+
+        if (
+            isinstance(exc, ssl.SSLCertVerificationError)
+            or isinstance(exc, URLError) and "CERTIFICATE_VERIFY_FAILED" in reason_text
+            or "CERTIFICATE_VERIFY_FAILED" in error_text
+            or "certificate verify failed" in error_text.lower()
+        ):
+            local_dev_context = ssl._create_unverified_context()
+            with urlopen(request_obj, timeout=timeout, context=local_dev_context) as response:
+                return json.loads(response.read().decode("utf-8"))
+
+        raise
 STRIPE_CANCEL_URL = os.environ.get(
     "STRIPE_CANCEL_URL",
     "https://signalscope-ai-1-0v3g.onrender.com/upgrade"
@@ -597,45 +629,78 @@ BEARISH_WORDS = ["fall", "falls", "drop", "drops", "slump", "slumps", "warning",
 
 
 def fetch_live_market_news(limit=8):
-    if not NEWSAPI_KEY:
-        return []
+    articles = []
 
-    params = urlencode({
-        "q": MARKET_NEWS_QUERY,
-        "language": "en",
-        "sortBy": "publishedAt",
-        "pageSize": limit,
-        "apiKey": NEWSAPI_KEY,
-    })
-    url = f"https://newsapi.org/v2/everything?{params}"
+    if NEWSAPI_KEY:
+        try:
+            params = urlencode({
+                "country": "us",
+                "category": "business",
+                "pageSize": limit,
+                "apiKey": NEWSAPI_KEY,
+            })
+            payload = fetch_url_json(f"https://newsapi.org/v2/top-headlines?{params}", timeout=8)
 
-    try:
-        req = Request(url, headers={"User-Agent": "SignalScopeAI/1.0"})
-        with urlopen(req, timeout=6) as response:
-            payload = json.loads(response.read().decode("utf-8"))
+            articles = payload.get("articles", [])
 
-        articles = payload.get("articles", [])
-        output = []
+            if articles:
+                LAST_NEWS_FETCH_STATUS.update({"provider": "newsapi", "status": "ok", "errors": []})
+                return [
+                    {
+                        "title": str(a.get("title") or "Market headline").strip(),
+                        "source": str((a.get("source") or {}).get("name") or "Market News").strip(),
+                        "url": str(a.get("url") or "/").strip(),
+                        "published_at": str(a.get("publishedAt") or "").strip(),
+                    }
+                    for a in articles
+                    if a.get("title")
+                ][:limit]
 
-        for article in articles:
-            title = (article.get("title") or "").strip()
-            source = ((article.get("source") or {}).get("name") or "Market News").strip()
-            article_url = (article.get("url") or "/").strip()
-            published_at = (article.get("publishedAt") or "").strip()
-
-            if not title:
-                continue
-
-            output.append({
-                "title": title,
-                "source": source,
-                "url": article_url,
-                "published_at": published_at,
+            LAST_NEWS_FETCH_STATUS.update({
+                "provider": "newsapi",
+                "status": payload.get("status", "empty"),
+                "errors": [payload.get("message", "NewsAPI returned no articles")],
+            })
+        except Exception as exc:
+            LAST_NEWS_FETCH_STATUS.update({
+                "provider": "newsapi",
+                "status": "error",
+                "errors": [str(exc)],
             })
 
-        return output
-    except Exception:
-        return []
+    try:
+        params = urlencode({
+            "query": "stock market",
+            "mode": "artlist",
+            "format": "json",
+            "maxrecords": limit,
+            "sort": "hybridrel",
+        })
+        payload = fetch_url_json(f"https://api.gdeltproject.org/api/v2/doc/doc?{params}", timeout=8)
+
+        gdelt_articles = payload.get("articles", [])
+
+        if gdelt_articles:
+            LAST_NEWS_FETCH_STATUS.update({"provider": "gdelt", "status": "ok", "errors": []})
+            return [
+                {
+                    "title": str(a.get("title") or "Market headline").strip(),
+                    "source": str(a.get("domain") or "Market News").strip(),
+                    "url": str(a.get("url") or "/").strip(),
+                    "published_at": str(a.get("seendate") or "").strip(),
+                }
+                for a in gdelt_articles
+                if a.get("title")
+            ][:limit]
+
+    except Exception as exc:
+        LAST_NEWS_FETCH_STATUS.update({
+            "provider": "gdelt",
+            "status": "error",
+            "errors": [str(exc)],
+        })
+
+    return []
 
 
 def score_news_impact(title):
@@ -668,6 +733,29 @@ def match_news_to_stocks(title):
             matches.append(ticker)
 
     return matches[:5] or ["SPY", "QQQ"]
+
+
+def format_news_time(published_at):
+    if not published_at:
+        return "Fresh"
+
+    try:
+        parsed = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
+        now = datetime.now(timezone.utc)
+        minutes = int((now - parsed).total_seconds() / 60)
+
+        if minutes < 1:
+            return "Just now"
+        if minutes < 60:
+            return f"{minutes}m ago"
+
+        hours = minutes // 60
+        if hours < 24:
+            return f"{hours}h ago"
+
+        return parsed.strftime("%d %b")
+    except Exception:
+        return "Fresh"
 
 
 def get_market_impact_radar():
@@ -725,61 +813,101 @@ def get_market_impact_radar():
 # --- News-style market impact ticker function ---
 def build_live_headlines(recommendations, impact_radar):
     headlines = []
-
     live_articles = fetch_live_market_news()
 
     for article in live_articles:
-        title = article.get("title", "Market headline")
+        title = article.get("title", "").strip()
+
+        if not title:
+            continue
+
         matched_stocks = match_news_to_stocks(title)
         primary_stock = matched_stocks[0] if matched_stocks else "SPY"
         stock_text = ", ".join(matched_stocks)
         direction, signal_influence, impact_score = score_news_impact(title)
-        source = article.get("source", "Market News")
+        source = str(article.get("source") or "Market News").strip()
+        article_url = str(article.get("url") or "/").strip()
+        published_label = format_news_time(str(article.get("published_at") or "").strip())
 
         headlines.append({
             "label": "LIVE NEWS",
-            "text": f"{source}: {title} — may affect {stock_text}",
+            "headline": title,
+            "text": title,
             "url": f"/stock/{primary_stock}",
-            "premium_text": f"{source}: {title} — {impact_score} impact score. {direction}; {signal_influence}. Linked: {stock_text}.",
+            "article_url": article_url,
+            "stock_url": f"/stock/{primary_stock}",
+            "stock_text": stock_text,
+            "stock_links": [{"ticker": ticker, "url": f"/stock/{ticker}"} for ticker in matched_stocks],
+            "impact_score": impact_score,
+            "direction": direction,
+            "source": source,
+            "published_label": published_label,
+            "premium_text": title,
         })
 
     if headlines:
         return headlines[:8]
 
-    for item in impact_radar:
-        stocks = item.get("stocks", [])
-        primary_stock = stocks[0] if stocks else "SPY"
-        stock_text = ", ".join(stocks[:4]) if stocks else "major markets"
-        title = item.get("title", "Market Impact Watch")
-        impact = item.get("impact", "Medium")
-        sectors = item.get("sectors", "global markets")
-        direction = item.get("direction", "market sensitivity active")
-        score = item.get("impact_score", "Premium score")
-        watch_next = item.get("watch_next", "Watch for fresh headlines and market reaction.")
-
-        headlines.append({
-            "label": "HEADLINE",
-            "text": f"{title}: {impact} impact theme may affect {stock_text}",
-            "url": f"/stock/{primary_stock}",
-            "premium_text": f"{title}: {score} impact score — may affect {stock_text}. {direction}.",
-        })
-
-        headlines.append({
-            "label": "MARKET WATCH",
-            "text": f"{sectors}: latest policy or macro themes may affect linked stocks including {stock_text}",
-            "url": f"/stock/{primary_stock}",
-            "premium_text": f"{sectors}: premium watch next — {watch_next}",
-        })
-
-    if not headlines:
-        headlines.append({
-            "label": "HEADLINE",
-            "text": "Market-impact headlines will appear here as themes update and may affect linked stocks",
+    if NEWSAPI_KEY:
+        return [{
+            "label": "LIVE NEWS",
+            "headline": "Live market headlines are temporarily unavailable",
+            "text": "NewsAPI is configured, but no literal article titles were returned.",
             "url": "/",
-            "premium_text": "Premium market-impact headlines will appear here with impact score and what-to-watch-next context",
+            "article_url": "/",
+            "stock_url": "/stock/SPY",
+            "stock_text": "SPY, QQQ",
+            "stock_links": [{"ticker": "SPY", "url": "/stock/SPY"}, {"ticker": "QQQ", "url": "/stock/QQQ"}],
+            "impact_score": "Pending",
+            "direction": "Live feed check needed",
+            "source": "SignalScope News Feed",
+            "published_label": "Live check",
+            "premium_text": "NewsAPI is configured, but no literal article titles were returned.",
+        }]
+
+    return [{
+        "label": "LIVE NEWS",
+        "headline": "Add NEWSAPI_KEY to enable literal live market headlines",
+        "text": "Add NEWSAPI_KEY to enable literal live market headlines.",
+        "url": "/",
+        "article_url": "/",
+        "stock_url": "/stock/SPY",
+        "stock_text": "SPY, QQQ",
+        "stock_links": [{"ticker": "SPY", "url": "/stock/SPY"}, {"ticker": "QQQ", "url": "/stock/QQQ"}],
+        "impact_score": "Pending",
+        "direction": "NewsAPI key required",
+        "source": "SignalScope News Feed",
+        "published_label": "Setup needed",
+        "premium_text": "Add NEWSAPI_KEY to enable literal live market headlines.",
+    }]
+
+def safe_build_live_headlines(recommendations, impact_radar):
+    try:
+        headlines = build_live_headlines(recommendations, impact_radar)
+        if headlines:
+            return headlines
+    except Exception as exc:
+        LAST_NEWS_FETCH_STATUS.update({
+            "provider": "signalscope",
+            "status": "render_error",
+            "errors": [str(exc)],
         })
 
-    return headlines
+    return [{
+        "label": "LIVE NEWS",
+        "headline": "Market headlines are reconnecting",
+        "text": "Market headlines are reconnecting.",
+        "url": "/news-health",
+        "article_url": "/news-health",
+        "stock_url": "/stock/SPY",
+        "stock_text": "SPY, QQQ",
+        "stock_links": [{"ticker": "SPY", "url": "/stock/SPY"}, {"ticker": "QQQ", "url": "/stock/QQQ"}],
+        "impact_score": "Pending",
+        "direction": "Feed health check active",
+        "source": "SignalScope News Feed",
+        "published_label": "Live check",
+        "premium_text": "Market headlines are reconnecting.",
+    }]
 
 def prepare_dashboard_data():
     recommendations = get_recommendations()
@@ -807,7 +935,7 @@ def prepare_dashboard_data():
         "last_updated": datetime.now().strftime("%d %b %Y, %H:%M"),
         "ticker_updated": datetime.now().strftime("%H:%M"),
         "impact_radar": impact_radar,
-        "live_headlines": build_live_headlines(recommendations, impact_radar),
+        "live_headlines": safe_build_live_headlines(recommendations, impact_radar),
         "newsapi_configured": bool(NEWSAPI_KEY),
     }
 
@@ -847,12 +975,23 @@ a:hover{text-decoration:underline;}
 .live-alert-strip{position:sticky;top:0;z-index:60;margin-bottom:22px;background:linear-gradient(90deg,rgba(0,255,170,0.12),rgba(56,189,248,0.10),rgba(255,184,107,0.10));border:1px solid rgba(255,255,255,0.12);border-radius:22px;overflow:hidden;box-shadow:0 22px 60px rgba(0,0,0,0.28);backdrop-filter:blur(18px);}
 .live-alert-header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.08);font-weight:950;color:white;text-transform:uppercase;letter-spacing:0.08em;font-size:12px;}
 .live-dot{width:9px;height:9px;border-radius:999px;background:#22c55e;box-shadow:0 0 18px rgba(34,197,94,0.8);}
-.live-alert-track{display:flex;gap:28px;white-space:nowrap;padding:13px 16px;animation:tickerMove 42s linear infinite;}
+.live-alert-track{display:flex;gap:24px;white-space:nowrap;padding:13px 16px;animation:tickerMove 52s linear infinite;align-items:stretch;}
 .live-alert-strip:hover .live-alert-track{animation-play-state:paused;}
-.live-headline{display:inline-flex;align-items:center;gap:10px;color:#e5e7eb;text-decoration:none;font-weight:800;}
+.live-headline{display:inline-flex;flex-direction:column;align-items:flex-start;gap:9px;min-width:520px;max-width:620px;color:#e5e7eb;text-decoration:none;font-weight:800;background:rgba(2,6,23,0.35);border:1px solid rgba(255,255,255,0.08);border-radius:18px;padding:14px 16px;white-space:normal;}
+.live-headline-main{display:flex;align-items:center;gap:10px;line-height:1.35;}
+.live-headline-main a:last-child{color:#e5e7eb;text-decoration:none;}
+.live-headline-details{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-left:2px;}
+.live-news-meta{color:#94a3b8;font-size:12px;font-weight:950;text-transform:none;letter-spacing:0.02em;}
+.live-news-title{display:block;color:white;font-size:15px;font-weight:950;line-height:1.35;text-decoration:none;}
+.live-news-title:hover{color:#ccfbf1;text-decoration:none;}
+.live-affected-label{color:#94a3b8;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:0.09em;margin-right:2px;}
 .live-headline:hover{text-decoration:none;color:white;}
 .live-tag{display:inline-block;background:rgba(0,255,170,0.12);border:1px solid rgba(0,255,170,0.20);color:#bbf7d0;border-radius:999px;padding:5px 8px;font-size:11px;font-weight:950;letter-spacing:0.08em;text-transform:uppercase;}
-.live-premium-tag{display:inline-block;background:rgba(255,184,107,0.14);border:1px solid rgba(255,184,107,0.24);color:#fed7aa;border-radius:999px;padding:5px 8px;font-size:11px;font-weight:950;letter-spacing:0.08em;text-transform:uppercase;}
+ .live-premium-tag{display:inline-block;background:rgba(255,184,107,0.14);border:1px solid rgba(255,184,107,0.24);color:#fed7aa;border-radius:999px;padding:5px 8px;font-size:11px;font-weight:950;letter-spacing:0.08em;text-transform:uppercase;}
+.live-meta{display:inline-flex;align-items:center;gap:8px;color:#94a3b8;font-size:12px;font-weight:900;}
+.live-score{display:inline-block;background:rgba(56,189,248,0.12);border:1px solid rgba(56,189,248,0.22);color:#bae6fd;border-radius:999px;padding:5px 8px;font-size:11px;font-weight:950;}
+.live-stock-link{display:inline-block;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);color:#e5e7eb;border-radius:999px;padding:5px 8px;font-size:11px;font-weight:950;text-decoration:none;}
+.live-stock-link:hover{background:rgba(0,255,170,0.12);color:white;text-decoration:none;}
 @keyframes tickerMove{0%{transform:translateX(0);}100%{transform:translateX(-50%);}}
 .card,.market-card{background:linear-gradient(180deg,rgba(23,23,23,0.94),rgba(14,14,14,0.94));padding:28px;border-radius:28px;margin-bottom:22px;border:1px solid rgba(255,255,255,0.10);box-shadow:0 28px 82px rgba(0,0,0,0.35),inset 0 1px 0 rgba(255,255,255,0.07);}
 .summary-grid,.market-grid,.feature-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:18px;margin-bottom:22px;}
@@ -952,16 +1091,36 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
         </div>
         <div class="live-alert-track">
             {% for headline in live_headlines %}
-            <a class="live-headline" href="{{ headline.url }}">
-                <span class="{% if owner_logged_in %}live-premium-tag{% else %}live-tag{% endif %}">{% if owner_logged_in %}Premium Impact{% else %}Headline{% endif %}</span>
-                {% if owner_logged_in %}{{ headline.premium_text }}{% else %}{{ headline.text }}{% endif %}
-            </a>
+            <span class="live-headline">
+                <span class="live-news-meta">{{ headline.source }} • {{ headline.published_label }}</span>
+                <a class="live-news-title" href="{{ headline.article_url }}" {% if headline.article_url and headline.article_url.startswith('http') %}target="_blank" rel="noopener noreferrer"{% endif %}>{% if owner_logged_in %}{{ headline.headline }}{% else %}{{ headline.headline }}{% endif %}</a>
+                <span class="live-headline-details">
+                    <span class="live-affected-label">Affected stocks:</span>
+                    {% for stock in headline.stock_links %}
+                    <a class="live-stock-link" href="{{ stock.url }}">{{ stock.ticker }}</a>
+                    {% endfor %}
+                </span>
+                <span class="live-headline-details">
+                    <span class="live-score">Impact: {{ headline.impact_score }}</span>
+                    <span class="live-meta">{{ headline.direction }}</span>
+                </span>
+            </span>
             {% endfor %}
             {% for headline in live_headlines %}
-            <a class="live-headline" href="{{ headline.url }}">
-                <span class="{% if owner_logged_in %}live-premium-tag{% else %}live-tag{% endif %}">{% if owner_logged_in %}Premium Impact{% else %}Headline{% endif %}</span>
-                {% if owner_logged_in %}{{ headline.premium_text }}{% else %}{{ headline.text }}{% endif %}
-            </a>
+            <span class="live-headline">
+                <span class="live-news-meta">{{ headline.source }} • {{ headline.published_label }}</span>
+                <a class="live-news-title" href="{{ headline.article_url }}" {% if headline.article_url and headline.article_url.startswith('http') %}target="_blank" rel="noopener noreferrer"{% endif %}>{{ headline.headline }}</a>
+                <span class="live-headline-details">
+                    <span class="live-affected-label">Affected stocks:</span>
+                    {% for stock in headline.stock_links %}
+                    <a class="live-stock-link" href="{{ stock.url }}">{{ stock.ticker }}</a>
+                    {% endfor %}
+                </span>
+                <span class="live-headline-details">
+                    <span class="live-score">Impact: {{ headline.impact_score }}</span>
+                    <span class="live-meta">{{ headline.direction }}</span>
+                </span>
+            </span>
             {% endfor %}
         </div>
     </div>
@@ -1335,15 +1494,37 @@ if(labels.length>0){
 </body>
 </html>
 """
+
+# --- Health and diagnostics routes ---
 @app.route("/health")
-@app.route("/healthz")
 def health():
+    return "OK", 200
+
+
+@app.route("/news-health")
+def news_health():
+    articles = fetch_live_market_news(limit=8)
+    return {
+        "newsapi_configured": bool(NEWSAPI_KEY),
+        "live_articles_returned": len(articles),
+        "mode": "live_news" if articles else "no_live_articles",
+        "provider": LAST_NEWS_FETCH_STATUS.get("provider"),
+        "status": LAST_NEWS_FETCH_STATUS.get("status"),
+        "errors": LAST_NEWS_FETCH_STATUS.get("errors", []),
+        "sample_headlines": [article.get("title") for article in articles],
+        "sources": [article.get("source") for article in articles],
+    }, 200
+
+
+@app.route("/healthz")
+def healthz():
     return {
         "status": "ok",
         "app": "SignalScope AI",
         "stripe_configured": stripe_checkout_configured(),
         "owner_login_configured": owner_login_configured(),
     }, 200
+
 @app.route("/favicon.ico")
 def favicon():
     return "", 204
