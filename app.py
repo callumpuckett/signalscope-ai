@@ -574,6 +574,160 @@ def premium_decision(symbol):
         context=ai_context,
         report=report,
     )
+
+
+@app.route("/premium-watchlist")
+def premium_watchlist():
+    recommendations = get_recommendations()
+    buy_rows, hold_rows, sell_rows, conviction_rows = split_rows(recommendations)
+
+    strongest = conviction_rows[0] if conviction_rows else None
+    highest_risk = sell_rows[0] if sell_rows else None
+    quality_names = [item for item in recommendations if item["ticker"] in {"MSFT", "AAPL", "GOOGL", "AMZN", "META", "V", "MA", "COST"}]
+    defensive_names = [item for item in recommendations if item["ticker"] in {"KO", "MCD", "JNJ", "PG", "PEP", "WMT", "AZN.L", "GSK.L"}]
+    growth_names = [item for item in recommendations if item["ticker"] in {"NVDA", "AMD", "TSLA", "SMH", "QQQ", "BTC-USD", "ETH-USD", "SOL-USD"}]
+
+    theme_counts = {
+        "Quality compounders": len(quality_names),
+        "Growth / AI satellites": len(growth_names),
+        "Defensive balance": len(defensive_names),
+        "Current BUY signals": len(buy_rows),
+        "Current SELL warnings": len(sell_rows),
+    }
+
+    if not owner_has_access():
+        locked_html = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <title>Premium Watchlist Intelligence — SignalScope AI</title>
+        <style>
+        body{margin:0;background:linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
+        .wrap{max-width:920px;margin:0 auto;}
+        .card{background:linear-gradient(180deg,rgba(23,23,23,0.96),rgba(14,14,14,0.96));border:1px solid rgba(255,255,255,0.11);border-radius:30px;padding:34px;box-shadow:0 30px 85px rgba(0,0,0,0.42);margin-bottom:22px;}
+        .kicker{color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;}
+        h1{font-size:42px;line-height:1.05;margin:0 0 16px 0;letter-spacing:-0.04em;}
+        p,li{color:#cbd5e1;line-height:1.7;}
+        a{color:#38bdf8;font-weight:900;text-decoration:none;}
+        .button{display:inline-block;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-radius:15px;padding:14px 18px;font-weight:950;text-decoration:none;margin-top:12px;}
+        .locked{background:rgba(239,68,68,0.09);border:1px solid rgba(239,68,68,0.20);border-radius:20px;padding:18px;color:#fecaca;line-height:1.65;}
+        </style>
+        </head>
+        <body>
+        <div class="wrap">
+            <a href="/">← Back to dashboard</a>
+            <div class="card">
+                <p class="kicker">Premium Watchlist Intelligence</p>
+                <h1>Turn a list of stocks into a decision review.</h1>
+                <p>Premium Watchlist Intelligence highlights strongest signals, caution names, portfolio roles and theme concentration.</p>
+                <ul>
+                    <li>Strongest current signal</li>
+                    <li>Highest caution stock</li>
+                    <li>Quality, growth and defensive buckets</li>
+                    <li>Theme concentration read</li>
+                </ul>
+                <div class="locked"><strong>Locked:</strong> Upgrade to unlock the full watchlist intelligence layer.</div>
+                <a class="button" href="/upgrade">Unlock Premium</a>
+            </div>
+        </div>
+        </body>
+        </html>
+        """
+        return render_template_string(locked_html)
+
+    watchlist_html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <title>Premium Watchlist Intelligence — SignalScope AI</title>
+    <style>
+    body{margin:0;background:radial-gradient(circle at 20% 10%,rgba(0,255,170,0.15),transparent 28%),linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
+    .wrap{max-width:1180px;margin:0 auto;}
+    .card{background:linear-gradient(180deg,rgba(23,23,23,0.96),rgba(14,14,14,0.96));border:1px solid rgba(255,255,255,0.11);border-radius:30px;padding:32px;box-shadow:0 30px 85px rgba(0,0,0,0.42);margin-bottom:22px;}
+    .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:18px;}
+    .box{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:20px;padding:18px;line-height:1.6;}
+    .box strong{display:block;color:white;font-size:18px;margin-bottom:6px;}
+    .box span,p,li{color:#cbd5e1;line-height:1.7;}
+    .kicker{color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;}
+    h1{font-size:44px;line-height:1.04;margin:0 0 16px 0;letter-spacing:-0.04em;}
+    h2{margin:0 0 12px 0;}
+    a{color:#38bdf8;font-weight:900;text-decoration:none;}
+    table{width:100%;border-collapse:collapse;margin-top:16px;}
+    th,td{text-align:left;padding:13px;border-bottom:1px solid rgba(255,255,255,0.08);vertical-align:top;}
+    th{color:#94a3b8;text-transform:uppercase;letter-spacing:0.08em;font-size:12px;}
+    .note{background:rgba(0,255,170,0.09);border:1px solid rgba(0,255,170,0.18);border-radius:20px;padding:18px;color:#d1fae5;line-height:1.7;}
+    @media(max-width:900px){body{padding:24px;}.grid{grid-template-columns:1fr;}h1{font-size:34px;}}
+    </style>
+    </head>
+    <body>
+    <div class="wrap">
+        <a href="/">← Back to dashboard</a>
+        <div class="card">
+            <p class="kicker">Premium Watchlist Intelligence</p>
+            <h1>Decision review for the current SignalScope universe.</h1>
+            <p>This turns the signal table into a portfolio-style review: strongest opportunity, caution zones, role buckets and theme concentration.</p>
+            <div class="grid">
+                <div class="box"><strong>Strongest signal</strong>{% if strongest %}<span><a href="/stock/{{ strongest.ticker }}">{{ strongest.ticker }}</a> — {{ strongest.signal }} • {{ strongest.confidence }}</span>{% else %}<span>No conviction row available.</span>{% endif %}</div>
+                <div class="box"><strong>Highest caution</strong>{% if highest_risk %}<span><a href="/stock/{{ highest_risk.ticker }}">{{ highest_risk.ticker }}</a> — {{ highest_risk.signal }} • {{ highest_risk.confidence }}</span>{% else %}<span>No current SELL warning.</span>{% endif %}</div>
+                <div class="box"><strong>Review habit</strong><span>Use this page monthly before adding more risk.</span></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Theme concentration</h2>
+            <table>
+                <tr><th>Theme</th><th>Count</th><th>Premium read</th></tr>
+                {% for theme, count in theme_counts.items() %}
+                <tr><td>{{ theme }}</td><td>{{ count }}</td><td>Use this to spot whether the opportunity set is leaning too heavily into one style or risk bucket.</td></tr>
+                {% endfor %}
+            </table>
+        </div>
+
+        <div class="card">
+            <h2>Quality names to review</h2>
+            <table>
+                <tr><th>Ticker</th><th>Signal</th><th>Confidence</th><th>Role</th></tr>
+                {% for item in quality_names[:8] %}
+                <tr><td><a href="/stock/{{ item.ticker }}">{{ item.ticker }}</a></td><td>{{ item.signal }}</td><td>{{ item.confidence }}</td><td>Quality compounder</td></tr>
+                {% endfor %}
+            </table>
+        </div>
+
+        <div class="card">
+            <h2>Growth and AI satellites</h2>
+            <table>
+                <tr><th>Ticker</th><th>Signal</th><th>Confidence</th><th>Role</th></tr>
+                {% for item in growth_names[:8] %}
+                <tr><td><a href="/stock/{{ item.ticker }}">{{ item.ticker }}</a></td><td>{{ item.signal }}</td><td>{{ item.confidence }}</td><td>Controlled growth satellite</td></tr>
+                {% endfor %}
+            </table>
+        </div>
+
+        <div class="card">
+            <h2>Defensive balance candidates</h2>
+            <table>
+                <tr><th>Ticker</th><th>Signal</th><th>Confidence</th><th>Role</th></tr>
+                {% for item in defensive_names[:8] %}
+                <tr><td><a href="/stock/{{ item.ticker }}">{{ item.ticker }}</a></td><td>{{ item.signal }}</td><td>{{ item.confidence }}</td><td>Defensive balance</td></tr>
+                {% endfor %}
+            </table>
+            <div class="note">Premium read: do not just chase the strongest BUY signal. Review whether your next addition improves the overall mix.</div>
+        </div>
+    </div>
+    </body>
+    </html>
+    """
+    return render_template_string(
+        watchlist_html,
+        strongest=strongest,
+        highest_risk=highest_risk,
+        theme_counts=theme_counts,
+        quality_names=quality_names,
+        growth_names=growth_names,
+        defensive_names=defensive_names,
+    )
+
+
 def safe_history(ticker, **kwargs):
     if yf is None:
         raise RuntimeError("yfinance is not installed")
@@ -1253,6 +1407,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
     <a class="nav-link tab-button {% if active_tab == 'signals' %}active-tab{% endif %}" href="/?tab=signals">📊 AI Signals</a>
     <a class="nav-link tab-button {% if active_tab == 'radar' %}active-tab{% endif %}" href="/?tab=radar">🌍 Impact Radar</a>
     <a class="nav-link tab-button {% if active_tab == 'watchlist' %}active-tab{% endif %}" href="/?tab=watchlist">📋 AI Watchlist</a>
+    <a class="nav-link" href="/premium-watchlist">🧠 Premium Watchlist</a>
     <div class="menu-divider"></div>
 
     <div class="nav-section-label">Account</div>
@@ -1511,6 +1666,13 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
         <p style="color:#00ffaa;font-weight:900;text-transform:uppercase;letter-spacing:0.12em;margin:0 0 10px 0;">Watchlist</p>
         <h2>Full AI Watchlist</h2>
         <p style="color:#94a3b8;line-height:1.7;">Browse every ticker currently supported by the AI recommendation table and open any stock page directly.</p>
+    </div>
+
+    <div class="card">
+        <p style="color:#00ffaa;font-weight:900;text-transform:uppercase;letter-spacing:0.12em;margin:0 0 10px 0;">Premium Watchlist Intelligence</p>
+        <h2>Turn the watchlist into a decision review</h2>
+        <p style="color:#94a3b8;line-height:1.7;max-width:980px;">The normal watchlist shows every tracked signal. Premium Watchlist Intelligence turns that into a structured review: strongest current signal, highest caution name, quality bucket, growth satellite bucket, defensive balance and theme concentration.</p>
+        <a class="upgrade-cta" href="/premium-watchlist">Open Premium Watchlist</a>
     </div>
     <div class="card" id="watchlist">
         <p style="color:#00ffaa;font-weight:900;text-transform:uppercase;letter-spacing:0.12em;margin:0 0 10px 0;">AI Recommendations Page</p>
@@ -1987,12 +2149,12 @@ stock_detail_html = """
 <body>
 <div class="card"><p><a href="/">← Back to Dashboard</a></p><h1>{{ symbol }} Stock Detail</h1><p style="color:#94a3b8;">Live chart view for {{ range_label }}. Use the buttons below to change timeframe.</p></div>
 
-<div class="premium-banner"><div><small>Premium AI Intelligence Preview</small><h2>{{ symbol }} intelligence, not just a chart.</h2><p>Every supported stock and index gets the same structure: a useful free preview, then a stronger Pro intelligence panel with deeper AI explanation, risk read, momentum interpretation and what to watch next.</p></div><div class="premium-cta-box">{% if has_premium_access %}<strong>✅ Premium Active</strong><p>You have full premium access for {{ symbol }}.</p><a class="payment-button" href="/owner">Owner Area</a>{% else %}<strong>Unlock the full {{ symbol }} AI report</strong><p>Works across all supported tickers, indexes and AI recommendation stocks.</p><a class="payment-button" href="/upgrade">Upgrade now — £5/month</a><div class="payment-note">Opens the upgrade page. Stripe payment connects next.</div>{% endif %}</div></div>
+<div class="premium-banner"><div><small>Premium AI Intelligence Preview</small><h2>{{ symbol }} intelligence, not just a chart.</h2><p>Every supported stock and index gets the same structure: a useful free preview, then a stronger Premium decision panel with deeper AI explanation, risk read, portfolio role and what to watch next.</p></div><div class="premium-cta-box">{% if has_premium_access %}<strong>✅ Premium Active</strong><p>You have full premium access for {{ symbol }}.</p><a class="payment-button" href="/premium-decision/{{ symbol }}">Open Decision Panel</a>{% else %}<strong>Unlock the full {{ symbol }} Decision Panel</strong><p>Premium adds portfolio role, concentration risk, readiness and before-acting checks.</p><a class="payment-button" href="/premium-decision/{{ symbol }}">Preview Premium Panel</a><div class="payment-note">Non-premium users see the locked preview and upgrade route.</div>{% endif %}</div></div>
 
 <div class="ai-grid"><div class="ai-card"><small>Free Signal Preview</small><h2 class="{% if ai_context.signal == 'BUY' %}buy{% elif ai_context.signal == 'SELL' %}sell{% elif ai_context.signal == 'HOLD' %}hold{% endif %}">{{ ai_context.signal }}</h2><p>Every supported stock page gets the same free AI preview. Current signal for {{ symbol }}: {{ ai_context.signal }}.</p><span class="signal-badge">Live stock page: {{ symbol }}</span></div><div class="ai-card warning"><small>Free Confidence Preview</small><div class="confidence-large">{{ ai_context.confidence }}</div><div class="free-meter">{{ ai_context.confidence_meter }}</div><span class="free-strength">Signal strength: {{ ai_context.strength_label }}</span><p style="margin-top:12px;">Free shows the basic score and meter. Pro explains what is driving it for {{ symbol }}.</p></div><div class="ai-card risk"><small>{% if has_premium_access %}Premium Active{% else %}Pro Preview{% endif %}</small><h2>Next Move</h2>{% if has_premium_access %}<p>{{ ai_context.watch_next }}</p><span class="signal-badge">Premium unlocked</span>{% else %}<p>Pro unlocks the full interpretation behind the meter: why the score matters, what risk is building and what to watch next for {{ symbol }}.</p><a class="signal-badge" href="/upgrade">Unlock Premium</a>{% endif %}</div></div>
 
-{% if has_premium_access and example_report %}<div class="example-report"><small>Premium Pro Intelligence</small><h2>{{ example_report.headline }}</h2><p>{{ example_report.summary }}</p><div class="example-report-grid"><div class="example-report-card"><strong>AI Confidence</strong><div class="confidence-score">{{ example_report.confidence }}</div><div class="confidence-meter">{{ example_report.meter }}</div><span class="strength-pill">Signal strength: {{ example_report.strength }}</span></div><div class="example-report-card"><strong>Risk read</strong><span>{{ example_report.risk }}</span></div><div class="example-report-card"><strong>Next move</strong><span>{{ example_report.next_move }}</span></div></div><div class="example-report-card" style="margin-top:16px;"><strong>Why Pro feels premium</strong><span>{{ example_report.pro_angle }}</span></div></div>{% endif %}
-{% if not has_premium_access %}<div class="example-report"><small>Premium locked</small><h2>Unlock the full {{ symbol }} Pro Intelligence report</h2><p>Free shows the basic signal, confidence score and meter. Premium unlocks the full AI confidence panel, risk read, next move and clearer decision support.</p><div class="example-report-grid"><div class="example-report-card"><strong>Free preview</strong><div class="confidence-score">{{ ai_context.confidence }}</div><div class="confidence-meter">{{ ai_context.confidence_meter }}</div><span class="strength-pill">Basic signal strength: {{ ai_context.strength_label }}</span></div><div class="example-report-card"><strong>Premium risk read</strong><span>Locked until upgrade.</span></div><div class="example-report-card"><strong>Premium next move</strong><span>Locked until upgrade.</span></div></div><a class="payment-button" href="/upgrade" style="margin-top:18px;">Upgrade to Premium — £5/month</a><div class="payment-note">login unlocks premium automatically for testing.</div></div>{% endif %}
+{% if has_premium_access and example_report %}<div class="example-report"><small>Premium Decision Intelligence</small><h2>{{ example_report.headline }}</h2><p>{{ example_report.summary }}</p><div class="example-report-grid"><div class="example-report-card"><strong>AI Confidence</strong><div class="confidence-score">{{ example_report.confidence }}</div><div class="confidence-meter">{{ example_report.meter }}</div><span class="strength-pill">Signal strength: {{ example_report.strength }}</span></div><div class="example-report-card"><strong>Portfolio role</strong><span>{{ example_report.portfolio_role }}</span></div><div class="example-report-card"><strong>Decision readiness</strong><span>{{ example_report.readiness }}</span></div></div><div class="example-report-card" style="margin-top:16px;"><strong>Premium decision use</strong><span>{{ example_report.decision_use }}</span></div><div style="margin-top:18px;"><a class="payment-button" href="/premium-decision/{{ symbol }}">Open Full Premium Decision Panel</a></div></div>{% endif %}
+{% if not has_premium_access %}<div class="example-report"><small>Premium locked</small><h2>Unlock the full {{ symbol }} Decision Panel</h2><p>Free shows the basic signal, confidence score and meter. Premium unlocks portfolio role, concentration risk, readiness and before-acting checks.</p><div class="example-report-grid"><div class="example-report-card"><strong>Free preview</strong><div class="confidence-score">{{ ai_context.confidence }}</div><div class="confidence-meter">{{ ai_context.confidence_meter }}</div><span class="strength-pill">Basic signal strength: {{ ai_context.strength_label }}</span></div><div class="example-report-card"><strong>Premium portfolio role</strong><span>Locked until upgrade.</span></div><div class="example-report-card"><strong>Premium decision readiness</strong><span>Locked until upgrade.</span></div></div><a class="payment-button" href="/premium-decision/{{ symbol }}" style="margin-top:18px;">Preview Premium Decision Panel</a><div class="payment-note">The preview opens the locked Premium route and upgrade path.</div></div>{% endif %}
 
 <div class="range-row">{% for key, settings in chart_ranges.items() %}<a class="range-button {% if key == active_range %}active{% endif %}" href="/stock/{{ symbol }}?range={{ key }}">{{ settings.label }}</a>{% endfor %}</div>
 <div class="metric-grid"><div class="metric"><small>Range start</small><h2>{{ chart_data.start_price }}</h2></div><div class="metric"><small>Range latest</small><h2>{{ chart_data.end_price }}</h2></div><div class="metric"><small>Range move</small><h2 class="{{ chart_data.direction }}">{{ chart_data.change_amount }}</h2></div><div class="metric"><small>Range % move</small><h2 class="{{ chart_data.direction }}">{{ chart_data.change_percent }}</h2></div></div>
