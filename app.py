@@ -528,8 +528,6 @@ def get_premium_report(symbol, ai_context):
     }
 
 @app.route("/premium-decision/<symbol>")
-
-@app.route("/premium-decision/<symbol>")
 def premium_decision(symbol):
     cleaned_symbol = symbol.strip().upper()
     ai_context = get_stock_ai_context(cleaned_symbol)
