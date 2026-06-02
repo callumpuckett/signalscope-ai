@@ -385,19 +385,195 @@ def get_stock_ai_context(symbol):
 
 def get_premium_report(symbol, ai_context):
     cleaned_symbol = symbol.strip().upper()
+    signal = ai_context.get("signal", "HOLD")
+    confidence_value = confidence_number(ai_context.get("confidence", "0%"))
+
+    if cleaned_symbol in {"SPY", "QQQ", "DIA", "IWM", "SMH"}:
+        portfolio_role = "Core ETF / diversified exposure"
+        decision_use = "Use as a base layer before taking larger single-stock risk."
+        concentration_note = "ETF exposure can still overlap with large technology holdings, so check what the fund owns before adding similar stocks."
+    elif cleaned_symbol in {"MSFT", "AAPL", "GOOGL", "AMZN", "META", "V", "MA", "COST"}:
+        portfolio_role = "Quality compounder"
+        decision_use = "Use as a long-term quality research candidate if valuation and portfolio concentration are sensible."
+        concentration_note = "This can add quality growth, but may increase US mega-cap or technology exposure if you already own similar names."
+    elif cleaned_symbol in {"NVDA", "AMD", "TSLA", "BTC-USD", "ETH-USD", "SOL-USD"}:
+        portfolio_role = "Growth satellite"
+        decision_use = "Use as a controlled growth allocation, not as the whole portfolio."
+        concentration_note = "Higher-growth themes can move sharply. Position size matters more than the BUY label."
+    elif cleaned_symbol in {"KO", "MCD", "JNJ", "PG", "PEP", "WMT", "AZN.L", "GSK.L"}:
+        portfolio_role = "Defensive balance"
+        decision_use = "Use to add stability, brand strength or defensive earnings exposure."
+        concentration_note = "Defensive stocks can still be expensive or slow-growing, so compare stability against valuation."
+    else:
+        portfolio_role = "Research candidate"
+        decision_use = "Use the signal as a research prompt, then check business quality, risk and portfolio fit."
+        concentration_note = "Check whether this duplicates a sector or theme you already own."
+
+    if signal == "BUY" and confidence_value >= 80:
+        readiness = "Strong research candidate"
+        action_frame = "Research further before buying; the signal is strong, but still needs risk and portfolio-fit checks."
+    elif signal == "BUY":
+        readiness = "Positive but not automatic"
+        action_frame = "Worth researching, but wait for stronger evidence if risk or valuation feels stretched."
+    elif signal == "SELL":
+        readiness = "Caution zone"
+        action_frame = "Avoid rushing in. Understand why the scanner is flagging weakness before considering exposure."
+    else:
+        readiness = "Watch and learn"
+        action_frame = "Keep on the watchlist until the signal, confidence or thesis becomes clearer."
+
+    checklist = [
+        "Do I understand how this business or fund makes money?",
+        "Does this fit my time horizon and risk tolerance?",
+        "Am I already exposed to the same sector, ETF, theme or mega-cap names?",
+        "What would make this investment thesis wrong?",
+        "Would I still be comfortable holding this if it fell sharply in the short term?",
+    ]
 
     return {
-        "headline": f"{cleaned_symbol} Pro Intelligence",
-        "summary": "Premium view: confidence, signal strength, risk and next move in seconds.",
+        "headline": f"{cleaned_symbol} Premium Decision Panel",
+        "summary": "Premium view: signal strength, portfolio role, risk fit and what to check before acting.",
         "confidence": ai_context["confidence"],
         "meter": confidence_meter(ai_context["confidence"]),
         "strength": signal_strength_label(ai_context["confidence"]),
         "risk": ai_context["risk_view"],
         "next_move": ai_context["watch_next"],
-        "pro_angle": "Pro turns the stock page into a fast decision panel, not a long report.",
+        "pro_angle": "Premium turns the signal into a structured decision check, not a blind buy/sell instruction.",
+        "portfolio_role": portfolio_role,
+        "decision_use": decision_use,
+        "concentration_note": concentration_note,
+        "readiness": readiness,
+        "action_frame": action_frame,
+        "checklist": checklist,
     }
 
+@app.route("/premium-decision/<symbol>")
+def premium_decision(symbol):
+    cleaned_symbol = symbol.strip().upper()
+    ai_context = get_stock_ai_context(cleaned_symbol)
+    report = get_premium_report(cleaned_symbol, ai_context)
 
+    if not owner_has_access():
+        locked_html = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <title>Premium Decision Panel — SignalScope AI</title>
+        <style>
+        body{margin:0;background:linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
+        .wrap{max-width:920px;margin:0 auto;}
+        .card{background:linear-gradient(180deg,rgba(23,23,23,0.96),rgba(14,14,14,0.96));border:1px solid rgba(255,255,255,0.11);border-radius:30px;padding:34px;box-shadow:0 30px 85px rgba(0,0,0,0.42);margin-bottom:22px;}
+        .kicker{color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;}
+        h1{font-size:42px;line-height:1.05;margin:0 0 16px 0;letter-spacing:-0.04em;}
+        p{color:#cbd5e1;line-height:1.7;}
+        a{color:#38bdf8;font-weight:900;text-decoration:none;}
+        .button{display:inline-block;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-radius:15px;padding:14px 18px;font-weight:950;text-decoration:none;margin-top:12px;}
+        .locked{background:rgba(239,68,68,0.09);border:1px solid rgba(239,68,68,0.20);border-radius:20px;padding:18px;color:#fecaca;line-height:1.65;}
+        </style>
+        </head>
+        <body>
+        <div class="wrap">
+            <a href="/stock/{{ symbol }}">← Back to {{ symbol }}</a>
+            <div class="card">
+                <p class="kicker">Premium Decision Layer</p>
+                <h1>{{ symbol }} Decision Panel</h1>
+                <p>This panel turns a stock signal into a structured decision check: portfolio role, concentration risk, readiness, and what to watch before acting.</p>
+                <div class="locked"><strong>Locked:</strong> Upgrade to unlock the full Premium Decision Panel for {{ symbol }}.</div>
+                <a class="button" href="/upgrade">Unlock Premium</a>
+            </div>
+        </div>
+        </body>
+        </html>
+        """
+        return render_template_string(locked_html, symbol=cleaned_symbol)
+
+    panel_html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <title>{{ report.headline }} — SignalScope AI</title>
+    <style>
+    body{margin:0;background:linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
+    .wrap{max-width:1120px;margin:0 auto;}
+    .card{background:linear-gradient(180deg,rgba(23,23,23,0.96),rgba(14,14,14,0.96));border:1px solid rgba(255,255,255,0.11);border-radius:30px;padding:32px;box-shadow:0 30px 85px rgba(0,0,0,0.42);margin-bottom:22px;}
+    .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:18px;}
+    .box{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:20px;padding:18px;line-height:1.6;}
+    .box strong{display:block;color:white;font-size:18px;margin-bottom:6px;}
+    .box span,p,li{color:#cbd5e1;line-height:1.7;}
+    .kicker{color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;}
+    h1{font-size:44px;line-height:1.04;margin:0 0 16px 0;letter-spacing:-0.04em;}
+    h2{margin:0 0 12px 0;}
+    a{color:#38bdf8;font-weight:900;text-decoration:none;}
+    .meter{font-family:monospace;color:#00ffaa;font-size:20px;letter-spacing:2px;}
+    .note{background:rgba(0,255,170,0.09);border:1px solid rgba(0,255,170,0.18);border-radius:20px;padding:18px;color:#d1fae5;line-height:1.7;}
+    @media(max-width:900px){body{padding:24px;}.grid{grid-template-columns:1fr;}h1{font-size:34px;}}
+    </style>
+    </head>
+    <body>
+    <div class="wrap">
+        <a href="/stock/{{ symbol }}">← Back to {{ symbol }}</a>
+
+        <div class="card">
+            <p class="kicker">Premium Decision Layer</p>
+            <h1>{{ report.headline }}</h1>
+            <p>{{ report.summary }}</p>
+
+            <div class="grid">
+                <div class="box">
+                    <strong>Signal</strong>
+                    <span>{{ context.signal }} • {{ report.confidence }}</span>
+                    <div class="meter">{{ report.meter }}</div>
+                </div>
+
+                <div class="box">
+                    <strong>Portfolio role</strong>
+                    <span>{{ report.portfolio_role }}</span>
+                </div>
+
+                <div class="box">
+                    <strong>Decision readiness</strong>
+                    <span>{{ report.readiness }}</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Decision use</h2>
+            <p>{{ report.decision_use }}</p>
+            <div class="note">{{ report.action_frame }}</div>
+        </div>
+
+        <div class="card">
+            <h2>Risk and concentration check</h2>
+            <p>{{ report.risk }}</p>
+            <p>{{ report.concentration_note }}</p>
+        </div>
+
+        <div class="card">
+            <h2>Before acting, check this</h2>
+            <ul>
+                {% for item in report.checklist %}
+                <li>{{ item }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <div class="card">
+            <h2>Watch next</h2>
+            <p>{{ report.next_move }}</p>
+            <div class="note">{{ report.pro_angle }}</div>
+        </div>
+    </div>
+    </body>
+    </html>
+    """
+
+    return render_template_string(
+        panel_html,
+        symbol=cleaned_symbol,
+        context=ai_context,
+        report=report,
+    )
 def safe_history(ticker, **kwargs):
     if yf is None:
         raise RuntimeError("yfinance is not installed")
