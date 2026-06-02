@@ -728,6 +728,235 @@ def premium_watchlist():
     )
 
 
+@app.route("/portfolio-fit", methods=["GET", "POST"])
+def portfolio_fit():
+    holdings_text = ""
+    result = None
+
+    role_map = {
+        "core_etf": {"SPY", "QQQ", "DIA", "IWM", "SMH", "VUSA", "VUAG", "VWRP", "VWRL"},
+        "quality": {"MSFT", "AAPL", "GOOGL", "AMZN", "META", "V", "MA", "COST"},
+        "growth": {"NVDA", "AMD", "TSLA", "BTC-USD", "ETH-USD", "SOL-USD", "PLTR", "TTWO"},
+        "defensive": {"KO", "MCD", "JNJ", "PG", "PEP", "WMT", "AZN.L", "GSK.L", "BA.L", "QQ.L"},
+    }
+
+    role_labels = {
+        "core_etf": "Core ETF / diversified base",
+        "quality": "Quality compounders",
+        "growth": "Growth satellites",
+        "defensive": "Defensive balance",
+        "research": "Research / unclassified",
+    }
+
+    if request.method == "POST":
+        holdings_text = request.form.get("holdings", "").strip()
+        raw_holdings = [item.strip().upper() for item in holdings_text.replace("\n", ",").split(",") if item.strip()]
+        holdings = []
+        seen = set()
+
+        for ticker in raw_holdings:
+            if ticker not in seen:
+                holdings.append(ticker)
+                seen.add(ticker)
+
+        buckets = {"core_etf": [], "quality": [], "growth": [], "defensive": [], "research": []}
+
+        for ticker in holdings:
+            placed = False
+            for role, tickers in role_map.items():
+                if ticker in tickers:
+                    buckets[role].append(ticker)
+                    placed = True
+                    break
+            if not placed:
+                buckets["research"].append(ticker)
+
+        total = len(holdings)
+        core_count = len(buckets["core_etf"])
+        growth_count = len(buckets["growth"])
+        quality_count = len(buckets["quality"])
+        defensive_count = len(buckets["defensive"])
+        research_count = len(buckets["research"])
+
+        warnings = []
+        next_steps = []
+
+        if total == 0:
+            warnings.append("Enter at least one holding to generate a portfolio fit review.")
+        else:
+            if core_count == 0:
+                warnings.append("No obvious core ETF base detected. Consider whether the portfolio has enough diversified exposure before adding more individual stocks.")
+            if growth_count >= max(3, total // 2):
+                warnings.append("Growth satellite exposure looks heavy. Check whether AI, technology or high-volatility names are dominating the portfolio.")
+            if defensive_count == 0 and total >= 4:
+                warnings.append("No obvious defensive balance detected. A portfolio can be strong but still vulnerable if every holding relies on growth momentum.")
+            if total < 4:
+                warnings.append("Portfolio is still concentrated by holding count. Single-stock moves may have a larger impact.")
+            if research_count >= 3:
+                warnings.append("Several holdings are unclassified. Review whether these are deliberate positions or random additions.")
+
+            if core_count == 0:
+                next_steps.append("Research a simple diversified ETF or broad market base before adding more specialist names.")
+            if growth_count > quality_count:
+                next_steps.append("Review whether quality compounders or defensive balance could reduce dependence on high-growth themes.")
+            if defensive_count == 0:
+                next_steps.append("Look at whether defensive balance names improve the mix without chasing momentum.")
+            next_steps.append("Use the Premium Decision Panel on any individual stock before increasing position size.")
+            next_steps.append("Review this portfolio monthly instead of reacting to daily price moves.")
+
+        if total == 0:
+            overall_read = "Waiting for holdings"
+        elif core_count > 0 and growth_count <= max(2, total // 3) and defensive_count > 0:
+            overall_read = "Balanced structure forming"
+        elif growth_count >= max(3, total // 2):
+            overall_read = "Growth-heavy structure"
+        elif core_count == 0:
+            overall_read = "Needs a clearer core"
+        else:
+            overall_read = "Reasonable but needs review"
+
+        result = {
+            "holdings": holdings,
+            "total": total,
+            "buckets": buckets,
+            "role_labels": role_labels,
+            "warnings": warnings,
+            "next_steps": next_steps,
+            "overall_read": overall_read,
+        }
+
+    if not owner_has_access():
+        locked_html = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <title>Premium Portfolio Fit Checker — SignalScope AI</title>
+        <style>
+        body{margin:0;background:linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
+        .wrap{max-width:920px;margin:0 auto;}
+        .card{background:linear-gradient(180deg,rgba(23,23,23,0.96),rgba(14,14,14,0.96));border:1px solid rgba(255,255,255,0.11);border-radius:30px;padding:34px;box-shadow:0 30px 85px rgba(0,0,0,0.42);margin-bottom:22px;}
+        .kicker{color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;}
+        h1{font-size:42px;line-height:1.05;margin:0 0 16px 0;letter-spacing:-0.04em;}
+        p,li{color:#cbd5e1;line-height:1.7;}
+        a{color:#38bdf8;font-weight:900;text-decoration:none;}
+        .button{display:inline-block;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-radius:15px;padding:14px 18px;font-weight:950;text-decoration:none;margin-top:12px;}
+        .locked{background:rgba(239,68,68,0.09);border:1px solid rgba(239,68,68,0.20);border-radius:20px;padding:18px;color:#fecaca;line-height:1.65;}
+        </style>
+        </head>
+        <body>
+        <div class="wrap">
+            <a href="/">← Back to dashboard</a>
+            <div class="card">
+                <p class="kicker">Premium Portfolio Fit Checker</p>
+                <h1>Check whether a stock actually fits your portfolio.</h1>
+                <p>Premium Portfolio Fit turns a list of holdings into a structure review: core base, quality compounders, growth satellites, defensive balance and concentration warnings.</p>
+                <ul>
+                    <li>Portfolio role split</li>
+                    <li>Growth and AI concentration warnings</li>
+                    <li>Core versus satellite balance</li>
+                    <li>Suggested next research direction</li>
+                </ul>
+                <div class="locked"><strong>Locked:</strong> Upgrade to unlock portfolio fit reviews.</div>
+                <a class="button" href="/upgrade">Unlock Premium</a>
+            </div>
+        </div>
+        </body>
+        </html>
+        """
+        return render_template_string(locked_html)
+
+    portfolio_html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <title>Premium Portfolio Fit Checker — SignalScope AI</title>
+    <style>
+    *{box-sizing:border-box;}
+    body{margin:0;background:radial-gradient(circle at 20% 10%,rgba(0,255,170,0.15),transparent 28%),linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
+    .wrap{max-width:1180px;margin:0 auto;}
+    .card{background:linear-gradient(180deg,rgba(23,23,23,0.96),rgba(14,14,14,0.96));border:1px solid rgba(255,255,255,0.11);border-radius:30px;padding:32px;box-shadow:0 30px 85px rgba(0,0,0,0.42);margin-bottom:22px;}
+    .grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:18px;margin-top:18px;align-items:stretch;}
+    .box{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:20px;padding:20px;line-height:1.6;min-height:150px;overflow-wrap:anywhere;}
+    .box strong{display:block;color:white;font-size:18px;margin-bottom:6px;}
+    .box span,p,li{color:#cbd5e1;line-height:1.7;}
+    .kicker{color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;}
+    h1{font-size:44px;line-height:1.04;margin:0 0 16px 0;letter-spacing:-0.04em;}
+    h2{margin:0 0 12px 0;}
+    a{color:#38bdf8;font-weight:900;text-decoration:none;}
+    textarea{width:100%;min-height:130px;background:#020617;border:1px solid rgba(255,255,255,0.13);border-radius:18px;color:white;padding:16px;font-weight:800;outline:none;line-height:1.6;}
+    button,.button{display:inline-block;border:none;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-radius:15px;padding:14px 18px;font-weight:950;cursor:pointer;text-decoration:none;margin-top:16px;}
+    .note{background:rgba(0,255,170,0.09);border:1px solid rgba(0,255,170,0.18);border-radius:20px;padding:18px;color:#d1fae5;line-height:1.7;}
+    .warning{background:rgba(239,68,68,0.09);border:1px solid rgba(239,68,68,0.20);border-radius:20px;padding:18px;color:#fecaca;line-height:1.7;}
+    @media(max-width:1000px){body{padding:24px;}.grid{grid-template-columns:1fr;}h1{font-size:34px;}}
+    </style>
+    </head>
+    <body>
+    <div class="wrap">
+        <a href="/">← Back to dashboard</a>
+        <div class="card">
+            <p class="kicker">Premium Portfolio Fit Checker</p>
+            <h1>Does the next stock actually fit?</h1>
+            <p>Enter current holdings separated by commas. SignalScope will classify the structure and flag concentration risks before you add more complexity.</p>
+            <form method="POST" action="/portfolio-fit#portfolio-result">
+                <textarea name="holdings" placeholder="Example: SPY, MSFT, AMZN, GOOGL, NVDA, KO, MCD">{{ holdings_text }}</textarea>
+                <button type="submit">Check portfolio fit</button>
+            </form>
+        </div>
+
+                {% if result %}
+<div id="portfolio-result" class="card">
+    <p class="kicker">Portfolio Fit Review</p>
+    <h2>{{ result.overall_read }}</h2>
+    <p>{{ result.total }} holdings reviewed.</p>
+
+    <div class="note" style="margin-top:18px;">
+        This review breaks your holdings into core ETF base, quality compounders, growth satellites, defensive balance and research/unclassified names.
+    </div>
+
+    <h2 style="margin-top:28px;">Portfolio role split</h2>
+
+    <div class="grid">
+        {% for role, tickers in result.buckets.items() %}
+        <div class="box">
+            <strong>{{ result.role_labels[role] }}</strong>
+            <span>{{ tickers|length }} holding{% if tickers|length != 1 %}s{% endif %}</span>
+            <p>{{ tickers|join(', ') if tickers else 'None detected' }}</p>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+        <div class="card">
+            <h2>Concentration warnings</h2>
+            {% if result.warnings %}
+            <ul>
+                {% for warning in result.warnings %}
+                <li>{{ warning }}</li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <div class="note">No major concentration warning detected from this simple role check.</div>
+            {% endif %}
+        </div>
+
+        <div class="card">
+            <h2>Suggested next research direction</h2>
+            <ul>
+                {% for step in result.next_steps %}
+                <li>{{ step }}</li>
+                {% endfor %}
+            </ul>
+            <div class="note">Educational only: this is a structure review, not personal financial advice.</div>
+        </div>
+        {% endif %}
+    </div>
+    </body>
+    </html>
+    """
+
+    return render_template_string(portfolio_html, holdings_text=holdings_text, result=result)
+
+
 def safe_history(ticker, **kwargs):
     if yf is None:
         raise RuntimeError("yfinance is not installed")
