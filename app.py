@@ -383,7 +383,148 @@ def get_stock_ai_context(symbol):
     }
 
 
+def classify_portfolio_role(symbol):
+    cleaned_symbol = str(symbol or "").strip().upper()
+    sector = SECTOR_MAP.get(cleaned_symbol, "").lower()
+
+    core_etfs = {"SPY", "QQQ", "DIA", "IWM", "SMH", "GLD", "SLV", "USO", "TLT", "HYG", "VUSA", "VUAG", "VWRP", "VWRL"}
+    index_symbols = {"^GSPC", "^IXIC", "^DJI", "^RUT", "^FTSE", "^N225", "^HSI"}
+    crypto_symbols = {"BTC-USD", "ETH-USD", "SOL-USD"}
+
+    if cleaned_symbol in core_etfs or "etf" in sector:
+        return {
+            "key": "core_etf",
+            "label": "Core ETF / market exposure",
+            "decision_use": "Use as broad exposure or a portfolio building block before taking larger single-stock risk.",
+            "concentration_note": "Check the fund or index exposure so you do not accidentally double up on the same mega-cap, sector or theme.",
+        }
+
+    if cleaned_symbol in index_symbols:
+        return {
+            "key": "index",
+            "label": "Market index benchmark",
+            "decision_use": "Use as a benchmark for market direction, not as a direct single-company position.",
+            "concentration_note": "Index signals help read the market backdrop before adding individual stock risk.",
+        }
+
+    if cleaned_symbol in crypto_symbols:
+        return {
+            "key": "growth",
+            "label": "High-volatility satellite",
+            "decision_use": "Use only as a controlled satellite allocation because price moves can be extreme.",
+            "concentration_note": "Crypto exposure can dominate portfolio volatility even when position size looks small.",
+        }
+
+    if any(word in sector for word in ["semiconductor", "technology", "cloud", "ev", "growth", "media", "software"]):
+        return {
+            "key": "growth",
+            "label": "Growth / technology satellite",
+            "decision_use": "Use as a growth research candidate, but keep position size and overlap with other tech names under control.",
+            "concentration_note": "This may increase technology, AI, platform or high-growth exposure if you already own similar names or Nasdaq-heavy ETFs.",
+        }
+
+    if any(word in sector for word in ["payments", "consumer / cloud", "retail", "consumer"]):
+        return {
+            "key": "quality",
+            "label": "Quality compounder / consumer strength",
+            "decision_use": "Use as a quality business research candidate where brand strength, scale, cash flow or platform durability matter.",
+            "concentration_note": "Quality names can still become expensive, so check valuation and whether you already own similar mega-cap exposure.",
+        }
+
+    if any(word in sector for word in ["healthcare", "uk healthcare"]):
+        return {
+            "key": "defensive",
+            "label": "Defensive healthcare balance",
+            "decision_use": "Use to add defensive earnings exposure or healthcare diversification.",
+            "concentration_note": "Healthcare can reduce growth-only dependence, but individual drug, regulation and valuation risks still matter.",
+        }
+
+    if any(word in sector for word in ["banks", "bank"]):
+        return {
+            "key": "cyclical",
+            "label": "Financial / cyclical exposure",
+            "decision_use": "Use as a cyclical or income-sensitive research candidate linked to rates, credit quality and economic conditions.",
+            "concentration_note": "Bank exposure can cluster around the same macro risks: rates, defaults, lending demand and market stress.",
+        }
+
+    if any(word in sector for word in ["energy", "commodity", "materials"]):
+        return {
+            "key": "cyclical",
+            "label": "Energy / commodity cyclical",
+            "decision_use": "Use as cyclical exposure that may behave differently from technology and consumer growth names.",
+            "concentration_note": "Energy, commodities and materials can be driven by macro, geopolitics and commodity prices rather than company quality alone.",
+        }
+
+    if any(word in sector for word in ["industrial", "aerospace", "defence", "defense"]):
+        return {
+            "key": "industrial",
+            "label": "Industrial / defence compounder",
+            "decision_use": "Use as industrial, infrastructure or defence-linked exposure when the business quality and order book support the thesis.",
+            "concentration_note": "Industrial and defence names can diversify away from pure technology, but still carry cycle, contract and political risk.",
+        }
+
+    if any(word in sector for word in ["telecom", "uk telecom"]):
+        return {
+            "key": "defensive",
+            "label": "Telecom / defensive income candidate",
+            "decision_use": "Use as defensive or income-style exposure only after checking debt, growth and dividend sustainability.",
+            "concentration_note": "Telecom holdings can look defensive but may be slow-growth and debt-sensitive.",
+        }
+
+    return {
+        "key": "research",
+        "label": "Research candidate",
+        "decision_use": "Use the signal as a research prompt, then check business quality, risk, valuation and portfolio fit.",
+        "concentration_note": "Check whether this duplicates a sector, theme or risk you already own.",
+    }
+
 def get_premium_report(symbol, ai_context):
+    cleaned_symbol = symbol.strip().upper()
+    signal = ai_context.get("signal", "HOLD")
+    confidence_value = confidence_number(ai_context.get("confidence", "0%"))
+    role_profile = classify_portfolio_role(cleaned_symbol)
+
+    portfolio_role = role_profile["label"]
+    decision_use = role_profile["decision_use"]
+    concentration_note = role_profile["concentration_note"]
+
+    if signal == "BUY" and confidence_value >= 80:
+        readiness = "Strong research candidate"
+        action_frame = "Research further before buying; the signal is strong, but still needs risk and portfolio-fit checks."
+    elif signal == "BUY":
+        readiness = "Positive but not automatic"
+        action_frame = "Worth researching, but wait for stronger evidence if risk or valuation feels stretched."
+    elif signal == "SELL":
+        readiness = "Caution zone"
+        action_frame = "Avoid rushing in. Understand why the scanner is flagging weakness before considering exposure."
+    else:
+        readiness = "Watch and learn"
+        action_frame = "Keep on the watchlist until the signal, confidence or thesis becomes clearer."
+
+    checklist = [
+        "Do I understand how this business, fund, index or asset makes money or moves?",
+        "Does this fit my time horizon and risk tolerance?",
+        "Am I already exposed to the same sector, ETF, theme or mega-cap names?",
+        "What would make this investment thesis wrong?",
+        "Would I still be comfortable holding this if it fell sharply in the short term?",
+    ]
+
+    return {
+        "headline": f"{cleaned_symbol} Premium Decision Panel",
+        "summary": "Premium view: signal strength, portfolio role, risk fit and what to check before acting.",
+        "confidence": ai_context["confidence"],
+        "meter": confidence_meter(ai_context["confidence"]),
+        "strength": signal_strength_label(ai_context["confidence"]),
+        "risk": ai_context["risk_view"],
+        "next_move": ai_context["watch_next"],
+        "pro_angle": "Premium turns the signal into a structured decision check, not a blind buy/sell instruction.",
+        "portfolio_role": portfolio_role,
+        "decision_use": decision_use,
+        "concentration_note": concentration_note,
+        "readiness": readiness,
+        "action_frame": action_frame,
+        "checklist": checklist,
+    }
     cleaned_symbol = symbol.strip().upper()
     signal = ai_context.get("signal", "HOLD")
     confidence_value = confidence_number(ai_context.get("confidence", "0%"))
@@ -506,6 +647,7 @@ def premium_decision(symbol):
     a{color:#38bdf8;font-weight:900;text-decoration:none;}
     .meter{font-family:monospace;color:#00ffaa;font-size:20px;letter-spacing:2px;}
     .note{background:rgba(0,255,170,0.09);border:1px solid rgba(0,255,170,0.18);border-radius:20px;padding:18px;color:#d1fae5;line-height:1.7;}
+    .button{display:inline-block;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-radius:15px;padding:14px 18px;font-weight:950;text-decoration:none;margin-top:14px;}
     @media(max-width:900px){body{padding:24px;}.grid{grid-template-columns:1fr;}h1{font-size:34px;}}
     </style>
     </head>
@@ -547,6 +689,12 @@ def premium_decision(symbol):
             <h2>Risk and concentration check</h2>
             <p>{{ report.risk }}</p>
             <p>{{ report.concentration_note }}</p>
+        </div>
+
+        <div class="card">
+            <h2>Portfolio fit check</h2>
+            <p>Already own other stocks or ETFs? Use the Portfolio Fit Checker before increasing position size or adding a similar theme.</p>
+            <a class="button" href="/portfolio-fit">Check Portfolio Fit</a>
         </div>
 
         <div class="card">
@@ -711,7 +859,8 @@ def premium_watchlist():
                 <tr><td><a href="/stock/{{ item.ticker }}">{{ item.ticker }}</a></td><td>{{ item.signal }}</td><td>{{ item.confidence }}</td><td>Defensive balance</td></tr>
                 {% endfor %}
             </table>
-            <div class="note">Premium read: do not just chase the strongest BUY signal. Review whether your next addition improves the overall mix.</div>
+                        <div class="note">Premium read: do not just chase the strongest BUY signal. Review whether your next addition improves the overall mix.</div>
+            <a class="button" href="/portfolio-fit">Check Portfolio Fit</a>
         </div>
     </div>
     </body>
@@ -733,18 +882,14 @@ def portfolio_fit():
     holdings_text = ""
     result = None
 
-    role_map = {
-        "core_etf": {"SPY", "QQQ", "DIA", "IWM", "SMH", "VUSA", "VUAG", "VWRP", "VWRL"},
-        "quality": {"MSFT", "AAPL", "GOOGL", "AMZN", "META", "V", "MA", "COST"},
-        "growth": {"NVDA", "AMD", "TSLA", "BTC-USD", "ETH-USD", "SOL-USD", "PLTR", "TTWO"},
-        "defensive": {"KO", "MCD", "JNJ", "PG", "PEP", "WMT", "AZN.L", "GSK.L", "BA.L", "QQ.L"},
-    }
-
     role_labels = {
-        "core_etf": "Core ETF / diversified base",
+        "core_etf": "Core ETF / market exposure",
+        "index": "Market index benchmark",
         "quality": "Quality compounders",
-        "growth": "Growth satellites",
+        "growth": "Growth / technology satellites",
         "defensive": "Defensive balance",
+        "cyclical": "Cyclical exposure",
+        "industrial": "Industrial / defence exposure",
         "research": "Research / unclassified",
     }
 
@@ -759,17 +904,13 @@ def portfolio_fit():
                 holdings.append(ticker)
                 seen.add(ticker)
 
-        buckets = {"core_etf": [], "quality": [], "growth": [], "defensive": [], "research": []}
+        buckets = {key: [] for key in role_labels.keys()}
 
         for ticker in holdings:
-            placed = False
-            for role, tickers in role_map.items():
-                if ticker in tickers:
-                    buckets[role].append(ticker)
-                    placed = True
-                    break
-            if not placed:
-                buckets["research"].append(ticker)
+            role_key = classify_portfolio_role(ticker)["key"]
+            if role_key not in buckets:
+                role_key = "research"
+            buckets[role_key].append(ticker)
 
         total = len(holdings)
         core_count = len(buckets["core_etf"])
@@ -777,6 +918,7 @@ def portfolio_fit():
         quality_count = len(buckets["quality"])
         defensive_count = len(buckets["defensive"])
         research_count = len(buckets["research"])
+        cyclical_count = len(buckets["cyclical"]) + len(buckets["industrial"])
 
         warnings = []
         next_steps = []
@@ -790,6 +932,8 @@ def portfolio_fit():
                 warnings.append("Growth satellite exposure looks heavy. Check whether AI, technology or high-volatility names are dominating the portfolio.")
             if defensive_count == 0 and total >= 4:
                 warnings.append("No obvious defensive balance detected. A portfolio can be strong but still vulnerable if every holding relies on growth momentum.")
+            if cyclical_count >= max(3, total // 2):
+                warnings.append("Cyclical exposure looks heavy. Check whether banks, energy, commodities, industrials or defence names are dominating the portfolio.")
             if total < 4:
                 warnings.append("Portfolio is still concentrated by holding count. Single-stock moves may have a larger impact.")
             if research_count >= 3:
@@ -1636,7 +1780,8 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
     <a class="nav-link tab-button {% if active_tab == 'signals' %}active-tab{% endif %}" href="/?tab=signals">📊 AI Signals</a>
     <a class="nav-link tab-button {% if active_tab == 'radar' %}active-tab{% endif %}" href="/?tab=radar">🌍 Impact Radar</a>
     <a class="nav-link tab-button {% if active_tab == 'watchlist' %}active-tab{% endif %}" href="/?tab=watchlist">📋 AI Watchlist</a>
-    <a class="nav-link" href="/premium-watchlist">🧠 Premium Watchlist</a>
+    <a class="nav-link" href="/premium-watchlist">🧠 Premium Watchlist</a><h2>Risk and concentration check</h2>
+        <a class="nav-link" href="/portfolio-fit">🧩 Portfolio Fit</a>
     <div class="menu-divider"></div>
 
     <div class="nav-section-label">Account</div>
