@@ -509,67 +509,6 @@ def get_premium_report(symbol, ai_context):
         "Would I still be comfortable holding this if it fell sharply in the short term?",
     ]
 
-    return {
-        "headline": f"{cleaned_symbol} Premium Decision Panel",
-        "summary": "Premium view: signal strength, portfolio role, risk fit and what to check before acting.",
-        "confidence": ai_context["confidence"],
-        "meter": confidence_meter(ai_context["confidence"]),
-        "strength": signal_strength_label(ai_context["confidence"]),
-        "risk": ai_context["risk_view"],
-        "next_move": ai_context["watch_next"],
-        "pro_angle": "Premium turns the signal into a structured decision check, not a blind buy/sell instruction.",
-        "portfolio_role": portfolio_role,
-        "decision_use": decision_use,
-        "concentration_note": concentration_note,
-        "readiness": readiness,
-        "action_frame": action_frame,
-        "checklist": checklist,
-    }
-    cleaned_symbol = symbol.strip().upper()
-    signal = ai_context.get("signal", "HOLD")
-    confidence_value = confidence_number(ai_context.get("confidence", "0%"))
-
-    if cleaned_symbol in {"SPY", "QQQ", "DIA", "IWM", "SMH"}:
-        portfolio_role = "Core ETF / diversified exposure"
-        decision_use = "Use as a base layer before taking larger single-stock risk."
-        concentration_note = "ETF exposure can still overlap with large technology holdings, so check what the fund owns before adding similar stocks."
-    elif cleaned_symbol in {"MSFT", "AAPL", "GOOGL", "AMZN", "META", "V", "MA", "COST"}:
-        portfolio_role = "Quality compounder"
-        decision_use = "Use as a long-term quality research candidate if valuation and portfolio concentration are sensible."
-        concentration_note = "This can add quality growth, but may increase US mega-cap or technology exposure if you already own similar names."
-    elif cleaned_symbol in {"NVDA", "AMD", "TSLA", "BTC-USD", "ETH-USD", "SOL-USD"}:
-        portfolio_role = "Growth satellite"
-        decision_use = "Use as a controlled growth allocation, not as the whole portfolio."
-        concentration_note = "Higher-growth themes can move sharply. Position size matters more than the BUY label."
-    elif cleaned_symbol in {"KO", "MCD", "JNJ", "PG", "PEP", "WMT", "AZN.L", "GSK.L"}:
-        portfolio_role = "Defensive balance"
-        decision_use = "Use to add stability, brand strength or defensive earnings exposure."
-        concentration_note = "Defensive stocks can still be expensive or slow-growing, so compare stability against valuation."
-    else:
-        portfolio_role = "Research candidate"
-        decision_use = "Use the signal as a research prompt, then check business quality, risk and portfolio fit."
-        concentration_note = "Check whether this duplicates a sector or theme you already own."
-
-    if signal == "BUY" and confidence_value >= 80:
-        readiness = "Strong research candidate"
-        action_frame = "Research further before buying; the signal is strong, but still needs risk and portfolio-fit checks."
-    elif signal == "BUY":
-        readiness = "Positive but not automatic"
-        action_frame = "Worth researching, but wait for stronger evidence if risk or valuation feels stretched."
-    elif signal == "SELL":
-        readiness = "Caution zone"
-        action_frame = "Avoid rushing in. Understand why the scanner is flagging weakness before considering exposure."
-    else:
-        readiness = "Watch and learn"
-        action_frame = "Keep on the watchlist until the signal, confidence or thesis becomes clearer."
-
-    checklist = [
-        "Do I understand how this business or fund makes money?",
-        "Does this fit my time horizon and risk tolerance?",
-        "Am I already exposed to the same sector, ETF, theme or mega-cap names?",
-        "What would make this investment thesis wrong?",
-        "Would I still be comfortable holding this if it fell sharply in the short term?",
-    ]
 
     return {
         "headline": f"{cleaned_symbol} Premium Decision Panel",
@@ -587,6 +526,8 @@ def get_premium_report(symbol, ai_context):
         "action_frame": action_frame,
         "checklist": checklist,
     }
+
+@app.route("/premium-decision/<symbol>")
 
 @app.route("/premium-decision/<symbol>")
 def premium_decision(symbol):
