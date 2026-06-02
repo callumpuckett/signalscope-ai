@@ -703,6 +703,14 @@ def fetch_live_market_news(limit=8):
     return []
 
 
+def sentiment_from_direction(direction):
+    if "Bullish" in direction:
+        return "positive", "BUY / Positive impact"
+    if "Bearish" in direction:
+        return "negative", "SELL / Negative impact"
+    return "neutral", "HOLD / Watch impact"
+
+
 def score_news_impact(title):
     text = title.lower()
     bullish_hits = sum(1 for word in BULLISH_WORDS if word in text)
@@ -825,6 +833,7 @@ def build_live_headlines(recommendations, impact_radar):
         primary_stock = matched_stocks[0] if matched_stocks else "SPY"
         stock_text = ", ".join(matched_stocks)
         direction, signal_influence, impact_score = score_news_impact(title)
+        impact_class, impact_label = sentiment_from_direction(direction)
         source = str(article.get("source") or "Market News").strip()
         article_url = str(article.get("url") or "/").strip()
         published_label = format_news_time(str(article.get("published_at") or "").strip())
@@ -1061,14 +1070,13 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 <body>
 <div class="sidebar">
     <div class="logo">SignalScope AI</div>
-
     <div class="nav-section-label">Main Menu</div>
     <div class="menu-help">Use these tabs to jump straight to the section you need.</div>
-    <a class="nav-link tab-button {% if active_tab == 'overview' %}active-tab{% endif %}" href="/?tab=overview">🏠 Overview</a>
+     <a class="nav-link tab-button {% if active_tab == 'overview' %}active-tab{% endif %}" href="/?tab=overview">🏠 Overview</a>
+    <a class="nav-link" href="/beginner">🌱 Beginner Start</a>
     <a class="nav-link tab-button {% if active_tab == 'signals' %}active-tab{% endif %}" href="/?tab=signals">📊 AI Signals</a>
     <a class="nav-link tab-button {% if active_tab == 'radar' %}active-tab{% endif %}" href="/?tab=radar">🌍 Impact Radar</a>
     <a class="nav-link tab-button {% if active_tab == 'watchlist' %}active-tab{% endif %}" href="/?tab=watchlist">📋 AI Watchlist</a>
-
     <div class="menu-divider"></div>
 
     <div class="nav-section-label">Account</div>
@@ -1125,6 +1133,15 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
         </div>
     </div>
     <div id="overview-section" class="dashboard-section {% if active_tab == 'overview' %}active-section{% endif %}">
+    <div class="card">
+        <p style="color:#00ffaa;font-weight:900;text-transform:uppercase;letter-spacing:0.12em;margin:0 0 10px 0;">New Investor Path</p>
+        <h2>Start investing without needing expert knowledge</h2>
+        <p style="color:#94a3b8;line-height:1.7;max-width:920px;">
+            SignalScope now includes a beginner route that explains risk, time horizon, starter allocation and what to research first.
+            It is designed for people who want a simple structure before looking at individual stock signals.
+        </p>
+        <a class="upgrade-cta" href="/beginner">Open Beginner Start</a>
+    </div>
     <div class="top-bar" aria-label="Quick search and navigation">
         <form class="smart-search" onsubmit="return runSmartSearch(event)">
             <label for="smartSearchInput">Quick Search</label>
@@ -1137,7 +1154,8 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
         </form>
     </div>
 
-
+ 
+    
     <div class="card">
         <h2>Current UK & US Market Status</h2>
         <p style="color:#94a3b8;line-height:1.7;">
@@ -1171,6 +1189,46 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
         {% else %}
         <div class="premium-signal-callout">🔒 Premium unlocks deeper reasoning behind each signal, including risk read, momentum interpretation and what to watch next.</div>
         {% endif %}
+    </div>
+
+       <div id="beginner-buy-framework" class="card">
+        <p style="color:#00ffaa;font-weight:900;text-transform:uppercase;letter-spacing:0.12em;margin:0 0 10px 0;">Beginner Buy Framework</p>
+        <h2>Start with a clear identity before buying complex stocks or ETFs</h2>
+        <p style="color:#94a3b8;line-height:1.7;max-width:980px;">For a new investor, the first decision is not “what is hot today?” It is “what kind of investor am I?” SignalScope should use the AI signals below as research prompts, but the starter list should stay simple, diversified and easy to understand.</p>
+        <div class="signal-guide-grid">
+            <div class="signal-guide-card"><strong>1. Core first</strong><span>Start with a broad market ETF or simple diversified exposure before adding individual companies.</span></div>
+            <div class="signal-guide-card"><strong>2. Quality next</strong><span>Look for businesses you understand, with durable demand, strong brands, cash flow or clear market leadership.</span></div>
+            <div class="signal-guide-card"><strong>3. Small learning slice</strong><span>Use a controlled percentage for higher-growth names while you build judgement and avoid overconcentration.</span></div>
+            <div class="signal-guide-card"><strong>4. Review monthly</strong><span>Do not chase every signal. Build the habit of checking risk, valuation, concentration and thesis drift.</span></div>
+        </div>
+        <table>
+            <tr><th>Starter bucket</th><th>Example research names</th><th>Why it helps beginners</th><th>How to use SignalScope</th></tr>
+            <tr>
+                <td><strong>Core ETF base</strong></td>
+                <td><a class="stock-link" href="/stock/SPY">SPY</a>, <a class="stock-link" href="/stock/QQQ">QQQ</a></td>
+                <td>Gives diversified market exposure and reduces the pressure to pick the perfect first stock.</td>
+                <td>Check whether the broad market is BUY, HOLD or SELL before adding risk.</td>
+            </tr>
+            <tr>
+                <td><strong>Quality compounders</strong></td>
+                <td><a class="stock-link" href="/stock/MSFT">MSFT</a>, <a class="stock-link" href="/stock/AAPL">AAPL</a>, <a class="stock-link" href="/stock/GOOGL">GOOGL</a></td>
+                <td>Large, understandable businesses can help beginners connect company quality with long-term investing.</td>
+                <td>Use confidence, risk read and AI reason to decide whether to research further, not to blindly buy.</td>
+            </tr>
+            <tr>
+                <td><strong>Growth learning names</strong></td>
+                <td><a class="stock-link" href="/stock/NVDA">NVDA</a>, <a class="stock-link" href="/stock/AMZN">AMZN</a>, <a class="stock-link" href="/stock/META">META</a></td>
+                <td>Shows how growth, AI, cloud and platform businesses behave, but should stay controlled for beginners.</td>
+                <td>Only consider if the signal, confidence and risk view line up with your investor profile.</td>
+            </tr>
+            <tr>
+                <td><strong>Defensive balance</strong></td>
+                <td><a class="stock-link" href="/stock/KO">KO</a>, <a class="stock-link" href="/stock/MCD">MCD</a>, <a class="stock-link" href="/stock/JNJ">JNJ</a></td>
+                <td>Helps beginners see that not every holding needs to be high-growth technology.</td>
+                <td>Use HOLD/BUY signals to understand stability, downside risk and portfolio balance.</td>
+            </tr>
+        </table>
+        <div class="premium-signal-callout">Educational only: this is a starter research framework, not personal financial advice. Beginners should avoid putting all money into one stock, one theme or one signal.</div>
     </div>
 
     <div class="signal-guide-grid">
@@ -1365,6 +1423,287 @@ window.addEventListener('load',function(){var params=new URLSearchParams(window.
 </html>
 """
 
+
+beginner_html = """
+<!DOCTYPE html>
+<html>
+<head>
+<title>Beginner Start — SignalScope AI</title>
+<style>
+*{box-sizing:border-box;}
+body{margin:0;background:radial-gradient(circle at 20% 10%,rgba(0,255,170,0.15),transparent 28%),radial-gradient(circle at 90% 10%,rgba(255,184,107,0.12),transparent 28%),linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
+a{color:#38bdf8;text-decoration:none;font-weight:900;}
+a:hover{text-decoration:underline;}
+.wrap{max-width:1180px;margin:0 auto;}
+.back{display:inline-block;margin-bottom:22px;}
+.hero,.card{background:linear-gradient(180deg,rgba(23,23,23,0.96),rgba(14,14,14,0.96));border:1px solid rgba(255,255,255,0.11);border-radius:30px;padding:32px;box-shadow:0 30px 85px rgba(0,0,0,0.42);margin-bottom:22px;}
+.kicker{color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;}
+h1{font-size:46px;line-height:1.04;margin:0 0 16px 0;letter-spacing:-0.04em;}
+h2{margin:0 0 12px 0;}
+p{color:#cbd5e1;line-height:1.72;}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.field label{display:block;color:#94a3b8;font-size:11px;text-transform:uppercase;letter-spacing:0.12em;font-weight:950;margin-bottom:8px;}
+select,input{width:100%;background:#020617;border:1px solid rgba(255,255,255,0.13);border-radius:15px;color:white;padding:14px;font-weight:800;outline:none;}
+button,.button{display:inline-block;border:none;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-radius:15px;padding:14px 18px;font-weight:950;cursor:pointer;text-decoration:none;margin-top:16px;}
+.result{border:1px solid rgba(0,255,170,0.20);background:linear-gradient(135deg,rgba(0,255,170,0.12),rgba(56,189,248,0.08));}
+.model-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:16px;}
+.model-box{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:18px;padding:16px;}
+.model-box strong{display:block;font-size:26px;margin-bottom:6px;}
+.warning{background:rgba(239,68,68,0.09);border:1px solid rgba(239,68,68,0.20);border-radius:20px;padding:18px;color:#fecaca;line-height:1.65;}
+ul{color:#cbd5e1;line-height:1.75;padding-left:20px;}
+.tag{display:inline-block;background:rgba(56,189,248,0.12);border:1px solid rgba(56,189,248,0.22);color:#bae6fd;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:950;margin:4px 6px 4px 0;}
+@media(max-width:900px){body{padding:24px;}.grid,.form-grid,.model-grid{grid-template-columns:1fr;}h1{font-size:34px;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+    <a class="back" href="/">← Back to dashboard</a>
+    <div class="hero">
+        <p class="kicker">Beginner Investor Path</p>
+        <h1>Start with a simple structure before chasing stock picks.</h1>
+        <p>Answer five plain-English questions. SignalScope will give you a beginner profile, a starter allocation model and the key risks to understand before using the AI signals dashboard.</p>
+        <div><span class="tag">ETF-first thinking</span><span class="tag">Risk guidance</span><span class="tag">Plain English</span><span class="tag">Educational only</span></div>
+    </div>
+    <div class="grid">
+        <div class="card">
+            <h2>Build your starter profile</h2>
+<form method="POST" action="/beginner#beginner-result">
+{% if result %}
+<div id="beginner-result" class="card result">
+    <p class="kicker">Your beginner profile</p>
+    <h2>{{ result.profile }}</h2>
+    <p style="color:#00ffaa;font-weight:950;margin-top:-4px;">✅ Beginner plan created successfully.</p>
+    <p>{{ result.summary }}</p>             <div class="form-grid">
+                    <div class="field"><label for="goal">Main goal</label><select id="goal" name="goal"><option value="growth">Long-term growth</option><option value="income">Income later</option><option value="learning">Learn investing first</option><option value="balanced">Balanced growth and stability</option></select></div>
+                    <div class="field"><label for="horizon">Time horizon</label><select id="horizon" name="horizon"><option value="10plus">10+ years</option><option value="5to10">5–10 years</option><option value="2to5">2–5 years</option><option value="short">Under 2 years</option></select></div>
+                    <div class="field"><label for="risk">Risk comfort</label><select id="risk" name="risk"><option value="medium">Medium</option><option value="low">Low</option><option value="high">High</option></select></div>
+                    <div class="field"><label for="experience">Experience</label><select id="experience" name="experience"><option value="new">Brand new</option><option value="some">Some basics</option><option value="confident">Confident beginner</option></select></div>
+                    <div class="field"><label for="amount">Monthly amount</label><input id="amount" name="amount" type="number" min="0" step="10" placeholder="100"></div>
+                    <div class="field"><label for="style">Preferred style</label><select id="style" name="style"><option value="simple">Keep it simple</option><option value="stocks">ETFs plus some stocks</option><option value="active">More active research</option></select></div>
+                </div>
+                <button type="submit">Create beginner plan</button>
+            </form>
+        </div>
+        <div class="card">
+            <h2>What beginners should avoid first</h2>
+            <ul>
+                <li>Buying random stocks because they are trending online.</li>
+                <li>Putting short-term savings or emergency cash into volatile shares.</li>
+                <li>Owning only one sector, especially only technology.</li>
+                <li>Thinking BUY means guaranteed profit or SELL means guaranteed collapse.</li>
+                <li>Checking prices every hour when the plan is long-term.</li>
+            </ul>
+            <div class="warning"><strong>Important:</strong> SignalScope is educational market software, not personal financial advice. Users should make their own decisions or speak to a regulated adviser.</div>
+        </div>
+    </div>
+   {% if result %}
+<div id="beginner-result" class="card result">
+    <p class="kicker">Your beginner profile</p>
+    <h2>{{ result.profile }}</h2>
+    <p style="color:#00ffaa;font-weight:950;margin-top:-4px;">✅ Beginner plan created successfully.</p>
+    <p>{{ result.summary }}</p>
+
+    <div class="model-grid">
+        <div class="model-box"><strong>{{ result.etf }}%</strong><span>Core ETFs</span></div>
+        <div class="model-box"><strong>{{ result.quality }}%</strong><span>Quality stocks</span></div>
+        <div class="model-box"><strong>{{ result.defensive }}%</strong><span>Defensive names</span></div>
+        <div class="model-box"><strong>{{ result.learning }}%</strong><span>Learning picks</span></div>
+    </div>
+
+    <h2 style="margin-top:24px;">Next steps</h2>
+    <ul>
+        {% for step in result.steps %}
+        <li>{{ step }}</li>
+        {% endfor %}
+    </ul>
+
+<a class="button" href="/?tab=signals#beginner-buy-framework">Open AI Signals</a>
+{% endif %}
+    <div class="card"><h2>How this connects to the main dashboard</h2><p>The beginner path gives the user a structure first. The AI signal table then becomes a research tool instead of a gambling screen.</p></div>
+</div>
+<script>
+window.addEventListener('load', function(){
+    var result = document.getElementById('beginner-result');
+    if(result){
+        result.scrollIntoView({behavior:'smooth', block:'start'});
+    }
+});
+</script>
+</body>
+</html>
+"""
+
+
+def build_beginner_result(form):
+    goal = form.get("goal", "growth")
+    horizon = form.get("horizon", "10plus")
+    risk = form.get("risk", "medium")
+    experience = form.get("experience", "new")
+    style = form.get("style", "simple")
+    amount = form.get("amount", "").strip()
+
+    if horizon == "short":
+        return {
+            "profile": "Short-term saver, not a stock-market starter yet",
+            "summary": "Because your time horizon is under two years, the priority is capital protection and learning. Stocks can move sharply over short periods, so this route should focus on education before risk-taking.",
+            "etf": 0,
+            "quality": 0,
+            "defensive": 0,
+            "learning": 0,
+            "steps": [
+                "Keep emergency money and short-term savings separate from investing money.",
+                "Use the dashboard to learn how markets move before putting real money at risk.",
+                "Only consider investing money that can stay invested for several years.",
+            ],
+        }
+
+    if risk == "low" or goal in {"income", "balanced"}:
+        profile = "Cautious beginner investor"
+        etf, quality, defensive, learning = 75, 10, 10, 5
+        summary = "Your route should start with broad diversification, low complexity and small learning positions. The goal is to build confidence without becoming overexposed to single-stock risk."
+    elif risk == "high" and horizon in {"10plus", "5to10"} and style in {"stocks", "active"}:
+        profile = "Growth-focused beginner investor"
+        etf, quality, defensive, learning = 60, 25, 5, 10
+        summary = "You can handle more growth exposure, but the core still needs to be diversified. Individual stocks should support the plan, not dominate it."
+    else:
+        profile = "Balanced long-term beginner investor"
+        etf, quality, defensive, learning = 70, 15, 10, 5
+        summary = "This is a sensible middle route: a diversified core, a small quality-stock layer and enough flexibility to learn without overtrading."
+
+    monthly_line = f"At around £{amount} per month, automate the core first and keep stock research controlled." if amount else "Decide a monthly amount first, then split it using the model rather than buying randomly."
+
+    steps = [
+        monthly_line,
+        "Start with the core ETF bucket before adding individual stocks.",
+        "Use BUY, HOLD and SELL signals as research prompts, not automatic instructions.",
+        "Avoid putting more than a controlled slice into any single stock while learning.",
+        "Review monthly instead of reacting to every daily market move.",
+    ]
+
+    if experience == "new":
+        steps.insert(1, "Read each stock page in plain English before looking at the confidence score.")
+
+    return {
+        "profile": profile,
+        "summary": summary,
+        "etf": etf,
+        "quality": quality,
+        "defensive": defensive,
+        "learning": learning,
+        "steps": steps,
+    }
+
+
+@app.route("/beginner", methods=["GET", "POST"])
+def beginner():
+    result = None
+    result_html = ""
+
+    if request.method == "POST":
+        result = build_beginner_result(request.form)
+        steps_html = "".join(f"<li>{step}</li>" for step in result["steps"])
+        result_html = f"""
+        <div id="beginner-result" class="card result">
+            <p class="kicker">Your beginner profile</p>
+            <h2>{result["profile"]}</h2>
+            <p style="color:#00ffaa;font-weight:950;margin-top:-4px;">✅ Beginner plan created successfully.</p>
+            <p>{result["summary"]}</p>
+            <div class="model-grid">
+                <div class="model-box"><strong>{result["etf"]}%</strong><span>Core ETFs</span></div>
+                <div class="model-box"><strong>{result["quality"]}%</strong><span>Quality stocks</span></div>
+                <div class="model-box"><strong>{result["defensive"]}%</strong><span>Defensive names</span></div>
+                <div class="model-box"><strong>{result["learning"]}%</strong><span>Learning picks</span></div>
+            </div>
+            <h2 style="margin-top:24px;">Next steps</h2>
+            <ul>{steps_html}</ul>
+            <a class="button" href="/?tab=signals#beginner-buy-framework">Open AI Signals</a>
+           </div>
+        """
+
+    page_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <title>Beginner Start — SignalScope AI</title>
+    <style>
+    *{{box-sizing:border-box;}}
+    html{{scroll-behavior:smooth;}}
+    body{{margin:0;background:radial-gradient(circle at 20% 10%,rgba(0,255,170,0.15),transparent 28%),radial-gradient(circle at 90% 10%,rgba(255,184,107,0.12),transparent 28%),linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}}
+    a{{color:#38bdf8;text-decoration:none;font-weight:900;}}
+    a:hover{{text-decoration:underline;}}
+    .wrap{{max-width:1180px;margin:0 auto;}}
+    .back{{display:inline-block;margin-bottom:22px;}}
+    .hero,.card{{background:linear-gradient(180deg,rgba(23,23,23,0.96),rgba(14,14,14,0.96));border:1px solid rgba(255,255,255,0.11);border-radius:30px;padding:32px;box-shadow:0 30px 85px rgba(0,0,0,0.42);margin-bottom:22px;}}
+    .kicker{{color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;}}
+    h1{{font-size:46px;line-height:1.04;margin:0 0 16px 0;letter-spacing:-0.04em;}}
+    h2{{margin:0 0 12px 0;}}
+    p{{color:#cbd5e1;line-height:1.72;}}
+    .grid{{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;}}
+    .form-grid{{display:grid;grid-template-columns:1fr 1fr;gap:14px;}}
+    .field label{{display:block;color:#94a3b8;font-size:11px;text-transform:uppercase;letter-spacing:0.12em;font-weight:950;margin-bottom:8px;}}
+    select,input{{width:100%;background:#020617;border:1px solid rgba(255,255,255,0.13);border-radius:15px;color:white;padding:14px;font-weight:800;outline:none;}}
+    button,.button{{display:inline-block;border:none;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-radius:15px;padding:14px 18px;font-weight:950;cursor:pointer;text-decoration:none;margin-top:16px;}}
+    .result{{border:1px solid rgba(0,255,170,0.20);background:linear-gradient(135deg,rgba(0,255,170,0.12),rgba(56,189,248,0.08));}}
+    .model-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:16px;}}
+    .model-box{{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:18px;padding:16px;}}
+    .model-box strong{{display:block;font-size:26px;margin-bottom:6px;}}
+    .warning{{background:rgba(239,68,68,0.09);border:1px solid rgba(239,68,68,0.20);border-radius:20px;padding:18px;color:#fecaca;line-height:1.65;}}
+    ul{{color:#cbd5e1;line-height:1.75;padding-left:20px;}}
+    .tag{{display:inline-block;background:rgba(56,189,248,0.12);border:1px solid rgba(56,189,248,0.22);color:#bae6fd;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:950;margin:4px 6px 4px 0;}}
+    @media(max-width:900px){{body{{padding:24px;}}.grid,.form-grid,.model-grid{{grid-template-columns:1fr;}}h1{{font-size:34px;}}}}
+    </style>
+    </head>
+    <body>
+    <div class="wrap">
+        <a class="back" href="/">← Back to dashboard</a>
+        <div class="hero">
+            <p class="kicker">Beginner Investor Path</p>
+            <h1>Start with a simple structure before chasing stock picks.</h1>
+            <p>Answer five plain-English questions. SignalScope will give you a beginner profile, a starter allocation model and the key risks to understand before using the AI signals dashboard.</p>
+            <div><span class="tag">ETF-first thinking</span><span class="tag">Risk guidance</span><span class="tag">Plain English</span><span class="tag">Educational only</span></div>
+        </div>
+        <div class="grid">
+            <div class="card">
+                <h2>Build your starter profile</h2>
+                <form method="POST" action="/beginner#beginner-result">
+                    <div class="form-grid">
+                        <div class="field"><label for="goal">Main goal</label><select id="goal" name="goal"><option value="growth">Long-term growth</option><option value="income">Income later</option><option value="learning">Learn investing first</option><option value="balanced">Balanced growth and stability</option></select></div>
+                        <div class="field"><label for="horizon">Time horizon</label><select id="horizon" name="horizon"><option value="10plus">10+ years</option><option value="5to10">5–10 years</option><option value="2to5">2–5 years</option><option value="short">Under 2 years</option></select></div>
+                        <div class="field"><label for="risk">Risk comfort</label><select id="risk" name="risk"><option value="medium">Medium</option><option value="low">Low</option><option value="high">High</option></select></div>
+                        <div class="field"><label for="experience">Experience</label><select id="experience" name="experience"><option value="new">Brand new</option><option value="some">Some basics</option><option value="confident">Confident beginner</option></select></div>
+                        <div class="field"><label for="amount">Monthly amount</label><input id="amount" name="amount" type="number" min="0" step="10" placeholder="100"></div>
+                        <div class="field"><label for="style">Preferred style</label><select id="style" name="style"><option value="simple">Keep it simple</option><option value="stocks">ETFs plus some stocks</option><option value="active">More active research</option></select></div>
+                    </div>
+                    <button type="submit">Create beginner plan</button>
+                </form>
+            </div>
+            <div class="card">
+                <h2>What beginners should avoid first</h2>
+                <ul>
+                    <li>Buying random stocks because they are trending online.</li>
+                    <li>Putting short-term savings or emergency cash into volatile shares.</li>
+                    <li>Owning only one sector, especially only technology.</li>
+                    <li>Thinking BUY means guaranteed profit or SELL means guaranteed collapse.</li>
+                    <li>Checking prices every hour when the plan is long-term.</li>
+                </ul>
+                <div class="warning"><strong>Important:</strong> SignalScope is educational market software, not personal financial advice.</div>
+            </div>
+        </div>
+        {result_html}
+        <div class="card"><h2>How this connects to the main dashboard</h2><p>The beginner path gives the user a structure first. The AI signal table then becomes a research tool instead of a gambling screen.</p></div>
+    </div>
+    <script>
+    window.addEventListener('load', function(){{
+        var result = document.getElementById('beginner-result');
+        if(result){{result.scrollIntoView({{behavior:'smooth', block:'start'}});}}
+    }});
+    </script>
+    </body>
+    </html>
+    """
+
+    return page_html
 
 login_html = """
 <!DOCTYPE html>
