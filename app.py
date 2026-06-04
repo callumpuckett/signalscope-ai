@@ -189,7 +189,7 @@ def expand_recommendations(rows):
             "ticker": ticker,
             "signal": signal,
             "confidence": confidence,
-            "reason": "Included in the 100-stock SignalScope universe. This keeps the live dashboard complete until the full scanner CSV/API feed is connected.",
+            "reason": "Included in the 100-stock StockRadar universe. This keeps the live dashboard complete until the full scanner CSV/API feed is connected.",
             "sector": SECTOR_MAP.get(ticker, "AI Watchlist"),
         })
         seen.add(ticker)
@@ -343,7 +343,7 @@ def get_stock_ai_context(symbol):
             "ticker": cleaned_symbol,
             "signal": "WATCH",
             "confidence": "50%",
-            "reason": "This ticker is not currently inside the AI recommendation table, so SignalScope marks it as WATCH and gives it a balanced preview score until stronger scanner data is available.",
+            "reason": "This ticker is not currently inside the AI recommendation table, so StockRadar marks it as WATCH and gives it a balanced preview score until stronger scanner data is available.",
         }
 
     confidence_value = confidence_number(matching_item["confidence"])
@@ -538,7 +538,7 @@ def premium_decision(symbol):
         <!DOCTYPE html>
         <html>
         <head>
-        <title>Premium Decision Panel — SignalScope AI</title>
+        <title>Premium Decision Panel — StockRadar</title>
         <style>
         body{margin:0;background:linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
         .wrap{max-width:920px;margin:0 auto;}
@@ -571,7 +571,7 @@ def premium_decision(symbol):
     <!DOCTYPE html>
     <html>
     <head>
-    <title>{{ report.headline }} — SignalScope AI</title>
+    <title>{{ report.headline }} — StockRadar</title>
     <style>
     body{margin:0;background:linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
     .wrap{max-width:1120px;margin:0 auto;}
@@ -687,7 +687,7 @@ def premium_watchlist():
         <!DOCTYPE html>
         <html>
         <head>
-        <title>Premium Watchlist Intelligence — SignalScope AI</title>
+        <title>Premium Watchlist Intelligence — StockRadar</title>
         <style>
         body{margin:0;background:linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
         .wrap{max-width:920px;margin:0 auto;}
@@ -726,7 +726,7 @@ def premium_watchlist():
     <!DOCTYPE html>
     <html>
     <head>
-    <title>Premium Watchlist Intelligence — SignalScope AI</title>
+    <title>Premium Watchlist Intelligence — StockRadar</title>
     <style>
     body{margin:0;background:radial-gradient(circle at 20% 10%,rgba(0,255,170,0.15),transparent 28%),linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
     .wrap{max-width:1180px;margin:0 auto;}
@@ -751,7 +751,7 @@ def premium_watchlist():
         <a href="/">← Back to dashboard</a>
         <div class="card">
             <p class="kicker">Premium Watchlist Intelligence</p>
-            <h1>Decision review for the current SignalScope universe.</h1>
+            <h1>Decision review for the current StockRadar universe.</h1>
             <p>This turns the signal table into a portfolio-style review: strongest opportunity, caution zones, role buckets and theme concentration.</p>
             <div class="grid">
                 <div class="box"><strong>Strongest signal</strong>{% if strongest %}<span><a href="/stock/{{ strongest.ticker }}">{{ strongest.ticker }}</a> — {{ strongest.signal }} • {{ strongest.confidence }}</span>{% else %}<span>No conviction row available.</span>{% endif %}</div>
@@ -913,7 +913,7 @@ def portfolio_fit():
         <!DOCTYPE html>
         <html>
         <head>
-        <title>Premium Portfolio Fit Checker — SignalScope AI</title>
+        <title>Premium Portfolio Fit Checker — StockRadar</title>
         <style>
         body{margin:0;background:linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
         .wrap{max-width:920px;margin:0 auto;}
@@ -952,7 +952,7 @@ def portfolio_fit():
     <!DOCTYPE html>
     <html>
     <head>
-    <title>Premium Portfolio Fit Checker — SignalScope AI</title>
+    <title>Premium Portfolio Fit Checker — StockRadar</title>
     <style>
     *{box-sizing:border-box;}
     body{margin:0;background:radial-gradient(circle at 20% 10%,rgba(0,255,170,0.15),transparent 28%),linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
@@ -979,7 +979,7 @@ def portfolio_fit():
         <div class="card">
             <p class="kicker">Premium Portfolio Fit Checker</p>
             <h1>Does the next stock actually fit?</h1>
-            <p>Enter current holdings separated by commas. SignalScope will classify the structure and flag concentration risks before you add more complexity.</p>
+            <p>Enter current holdings separated by commas. StockRadar will classify the structure and flag concentration risks before you add more complexity.</p>
             <form method="POST" action="/portfolio-fit#portfolio-result">
                 <textarea name="holdings" placeholder="Example: SPY, MSFT, AMZN, GOOGL, NVDA, KO, MCD">{{ holdings_text }}</textarea>
                 <button type="submit">Check portfolio fit</button>
@@ -1511,7 +1511,7 @@ def build_live_headlines(recommendations, impact_radar):
             "stock_links": [{"ticker": "SPY", "url": "/stock/SPY"}, {"ticker": "QQQ", "url": "/stock/QQQ"}],
             "impact_score": "Pending",
             "direction": "Live feed check needed",
-            "source": "SignalScope News Feed",
+            "source": "StockRadar News Feed",
             "published_label": "Live check",
             "premium_text": "NewsAPI is configured, but no literal article titles were returned.",
         }]
@@ -1527,7 +1527,7 @@ def build_live_headlines(recommendations, impact_radar):
         "stock_links": [{"ticker": "SPY", "url": "/stock/SPY"}, {"ticker": "QQQ", "url": "/stock/QQQ"}],
         "impact_score": "Pending",
         "direction": "NewsAPI key required",
-        "source": "SignalScope News Feed",
+        "source": "StockRadar News Feed",
         "published_label": "Setup needed",
         "premium_text": "Add NEWSAPI_KEY to enable literal live market headlines.",
     }]
@@ -1555,7 +1555,7 @@ def safe_build_live_headlines(recommendations, impact_radar):
         "stock_links": [{"ticker": "SPY", "url": "/stock/SPY"}, {"ticker": "QQQ", "url": "/stock/QQQ"}],
         "impact_score": "Pending",
         "direction": "Feed health check active",
-        "source": "SignalScope News Feed",
+        "source": "StockRadar News Feed",
         "published_label": "Live check",
         "premium_text": "Market headlines are reconnecting.",
     }]
@@ -1595,7 +1595,7 @@ html = """
 <!DOCTYPE html>
 <html>
 <head>
-<title>SignalScope AI</title>
+<title>StockRadar</title>
 <style>
 *{box-sizing:border-box;}
 html{scroll-behavior:smooth;}
@@ -1711,7 +1711,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 </head>
 <body>
 <div class="sidebar">
-    <div class="logo">SignalScope AI</div>
+    <div class="logo">StockRadar</div>
     <div class="nav-section-label">Main Menu</div>
     <div class="menu-help">Use these tabs to jump straight to the section you need.</div>
      <a class="nav-link tab-button {% if active_tab == 'overview' %}active-tab{% endif %}" href="/?tab=overview">🏠 Overview</a>
@@ -2079,7 +2079,7 @@ beginner_html = """
 <!DOCTYPE html>
 <html>
 <head>
-<title>Beginner Start — SignalScope AI</title>
+<title>Beginner Start — StockRadar</title>
 <style>
 *{box-sizing:border-box;}
 body{margin:0;background:radial-gradient(circle at 20% 10%,rgba(0,255,170,0.15),transparent 28%),radial-gradient(circle at 90% 10%,rgba(255,184,107,0.12),transparent 28%),linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
@@ -2276,7 +2276,7 @@ def beginner():
     <!DOCTYPE html>
     <html>
     <head>
-    <title>Beginner Start — SignalScope AI</title>
+    <title>Beginner Start — StockRadar</title>
     <style>
     *{{box-sizing:border-box;}}
     html{{scroll-behavior:smooth;}}
@@ -2510,7 +2510,7 @@ def news_health():
 def healthz():
     return {
         "status": "ok",
-        "app": "SignalScope AI",
+        "app": "StockRadar",
         "stripe_configured": stripe_checkout_configured(),
         "owner_login_configured": owner_login_configured(),
     }, 200
