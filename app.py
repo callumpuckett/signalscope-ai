@@ -2016,6 +2016,7 @@ def get_cached_dashboard_data(force_refresh=False):
             for phrase in blocked_news_phrases
         )
     ]
+<a class="nav-link" href="/universe">🌍 Stock Universe</a>
 
     if not live_headlines:
         live_headlines = []
@@ -2206,6 +2207,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
     <a class="nav-link tab-button {% if active_tab == 'watchlist' %}active-tab{% endif %}" href="/?tab=watchlist">📋 AI Watchlist</a>
     <a class="nav-link" href="/premium-watchlist">🧠 Premium Watchlist</a><h2>Risk and concentration check</h2>
         <a class="nav-link" href="/portfolio-fit">🧩 Portfolio Fit</a>
+        <a class="nav-link" href="/universe">🌍 Stock Universe</a>
     <div class="menu-divider"></div>
 
     <div class="nav-section-label">Account</div>
