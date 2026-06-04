@@ -1864,6 +1864,11 @@ def get_cached_dashboard_data(force_refresh=False):
         "ticker_updated": datetime.now().strftime("%H:%M"),
         "impact_radar": impact_radar,
         "live_headlines": live_headlines,
+        "live_news_active": any(
+    str(item.get("label", "")).upper() == "LIVE NEWS"
+    and str(item.get("article_url", "")).startswith("http")
+    for item in live_headlines
+),
         "newsapi_configured": bool(NEWSAPI_KEY),
     }
 html = """
@@ -2026,7 +2031,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
             <div class="live-alert-header">
                 <span class="live-dot"></span>
                 Market News Impact Feed
-                <span style="color:#94a3b8;font-weight:800;letter-spacing:0;text-transform:none;">Updated {{ ticker_updated }}{% if newsapi_configured %} • Live news enabled{% else %} • Theme mode{% endif %}</span>
+Updated {{ ticker_updated }}{% if live_news_active %} • Live headlines{% else %} • Theme mode{% endif %}
             </div>
             <div class="live-alert-track">
                 {% for headline in live_headlines %}
@@ -2833,6 +2838,9 @@ def dashboard():
     if not isinstance(data, dict) or not data.get("market_status"):
         data = prepare_dashboard_data() or {}
 
+    if not isinstance(data, dict):
+        data = {}
+
     data.setdefault("recommendations", [])
     data.setdefault("buy_rows", [])
     data.setdefault("hold_rows", [])
@@ -2850,7 +2858,36 @@ def dashboard():
     data.setdefault("ticker_updated", datetime.now().strftime("%H:%M"))
     data.setdefault("impact_radar", [])
     data.setdefault("live_headlines", [])
+
+    if not data.get("live_headlines"):
+        data["live_headlines"] = [{
+            "label": "STOCKRADAR THEME",
+            "headline": "Market headlines are reconnecting",
+            "text": "StockRadar is showing market-impact themes while live article headlines reconnect.",
+            "url": "/news-health",
+            "article_url": "/news-health",
+            "stock_url": "/stock/SPY",
+            "stock_text": "SPY, QQQ",
+            "stock_links": [
+                {"ticker": "SPY", "url": "/stock/SPY", "signal": "HOLD", "signal_class": "hold", "action_text": "Hold"},
+                {"ticker": "QQQ", "url": "/stock/QQQ", "signal": "BUY", "signal_class": "buy", "action_text": "Buy"},
+            ],
+            "impact_score": "Pending",
+            "direction": "Feed health check active",
+            "source": "StockRadar Market Impact Feed",
+            "published_label": "Theme watch",
+            "premium_text": "StockRadar is showing market-impact themes while live article headlines reconnect.",
+        }]
+
     data.setdefault("newsapi_configured", bool(NEWSAPI_KEY))
+    data.setdefault(
+        "live_news_active",
+        any(
+            str(item.get("label", "")).upper() == "LIVE NEWS"
+            and str(item.get("article_url", "")).startswith("http")
+            for item in data.get("live_headlines", [])
+        )
+    )
     data["active_tab"] = active_tab
 
     return render_template_string(html, **data)
