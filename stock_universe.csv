@@ -1,0 +1,104 @@
+ticker,name,exchange,country,sector,market_cap_rank
+AAPL,Apple Inc,NASDAQ,USA,Technology,1
+MSFT,Microsoft Corp,NASDAQ,USA,Technology,2
+NVDA,NVIDIA Corp,NASDAQ,USA,Semiconductors,3
+AMZN,Amazon.com Inc,NASDAQ,USA,Consumer Discretionary,4
+GOOGL,Alphabet Inc Class A,NASDAQ,USA,Communication Services,5
+META,Meta Platforms Inc,NASDAQ,USA,Communication Services,6
+BRK-B,Berkshire Hathaway Inc,NYSE,USA,Financials,7
+LLY,Eli Lilly and Co,NYSE,USA,Healthcare,8
+AVGO,Broadcom Inc,NASDAQ,USA,Semiconductors,9
+JPM,JPMorgan Chase & Co,NYSE,USA,Financials,10
+TSLA,Tesla Inc,NASDAQ,USA,Consumer Discretionary,11
+V,Visa Inc,NYSE,USA,Financials,12
+UNH,UnitedHealth Group Inc,NYSE,USA,Healthcare,13
+XOM,Exxon Mobil Corp,NYSE,USA,Energy,14
+MA,Mastercard Inc,NYSE,USA,Financials,15
+COST,Costco Wholesale Corp,NASDAQ,USA,Consumer Staples,16
+PG,Procter & Gamble Co,NYSE,USA,Consumer Staples,17
+JNJ,Johnson & Johnson,NYSE,USA,Healthcare,18
+HD,Home Depot Inc,NYSE,USA,Consumer Discretionary,19
+ABBV,AbbVie Inc,NYSE,USA,Healthcare,20
+WMT,Walmart Inc,NYSE,USA,Consumer Staples,21
+NFLX,Netflix Inc,NASDAQ,USA,Communication Services,22
+BAC,Bank of America Corp,NYSE,USA,Financials,23
+KO,Coca-Cola Co,NYSE,USA,Consumer Staples,24
+PEP,PepsiCo Inc,NASDAQ,USA,Consumer Staples,25
+CRM,Salesforce Inc,NYSE,USA,Technology,26
+ORCL,Oracle Corp,NYSE,USA,Technology,27
+AMD,Advanced Micro Devices Inc,NASDAQ,USA,Semiconductors,28
+ADBE,Adobe Inc,NASDAQ,USA,Technology,29
+MCD,McDonald's Corp,NYSE,USA,Consumer Discretionary,30
+CSCO,Cisco Systems Inc,NASDAQ,USA,Technology,31
+WFC,Wells Fargo & Co,NYSE,USA,Financials,32
+ABT,Abbott Laboratories,NYSE,USA,Healthcare,33
+MRK,Merck & Co Inc,NYSE,USA,Healthcare,34
+TMO,Thermo Fisher Scientific Inc,NYSE,USA,Healthcare,35
+ACN,Accenture plc,NYSE,USA,Technology,36
+QCOM,Qualcomm Inc,NASDAQ,USA,Semiconductors,37
+TXN,Texas Instruments Inc,NASDAQ,USA,Semiconductors,38
+INTC,Intel Corp,NASDAQ,USA,Semiconductors,39
+IBM,International Business Machines Corp,NYSE,USA,Technology,40
+GE,GE Aerospace,NYSE,USA,Industrials,41
+CAT,Caterpillar Inc,NYSE,USA,Industrials,42
+GS,Goldman Sachs Group Inc,NYSE,USA,Financials,43
+MS,Morgan Stanley,NYSE,USA,Financials,44
+AXP,American Express Co,NYSE,USA,Financials,45
+DIS,Walt Disney Co,NYSE,USA,Communication Services,46
+NKE,Nike Inc,NYSE,USA,Consumer Discretionary,47
+SBUX,Starbucks Corp,NASDAQ,USA,Consumer Discretionary,48
+PYPL,PayPal Holdings Inc,NASDAQ,USA,Financials,49
+UBER,Uber Technologies Inc,NYSE,USA,Technology,50
+SHOP,Shopify Inc,NYSE,USA,Technology,51
+NOW,ServiceNow Inc,NYSE,USA,Technology,52
+LMT,Lockheed Martin Corp,NYSE,USA,Industrials,53
+RTX,RTX Corp,NYSE,USA,Industrials,54
+NOC,Northrop Grumman Corp,NYSE,USA,Industrials,55
+HON,Honeywell International Inc,NASDAQ,USA,Industrials,56
+BA,Boeing Co,NYSE,USA,Industrials,57
+UPS,United Parcel Service Inc,NYSE,USA,Industrials,58
+FDX,FedEx Corp,NYSE,USA,Industrials,59
+CVX,Chevron Corp,NYSE,USA,Energy,60
+COP,ConocoPhillips,NYSE,USA,Energy,61
+SLB,SLB,NYSE,USA,Energy,62
+OXY,Occidental Petroleum Corp,NYSE,USA,Energy,63
+SPY,SPDR S&P 500 ETF,NYSEARCA,USA,ETF,64
+QQQ,Invesco QQQ Trust,NASDAQ,USA,ETF,65
+DIA,SPDR Dow Jones Industrial Average ETF,NYSEARCA,USA,ETF,66
+IWM,iShares Russell 2000 ETF,NYSEARCA,USA,ETF,67
+SMH,VanEck Semiconductor ETF,NASDAQ,USA,ETF,68
+TLT,iShares 20+ Year Treasury Bond ETF,NASDAQ,USA,ETF,69
+GLD,SPDR Gold Shares,NYSEARCA,USA,Commodity ETF,70
+SLV,iShares Silver Trust,NYSEARCA,USA,Commodity ETF,71
+USO,United States Oil Fund,NYSEARCA,USA,Commodity ETF,72
+SHEL.L,Shell plc,LSE,UK,Energy,73
+AZN.L,AstraZeneca plc,LSE,UK,Healthcare,74
+HSBA.L,HSBC Holdings plc,LSE,UK,Financials,75
+ULVR.L,Unilever plc,LSE,UK,Consumer Staples,76
+BP.L,BP plc,LSE,UK,Energy,77
+GSK.L,GSK plc,LSE,UK,Healthcare,78
+RIO.L,Rio Tinto plc,LSE,UK,Materials,79
+BHP.L,BHP Group Ltd,LSE,UK,Materials,80
+DGE.L,Diageo plc,LSE,UK,Consumer Staples,81
+LLOY.L,Lloyds Banking Group plc,LSE,UK,Financials,82
+BARC.L,Barclays plc,LSE,UK,Financials,83
+VOD.L,Vodafone Group plc,LSE,UK,Communication Services,84
+BT-A.L,BT Group plc,LSE,UK,Communication Services,85
+TSCO.L,Tesco plc,LSE,UK,Consumer Staples,86
+SBRY.L,J Sainsbury plc,LSE,UK,Consumer Staples,87
+BA.L,BAE Systems plc,LSE,UK,Industrials,88
+QQ.L,QinetiQ Group plc,LSE,UK,Industrials,89
+REL.L,RELX plc,LSE,UK,Industrials,90
+LSEG.L,London Stock Exchange Group plc,LSE,UK,Financials,91
+III.L,3i Group plc,LSE,UK,Financials,92
+NG.L,National Grid plc,LSE,UK,Utilities,93
+SSE.L,SSE plc,LSE,UK,Utilities,94
+AV.L,Aviva plc,LSE,UK,Financials,95
+PRU.L,Prudential plc,LSE,UK,Financials,96
+HLMA.L,Halma plc,LSE,UK,Industrials,97
+SGE.L,Sage Group plc,LSE,UK,Technology,98
+EXPN.L,Experian plc,LSE,UK,Industrials,99
+RKT.L,Reckitt Benckiser Group plc,LSE,UK,Consumer Staples,100
+BTC-USD,Bitcoin,Crypto,Crypto,Crypto,101
+ETH-USD,Ethereum,Crypto,Crypto,Crypto,102
+SOL-USD,Solana,Crypto,Crypto,Crypto,103
