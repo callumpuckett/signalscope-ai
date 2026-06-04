@@ -2016,7 +2016,6 @@ def get_cached_dashboard_data(force_refresh=False):
             for phrase in blocked_news_phrases
         )
     ]
-<a class="nav-link" href="/universe">🌍 Stock Universe</a>
 
     if not live_headlines:
         live_headlines = []
