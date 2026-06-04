@@ -326,6 +326,45 @@ def calculate_counts(recommendations):
     high_conviction_count = sum(1 for r in recommendations if confidence_number(r["confidence"]) >= 80)
     return buy_count, hold_count, sell_count, high_conviction_count
 
+def build_signal_lookup(recommendations):
+    return {
+        str(item.get("ticker", "")).strip().upper(): clean_signal(item.get("signal", "HOLD"), item.get("confidence"))
+        for item in recommendations
+        if item.get("ticker")
+    }
+
+
+def build_stock_links_with_signals(tickers, signal_lookup=None):
+    signal_lookup = signal_lookup or {}
+    links = []
+
+    for ticker in tickers:
+        cleaned = str(ticker or "").strip().upper()
+        if not cleaned:
+            continue
+
+        signal = clean_signal(signal_lookup.get(cleaned, "HOLD"))
+        signal_class = signal.lower() if signal in {"BUY", "SELL", "HOLD"} else "hold"
+
+        if signal == "BUY":
+            action_text = "Buy"
+        elif signal == "SELL":
+            action_text = "Sell"
+        else:
+            action_text = "Hold"
+
+        links.append({
+            "ticker": cleaned,
+            "url": f"/stock/{cleaned}",
+            "signal": signal,
+            "signal_class": signal_class,
+            "action_text": action_text,
+        })
+
+    return links or [
+        {"ticker": "SPY", "url": "/stock/SPY", "signal": "HOLD", "signal_class": "hold", "action_text": "Hold"},
+        {"ticker": "QQQ", "url": "/stock/QQQ", "signal": "BUY", "signal_class": "buy", "action_text": "Buy"},
+    ]
 
 def get_stock_ai_context(symbol):
     recommendations = get_recommendations()
@@ -1573,7 +1612,7 @@ def get_market_impact_radar():
 # --- News-style market impact ticker function ---
 def build_live_headlines(recommendations, impact_radar):
     headlines = []
-    live_articles = fetch_live_market_news()
+    live_articles = fetch_live_market_news(signal_lookup = build_signal_lookup(recommendations))
 
     for article in live_articles:
         title = str(article.get("title", "")).strip()
@@ -1597,7 +1636,7 @@ def build_live_headlines(recommendations, impact_radar):
             "article_url": article_url,
             "stock_url": f"/stock/{primary_stock}",
             "stock_text": stock_text,
-            "stock_links": [{"ticker": ticker, "url": f"/stock/{ticker}"} for ticker in matched_stocks],
+"stock_links": build_stock_links_with_signals(matched_stocks, signal_lookup),
             "impact_score": impact_score,
             "direction": direction,
             "source": source,
@@ -1643,7 +1682,7 @@ def build_live_headlines(recommendations, impact_radar):
             "article_url": "/news-health",
             "stock_url": "/stock/SPY",
             "stock_text": "SPY, QQQ",
-            "stock_links": [{"ticker": "SPY", "url": "/stock/SPY"}, {"ticker": "QQQ", "url": "/stock/QQQ"}],
+"stock_links": build_stock_links_with_signals(["SPY", "QQQ"], build_signal_lookup(recommendations)),
             "impact_score": "Pending",
             "direction": "Live feed check needed",
             "source": "StockRadar Market Impact Feed",
@@ -1685,7 +1724,7 @@ def build_live_headlines(recommendations, impact_radar):
         "article_url": "/news-health",
         "stock_url": "/stock/SPY",
         "stock_text": "SPY, QQQ",
-        "stock_links": [{"ticker": "SPY", "url": "/stock/SPY"}, {"ticker": "QQQ", "url": "/stock/QQQ"}],
+"stock_links": build_stock_links_with_signals(["SPY", "QQQ"], signal_lookup),
         "impact_score": "Pending",
         "direction": "Feed health check active",
         "source": "StockRadar Market Impact Feed",
@@ -1713,7 +1752,7 @@ def safe_build_live_headlines(recommendations, impact_radar):
         "article_url": "/news-health",
         "stock_url": "/stock/SPY",
         "stock_text": "SPY, QQQ",
-        "stock_links": [{"ticker": "SPY", "url": "/stock/SPY"}, {"ticker": "QQQ", "url": "/stock/QQQ"}],
+"stock_links": build_stock_links_with_signals(["SPY", "QQQ"], build_signal_lookup(recommendations)),
         "impact_score": "Pending",
         "direction": "Feed health check active",
         "source": "StockRadar News Feed",
@@ -1736,6 +1775,7 @@ def prepare_dashboard_data():
     ]
 
     impact_radar = get_market_impact_radar()
+    signal_lookup = build_signal_lookup(recommendations)
     live_headlines = safe_build_live_headlines(recommendations, impact_radar) or []
 
     blocked_news_phrases = (
@@ -1772,7 +1812,7 @@ def prepare_dashboard_data():
                 "article_url": f"/stock/{primary_stock}",
                 "stock_url": f"/stock/{primary_stock}",
                 "stock_text": ", ".join(stocks),
-                "stock_links": [{"ticker": ticker, "url": f"/stock/{ticker}"} for ticker in stocks],
+"stock_links": build_stock_links_with_signals(stocks, signal_lookup),
                 "impact_score": item.get("impact_score", item.get("impact", "Pending")),
                 "direction": item.get("direction", "Theme watch"),
                 "source": "StockRadar Market Impact Feed",
@@ -1822,7 +1862,11 @@ a:hover{text-decoration:underline;}
 .menu-divider{height:1px;background:rgba(255,255,255,0.08);margin:18px 0;}
 .menu-help{color:#94a3b8;font-size:12px;line-height:1.55;margin:10px 0 14px 0;}
 .owner-box{margin-top:20px;color:#94a3b8;font-size:13px;line-height:1.6;}
-.main{flex:1;padding:48px;overflow-y:auto;max-width:1500px;margin:0 auto;}
+.main{flex:1;padding:48px;overflow-y:auto;max-width:1500px;margin:0 auto;} .top-intel-layout{display:grid;grid-template-columns:minmax(0,1.8fr) minmax(320px,0.8fr);gap:18px;align-items:start;margin-bottom:22px;}
+.top-intel-layout .live-alert-strip{margin-bottom:0;}
+.top-intel-layout .top-bar{position:relative;top:auto;z-index:1;margin:0;padding:0;justify-content:stretch;backdrop-filter:none;}
+.top-intel-layout .smart-search{width:100%;}
+@media(max-width:1100px){.top-intel-layout{grid-template-columns:1fr;}.top-intel-layout .top-bar{margin-top:0;}}
 .top-bar{display:flex;justify-content:flex-end;align-items:center;margin-bottom:22px;gap:14px;position:sticky;top:0;z-index:50;padding:6px 0 12px 0;backdrop-filter:blur(18px);}
 .smart-search{width:min(430px,100%);position:relative;}
 .smart-search label{display:block;color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:0.12em;font-weight:900;margin-bottom:8px;}
@@ -1850,7 +1894,13 @@ a:hover{text-decoration:underline;}
  .live-premium-tag{display:inline-block;background:rgba(255,184,107,0.14);border:1px solid rgba(255,184,107,0.24);color:#fed7aa;border-radius:999px;padding:5px 8px;font-size:11px;font-weight:950;letter-spacing:0.08em;text-transform:uppercase;}
 .live-meta{display:inline-flex;align-items:center;gap:8px;color:#94a3b8;font-size:12px;font-weight:900;}
 .live-score{display:inline-block;background:rgba(56,189,248,0.12);border:1px solid rgba(56,189,248,0.22);color:#bae6fd;border-radius:999px;padding:5px 8px;font-size:11px;font-weight:950;}
-.live-stock-link{display:inline-block;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);color:#e5e7eb;border-radius:999px;padding:5px 8px;font-size:11px;font-weight:950;text-decoration:none;}
+.live-stock-link{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:6px 10px;font-size:11px;font-weight:950;text-decoration:none;border:1px solid rgba(255,255,255,0.12);text-transform:uppercase;}
+.live-stock-link.buy{background:rgba(34,197,94,0.16);border-color:rgba(34,197,94,0.36);color:#bbf7d0;}
+.live-stock-link.sell{background:rgba(239,68,68,0.16);border-color:rgba(239,68,68,0.36);color:#fecaca;}
+.live-stock-link.hold{background:rgba(245,158,11,0.16);border-color:rgba(245,158,11,0.36);color:#fde68a;}
+.live-stock-link::before{content:"";width:7px;height:7px;border-radius:999px;background:currentColor;box-shadow:0 0 12px currentColor;}
+.live-stock-action{font-size:10px;opacity:0.88;border-left:1px solid currentColor;padding-left:6px;}
+.live-stock-link:hover{filter:brightness(1.12);color:white;text-decoration:none;}
 .live-stock-link:hover{background:rgba(0,255,170,0.12);color:white;text-decoration:none;}
 @keyframes tickerMove{0%{transform:translateX(0);}100%{transform:translateX(-50%);}}
 .card,.market-card{background:linear-gradient(180deg,rgba(23,23,23,0.94),rgba(14,14,14,0.94));padding:28px;border-radius:28px;margin-bottom:22px;border:1px solid rgba(255,255,255,0.10);box-shadow:0 28px 82px rgba(0,0,0,0.35),inset 0 1px 0 rgba(255,255,255,0.07);}
@@ -1945,68 +1995,70 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 
 
 <div class="main" id="main-content" tabindex="-1">
-    <div class="live-alert-strip" aria-label="Live market headlines">
-        <div class="live-alert-header">
-            <span class="live-dot"></span>
-            Market News Impact Feed
-            <span style="color:#94a3b8;font-weight:800;letter-spacing:0;text-transform:none;">Updated {{ ticker_updated }}{% if newsapi_configured %} • Live news enabled{% else %} • Theme mode{% endif %}</span>
-        </div>
-        <div class="live-alert-track">
-            {% for headline in live_headlines %}
-            <span class="live-headline">
-<span class="live-news-meta">{{ headline.get('source', 'StockRadar News Feed') }} • {{ headline.get('published_label', 'Fresh') }}</span>
-                <a class="live-news-title" href="{{ headline.get('article_url', '/') }}" {% if headline.get('article_url', '').startswith('http') %}target="_blank" rel="noopener noreferrer"{% endif %}>{{ headline.get('headline', 'Market headlines are reconnecting') }}</a>
-                <span class="live-headline-details">
-                    <span class="live-affected-label">Affected stocks:</span>
-{% for stock in headline.get('stock_links', []) %}
-<a class="live-stock-link" href="{{ stock.get('url', '/') }}">{{ stock.get('ticker', 'SPY') }}</a>
-                    {% endfor %}
-                </span>
-                <span class="live-headline-details">
-<span class="live-score">Impact: {{ headline.get('impact_score', 'Pending') }}</span>
-<span class="live-meta">{{ headline.get('direction', 'Market watch') }}</span>
-                </span>
-            </span>
-            {% endfor %}
-            {% for headline in live_headlines %}
-            <span class="live-headline">
-<span class="live-news-meta">{{ headline.get('source', 'StockRadar News Feed') }} • {{ headline.get('published_label', 'Fresh') }}</span>
-<a class="live-news-title" href="{{ headline.get('article_url', '/') }}" {% if headline.get('article_url', '').startswith('http') %}target="_blank" rel="noopener noreferrer"{% endif %}>{{ headline.get('headline', 'Market headlines are reconnecting') }}</a>
-                <span class="live-headline-details">
-                    <span class="live-affected-label">Affected stocks:</span>
-{% for stock in headline.get('stock_links', []) %}
-<a class="live-stock-link" href="{{ stock.get('url', '/') }}">{{ stock.get('ticker', 'SPY') }}</a>
-                    {% endfor %}
-                </span>
-                <span class="live-headline-details">
-<span class="live-score">Impact: {{ headline.get('impact_score', 'Pending') }}</span>
-<span class="live-meta">{{ headline.get('direction', 'Market watch') }}</span>
-                </span>
-            </span>
-            {% endfor %}
-        </div>
-    </div>
-
-<div class="card" id="investment-compass-card">
-    <p style="color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;">Investment Compass</p>
-    <h1 style="margin:0 0 12px 0;">Save time finding where to start.</h1>
-    <p style="color:#cbd5e1;line-height:1.7;max-width:880px;">Answer a few simple questions and StockRadar will cut through the noise with a plain-English starting profile, a sensible investment structure, and a clearer research direction. Useful if you are new, returning after a break, or just want to avoid wasting hours searching for the right starting point.</p>
-    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;">
-        <a class="upgrade-cta" href="/beginner">Find My Investment Starting Point</a>
-        <a class="nav-link" style="display:inline-block;width:auto;margin:0;background:rgba(255,255,255,0.06);" href="/?tab=signals">View AI Signals</a>
-    </div>
-</div>
-
-    <div class="top-bar" aria-label="Quick search and navigation">
-        <form class="smart-search" onsubmit="return runSmartSearch(event)">
-            <label for="smartSearchInput">Quick Search</label>
-            <div class="smart-search-row">
-                <input id="smartSearchInput" type="search" placeholder="Type a ticker, S&P 500, BUY, AI, Pro..." autocomplete="off" aria-label="Type to search stocks, indexes or dashboard sections">
-                <button type="submit">Search</button>
+    <div class="top-intel-layout">
+        <div class="live-alert-strip" aria-label="Live market headlines">
+            <div class="live-alert-header">
+                <span class="live-dot"></span>
+                Market News Impact Feed
+                <span style="color:#94a3b8;font-weight:800;letter-spacing:0;text-transform:none;">Updated {{ ticker_updated }}{% if newsapi_configured %} • Live news enabled{% else %} • Theme mode{% endif %}</span>
             </div>
-            <div class="search-hint">Type and press Enter or Search. Try: Apple, Tesla, Nvidia, Microsoft, S&P 500, Nasdaq, BUY, AI or Pro.</div>
-            <div id="searchMessage" class="search-message" role="status"></div>
-        </form>
+            <div class="live-alert-track">
+                {% for headline in live_headlines %}
+                <span class="live-headline">
+                    <span class="live-news-meta">{{ headline.get('source', 'StockRadar Market Impact Feed') }} • {{ headline.get('published_label', 'Theme watch') }}</span>
+                    <a class="live-news-title" href="{{ headline.get('article_url', '/') }}" {% if headline.get('article_url', '').startswith('http') %}target="_blank" rel="noopener noreferrer"{% endif %}>{{ headline.get('headline', 'Market headlines are reconnecting') }}</a>
+                    <span class="live-headline-details">
+                        <span class="live-affected-label">Affected stocks:</span>
+                        {% for stock in headline.get('stock_links', []) %}
+                        <a class="live-stock-link {{ stock.get('signal_class', 'hold') }}" href="{{ stock.get('url', '/') }}">{{ stock.get('ticker', 'SPY') }} <span class="live-stock-action">{{ stock.get('action_text', stock.get('signal', 'HOLD')) }}</span></a>
+                        {% endfor %}
+                    </span>
+                    <span class="live-headline-details">
+                        <span class="live-score">Impact: {{ headline.get('impact_score', 'Pending') }}</span>
+                        <span class="live-meta">{{ headline.get('direction', 'Theme watch') }}</span>
+                    </span>
+                </span>
+                {% endfor %}
+                {% for headline in live_headlines %}
+                <span class="live-headline">
+                    <span class="live-news-meta">{{ headline.get('source', 'StockRadar Market Impact Feed') }} • {{ headline.get('published_label', 'Theme watch') }}</span>
+                    <a class="live-news-title" href="{{ headline.get('article_url', '/') }}" {% if headline.get('article_url', '').startswith('http') %}target="_blank" rel="noopener noreferrer"{% endif %}>{{ headline.get('headline', 'Market headlines are reconnecting') }}</a>
+                    <span class="live-headline-details">
+                        <span class="live-affected-label">Affected stocks:</span>
+                        {% for stock in headline.get('stock_links', []) %}
+                        <a class="live-stock-link {{ stock.get('signal_class', 'hold') }}" href="{{ stock.get('url', '/') }}">{{ stock.get('ticker', 'SPY') }} <span class="live-stock-action">{{ stock.get('action_text', stock.get('signal', 'HOLD')) }}</span></a>
+                        {% endfor %}
+                    </span>
+                    <span class="live-headline-details">
+                        <span class="live-score">Impact: {{ headline.get('impact_score', 'Pending') }}</span>
+                        <span class="live-meta">{{ headline.get('direction', 'Theme watch') }}</span>
+                    </span>
+                </span>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="top-bar" aria-label="Quick search and navigation">
+            <form class="smart-search" onsubmit="return runSmartSearch(event)">
+                <label for="smartSearchInput">Quick Search</label>
+                <div class="smart-search-row">
+                    <input id="smartSearchInput" type="search" placeholder="Type a ticker, S&P 500, BUY, AI, Pro..." autocomplete="off" aria-label="Type to search stocks, indexes or dashboard sections">
+                    <button type="submit">Search</button>
+                </div>
+                <div class="search-hint">Type and press Enter or Search. Try: Apple, Tesla, Nvidia, Microsoft, S&P 500, Nasdaq, BUY, AI or Pro.</div>
+                <div id="searchMessage" class="search-message" role="status"></div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card" id="investment-compass-card">
+        <p style="color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;">Investment Compass</p>
+        <h1 style="margin:0 0 12px 0;">Save time finding where to start.</h1>
+        <p style="color:#cbd5e1;line-height:1.7;max-width:880px;">Answer a few simple questions and StockRadar will cut through the noise with a plain-English starting profile, a sensible investment structure, and a clearer research direction. Useful if you are new, returning after a break, or just want to avoid wasting hours searching for the right starting point.</p>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;">
+            <a class="upgrade-cta" href="/beginner">Find My Investment Starting Point</a>
+            <a class="nav-link" style="display:inline-block;width:auto;margin:0;background:rgba(255,255,255,0.06);" href="/?tab=signals">View AI Signals</a>
+        </div>
     </div>
     <div id="overview-section" class="dashboard-section {% if active_tab == 'overview' %}active-section{% endif %}">
 <div class="card">
