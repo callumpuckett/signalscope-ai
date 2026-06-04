@@ -1374,42 +1374,125 @@ def score_news_impact(title):
     return direction, signal_influence, f"{score}/100"
 
 
-def match_news_to_stocks(title):
-    text = title.lower()
+def match_news_to_stocks(title, recommendations=None):
+    text = f" {str(title or '').lower()} "
+    recommendations = recommendations or []
+
+    available_tickers = {
+        str(item.get("ticker", "")).strip().upper()
+        for item in recommendations
+        if item.get("ticker")
+    }
+    available_tickers.update(TRACKED_STOCK_UNIVERSE)
+
+    expanded_keywords = {
+        **NEWS_STOCK_KEYWORDS,
+        "AVGO": ["broadcom", "semiconductor", "chips", "vmware"],
+        "INTC": ["intel", "semiconductor", "chips", "foundry"],
+        "QCOM": ["qualcomm", "snapdragon", "semiconductor", "chips"],
+        "ORCL": ["oracle", "cloud"],
+        "CRM": ["salesforce"],
+        "ADBE": ["adobe"],
+        "CSCO": ["cisco", "networking"],
+        "IBM": ["ibm", "watson"],
+        "NOW": ["servicenow"],
+        "SHOP": ["shopify"],
+        "UBER": ["uber", "ride-hailing", "rideshare"],
+        "BAC": ["bank of america", "banking", "banks"],
+        "MS": ["morgan stanley", "banking", "banks"],
+        "WFC": ["wells fargo", "banking", "banks"],
+        "C": ["citigroup", "citi", "banking", "banks"],
+        "V": ["visa", "payments", "credit card"],
+        "MA": ["mastercard", "payments", "credit card"],
+        "AXP": ["american express", "amex", "payments"],
+        "PYPL": ["paypal", "payments", "fintech"],
+        "CVX": ["chevron", "oil", "energy", "crude"],
+        "COP": ["conocophillips", "oil", "energy", "crude"],
+        "SLB": ["slb", "schlumberger", "oil services", "energy"],
+        "OXY": ["occidental", "oil", "energy", "crude"],
+        "LLOY.L": ["lloyds", "uk banks", "banking"],
+        "BARC.L": ["barclays", "uk banks", "banking"],
+        "GSK.L": ["gsk", "glaxosmithkline", "pharma", "healthcare"],
+        "ULVR.L": ["unilever", "consumer staples"],
+        "DGE.L": ["diageo", "consumer staples"],
+        "RIO.L": ["rio tinto", "mining", "copper", "iron ore"],
+        "BHP.L": ["bhp", "mining", "copper", "iron ore"],
+        "VOD.L": ["vodafone", "telecom"],
+        "BT-A.L": ["bt", "bt group", "telecom"],
+        "TSCO.L": ["tesco", "supermarket", "grocery"],
+        "SBRY.L": ["sainsbury", "sainsbury's", "supermarket", "grocery"],
+        "LLY": ["eli lilly", "lilly", "zepbound", "mounjaro", "weight loss drug"],
+        "JNJ": ["johnson & johnson", "jnj", "healthcare"],
+        "PFE": ["pfizer", "pharma", "vaccine"],
+        "MRK": ["merck", "pharma"],
+        "ABBV": ["abbvie", "pharma"],
+        "UNH": ["unitedhealth", "health insurance", "healthcare"],
+        "TMO": ["thermo fisher", "life sciences"],
+        "ABT": ["abbott", "medical devices", "healthcare"],
+        "NVO": ["novo nordisk", "wegovy", "ozempic"],
+        "ISRG": ["intuitive surgical", "robotic surgery"],
+        "WMT": ["walmart", "retail"],
+        "COST": ["costco", "retail"],
+        "HD": ["home depot", "housing", "home improvement"],
+        "MCD": ["mcdonald", "mcdonald's", "restaurants"],
+        "NKE": ["nike", "sportswear"],
+        "SBUX": ["starbucks", "coffee"],
+        "DIS": ["disney", "streaming", "theme parks"],
+        "KO": ["coca-cola", "coke", "consumer staples"],
+        "PEP": ["pepsico", "pepsi", "consumer staples"],
+        "PG": ["procter", "procter & gamble", "consumer staples"],
+        "BA": ["boeing", "aerospace", "aircraft"],
+        "CAT": ["caterpillar", "construction equipment"],
+        "GE": ["ge aerospace", "general electric"],
+        "DE": ["deere", "john deere", "agriculture equipment"],
+        "LMT": ["lockheed", "defence", "defense", "missiles"],
+        "RTX": ["rtx", "raytheon", "defence", "defense", "missiles"],
+        "NOC": ["northrop", "defence", "defense"],
+        "HON": ["honeywell", "industrial", "aerospace"],
+        "UPS": ["ups", "parcel", "delivery", "logistics"],
+        "FDX": ["fedex", "parcel", "delivery", "logistics"],
+        "DIA": ["dow jones", "blue chips"],
+        "IWM": ["russell 2000", "small caps", "small-cap"],
+        "GLD": ["gold", "safe haven"],
+        "SLV": ["silver", "precious metals"],
+        "USO": ["oil", "crude", "wti", "brent"],
+        "TLT": ["treasury yields", "bonds", "long bonds", "rates"],
+        "HYG": ["high yield", "junk bonds", "credit spreads"],
+        "SOL-USD": ["solana", "crypto", "cryptocurrency"],
+    }
+
     matches = []
 
-    for ticker, keywords in NEWS_STOCK_KEYWORDS.items():
-        if any(keyword in text for keyword in keywords):
+    for ticker in available_tickers:
+        keywords = list(expanded_keywords.get(ticker, []))
+
+        clean_ticker = ticker.replace(".L", "").replace("-USD", "").replace("^", "")
+        if len(clean_ticker) >= 2:
+            keywords.append(clean_ticker.lower())
+
+        sector = SECTOR_MAP.get(ticker)
+        if sector:
+            keywords.append(sector.lower())
+
+        if any(keyword and keyword in text for keyword in keywords):
             matches.append(ticker)
 
-    return matches[:5] or ["SPY", "QQQ"]
+    priority = {
+        "SPY": 1,
+        "QQQ": 2,
+        "SMH": 3,
+        "AAPL": 4,
+        "MSFT": 5,
+        "NVDA": 6,
+        "AMZN": 7,
+        "GOOGL": 8,
+        "META": 9,
+        "TSLA": 10,
+    }
 
+    matches = sorted(set(matches), key=lambda ticker: (priority.get(ticker, 100), ticker))
 
-# --- Helper to build consistent news stock links safely ---
-def build_news_stock_links(tickers, signal_lookup=None):
-    signal_lookup = signal_lookup or {}
-    links = []
-
-    for ticker in tickers:
-        cleaned = str(ticker or "").strip().upper()
-        if not cleaned:
-            continue
-
-        signal = str(signal_lookup.get(cleaned, "HOLD")).strip().upper()
-        if signal not in {"BUY", "SELL", "HOLD"}:
-            signal = "HOLD"
-
-        links.append({
-            "ticker": cleaned,
-            "url": f"/stock/{cleaned}",
-            "signal": signal,
-            "signal_class": signal.lower(),
-        })
-
-    return links or [
-        {"ticker": "SPY", "url": "/stock/SPY", "signal": "HOLD", "signal_class": "hold"},
-        {"ticker": "QQQ", "url": "/stock/QQQ", "signal": "BUY", "signal_class": "buy"},
-    ]
+    return matches[:12] or ["SPY", "QQQ"]
 
 
 def format_news_time(published_at):
@@ -1491,22 +1574,17 @@ def get_market_impact_radar():
 def build_live_headlines(recommendations, impact_radar):
     headlines = []
     live_articles = fetch_live_market_news()
-    signal_lookup = {
-        str(item.get("ticker", "")).strip().upper(): str(item.get("signal", "HOLD")).strip().upper()
-        for item in recommendations
-    }
 
     for article in live_articles:
-        title = article.get("title", "").strip()
+        title = str(article.get("title", "")).strip()
 
         if not title:
             continue
 
-        matched_stocks = match_news_to_stocks(title)
+        matched_stocks = match_news_to_stocks(title, recommendations)
         primary_stock = matched_stocks[0] if matched_stocks else "SPY"
         stock_text = ", ".join(matched_stocks)
         direction, signal_influence, impact_score = score_news_impact(title)
-        impact_class, impact_label = sentiment_from_direction(direction)
         source = str(article.get("source") or "Market News").strip()
         article_url = str(article.get("url") or "/").strip()
         published_label = format_news_time(str(article.get("published_at") or "").strip())
@@ -1519,7 +1597,7 @@ def build_live_headlines(recommendations, impact_radar):
             "article_url": article_url,
             "stock_url": f"/stock/{primary_stock}",
             "stock_text": stock_text,
-            "stock_links": build_news_stock_links(matched_stocks, signal_lookup),
+            "stock_links": [{"ticker": ticker, "url": f"/stock/{ticker}"} for ticker in matched_stocks],
             "impact_score": impact_score,
             "direction": direction,
             "source": source,
@@ -1531,36 +1609,88 @@ def build_live_headlines(recommendations, impact_radar):
         return headlines[:8]
 
     if NEWSAPI_KEY:
-        return [{
-            "label": "LIVE NEWS",
+        fallback_headlines = []
+
+        for item in impact_radar[:8]:
+            stocks = item.get("stocks", []) or ["SPY", "QQQ"]
+            headline = item.get("title", "Market impact theme on watch")
+            direction = item.get("direction", "Market sensitivity")
+            impact_score = item.get("impact_score", item.get("impact", "Pending"))
+            theme = item.get("free_view") or item.get("theme") or headline
+            primary_stock = stocks[0] if stocks else "SPY"
+
+            fallback_headlines.append({
+                "label": "STOCKRADAR THEME",
+                "headline": headline,
+                "text": theme,
+                "url": f"/stock/{primary_stock}",
+                "article_url": f"/stock/{primary_stock}",
+                "stock_url": f"/stock/{primary_stock}",
+                "stock_text": ", ".join(stocks),
+                "stock_links": [{"ticker": ticker, "url": f"/stock/{ticker}"} for ticker in stocks],
+                "impact_score": impact_score,
+                "direction": direction,
+                "source": "StockRadar Market Impact Feed",
+                "published_label": "Theme watch",
+                "premium_text": item.get("premium_view", theme),
+            })
+
+        return fallback_headlines or [{
+            "label": "STOCKRADAR THEME",
             "headline": "Live market headlines are temporarily unavailable",
-            "text": "NewsAPI is configured, but no literal article titles were returned.",
-            "url": "/",
-            "article_url": "/",
+            "text": "Live article headlines are temporarily unavailable, so StockRadar is showing market-impact themes.",
+            "url": "/news-health",
+            "article_url": "/news-health",
             "stock_url": "/stock/SPY",
             "stock_text": "SPY, QQQ",
-            "stock_links": build_news_stock_links(["SPY", "QQQ"], signal_lookup),
+            "stock_links": [{"ticker": "SPY", "url": "/stock/SPY"}, {"ticker": "QQQ", "url": "/stock/QQQ"}],
             "impact_score": "Pending",
             "direction": "Live feed check needed",
-            "source": "StockRadar News Feed",
-            "published_label": "Live check",
-            "premium_text": "NewsAPI is configured, but no literal article titles were returned.",
+            "source": "StockRadar Market Impact Feed",
+            "published_label": "Theme watch",
+            "premium_text": "Live article headlines are temporarily unavailable, so StockRadar is showing market-impact themes.",
         }]
 
-    return [{
-        "label": "LIVE NEWS",
-        "headline": "Add NEWSAPI_KEY to enable literal live market headlines",
-        "text": "Add NEWSAPI_KEY to enable literal live market headlines.",
-        "url": "/",
-        "article_url": "/",
+    fallback_headlines = []
+
+    for item in impact_radar[:8]:
+        stocks = item.get("stocks", []) or ["SPY", "QQQ"]
+        headline = item.get("title", "Market impact theme on watch")
+        direction = item.get("direction", "Market sensitivity")
+        impact_score = item.get("impact_score", item.get("impact", "Pending"))
+        theme = item.get("free_view") or item.get("theme") or headline
+        primary_stock = stocks[0] if stocks else "SPY"
+
+        fallback_headlines.append({
+            "label": "STOCKRADAR THEME",
+            "headline": headline,
+            "text": theme,
+            "url": f"/stock/{primary_stock}",
+            "article_url": f"/stock/{primary_stock}",
+            "stock_url": f"/stock/{primary_stock}",
+            "stock_text": ", ".join(stocks),
+            "stock_links": [{"ticker": ticker, "url": f"/stock/{ticker}"} for ticker in stocks],
+            "impact_score": impact_score,
+            "direction": direction,
+            "source": "StockRadar Market Impact Feed",
+            "published_label": "Theme watch",
+            "premium_text": item.get("premium_view", theme),
+        })
+
+    return fallback_headlines or [{
+        "label": "STOCKRADAR THEME",
+        "headline": "Market headlines are reconnecting",
+        "text": "StockRadar is showing market-impact themes while live article headlines reconnect.",
+        "url": "/news-health",
+        "article_url": "/news-health",
         "stock_url": "/stock/SPY",
         "stock_text": "SPY, QQQ",
-        "stock_links": build_news_stock_links(["SPY", "QQQ"], signal_lookup),
+        "stock_links": [{"ticker": "SPY", "url": "/stock/SPY"}, {"ticker": "QQQ", "url": "/stock/QQQ"}],
         "impact_score": "Pending",
-        "direction": "NewsAPI key required",
-        "source": "StockRadar News Feed",
-        "published_label": "Setup needed",
-        "premium_text": "Add NEWSAPI_KEY to enable literal live market headlines.",
+        "direction": "Feed health check active",
+        "source": "StockRadar Market Impact Feed",
+        "published_label": "Theme watch",
+        "premium_text": "StockRadar is showing market-impact themes while live article headlines reconnect.",
     }]
 
 def safe_build_live_headlines(recommendations, impact_radar):
@@ -1583,7 +1713,7 @@ def safe_build_live_headlines(recommendations, impact_radar):
         "article_url": "/news-health",
         "stock_url": "/stock/SPY",
         "stock_text": "SPY, QQQ",
-        "stock_links": build_news_stock_links(["SPY", "QQQ"], {"SPY": "HOLD", "QQQ": "BUY"}),
+        "stock_links": [{"ticker": "SPY", "url": "/stock/SPY"}, {"ticker": "QQQ", "url": "/stock/QQQ"}],
         "impact_score": "Pending",
         "direction": "Feed health check active",
         "source": "StockRadar News Feed",
@@ -1593,12 +1723,62 @@ def safe_build_live_headlines(recommendations, impact_radar):
 
 def prepare_dashboard_data():
     recommendations = get_recommendations()
-    impact_radar = get_market_impact_radar()
     buy_rows, hold_rows, sell_rows, conviction_rows = split_rows(recommendations)
     buy_count, hold_count, sell_count, high_conviction_count = calculate_counts(recommendations)
 
-    universe = build_symbol_universe(recommendations)
-    market_snapshot = [fetch_symbol_snapshot(symbol, label, market) for symbol, label, market in universe]
+    market_snapshot = [
+        fetch_symbol_snapshot("^GSPC", "S&P 500", "US Index"),
+        fetch_symbol_snapshot("^IXIC", "Nasdaq Composite", "US Index"),
+        fetch_symbol_snapshot("SPY", "SPDR S&P 500 ETF", "US ETF"),
+        fetch_symbol_snapshot("QQQ", "Invesco QQQ", "US ETF"),
+        fetch_symbol_snapshot("^FTSE", "FTSE 100", "UK Index"),
+        fetch_symbol_snapshot("BP.L", "BP", "UK Stock"),
+    ]
+
+    impact_radar = get_market_impact_radar()
+    live_headlines = safe_build_live_headlines(recommendations, impact_radar) or []
+
+    blocked_news_phrases = (
+        "Add NEWSAPI_KEY",
+        "NEWSAPI_KEY",
+        "NewsAPI key required",
+        "Setup needed",
+    )
+
+    live_headlines = [
+        headline for headline in live_headlines
+        if not any(
+            phrase in str(headline.get("headline", ""))
+            or phrase in str(headline.get("text", ""))
+            or phrase in str(headline.get("direction", ""))
+            or phrase in str(headline.get("published_label", ""))
+            for phrase in blocked_news_phrases
+        )
+    ]
+
+    if not live_headlines:
+        live_headlines = []
+        for item in impact_radar[:8]:
+            stocks = item.get("stocks", []) or ["SPY", "QQQ"]
+            primary_stock = stocks[0] if stocks else "SPY"
+            headline = item.get("title", "Market impact theme on watch")
+            theme = item.get("free_view") or item.get("theme") or headline
+
+            live_headlines.append({
+                "label": "STOCKRADAR THEME",
+                "headline": headline,
+                "text": theme,
+                "url": f"/stock/{primary_stock}",
+                "article_url": f"/stock/{primary_stock}",
+                "stock_url": f"/stock/{primary_stock}",
+                "stock_text": ", ".join(stocks),
+                "stock_links": [{"ticker": ticker, "url": f"/stock/{ticker}"} for ticker in stocks],
+                "impact_score": item.get("impact_score", item.get("impact", "Pending")),
+                "direction": item.get("direction", "Theme watch"),
+                "source": "StockRadar Market Impact Feed",
+                "published_label": "Theme watch",
+                "premium_text": item.get("premium_view", theme),
+            })
 
     return {
         "recommendations": recommendations,
@@ -1617,11 +1797,9 @@ def prepare_dashboard_data():
         "last_updated": datetime.now().strftime("%d %b %Y, %H:%M"),
         "ticker_updated": datetime.now().strftime("%H:%M"),
         "impact_radar": impact_radar,
-        "live_headlines": safe_build_live_headlines(recommendations, impact_radar) or [],
+        "live_headlines": live_headlines,
         "newsapi_configured": bool(NEWSAPI_KEY),
     }
-
-
 html = """
 <!DOCTYPE html>
 <html>
@@ -1638,165 +1816,1111 @@ a:hover{text-decoration:underline;}
 .nav-link{display:block;padding:14px 14px;border-radius:16px;color:#dbeafe;margin:8px 0;background:rgba(255,255,255,0.04);text-decoration:none;font-weight:900;line-height:1.25;}
 .nav-link:hover{background:rgba(0,255,170,0.10);text-decoration:none;}
 .nav-section-label{color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.13em;font-weight:950;margin:18px 0 8px 0;}
+.tab-button{display:block;border:1px solid transparent;width:100%;text-align:left;cursor:pointer;font-family:inherit;text-decoration:none;appearance:none;-webkit-appearance:none;}
+.tab-button.active-tab{background:rgba(0,255,170,0.16);color:white;border:1px solid rgba(0,255,170,0.24);box-shadow:0 12px 32px rgba(0,255,170,0.08);}
 .pro-button{background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;font-weight:950;}
 .menu-divider{height:1px;background:rgba(255,255,255,0.08);margin:18px 0;}
 .menu-help{color:#94a3b8;font-size:12px;line-height:1.55;margin:10px 0 14px 0;}
 .owner-box{margin-top:20px;color:#94a3b8;font-size:13px;line-height:1.6;}
-.main{flex:1;padding:34px 48px 48px 48px;overflow-y:auto;max-width:1500px;margin:0 auto;}
-.card,.market-card{background:linear-gradient(180deg,rgba(23,23,23,0.94),rgba(14,14,14,0.94));padding:28px;border-radius:28px;margin-bottom:22px;border:1px solid rgba(255,255,255,0.10);box-shadow:0 28px 82px rgba(0,0,0,0.35),inset 0 1px 0 rgba(255,255,255,0.07);}
-.kicker{color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;}
-h1{font-size:44px;line-height:1.04;margin:0 0 16px 0;letter-spacing:-0.04em;}
-h2{margin:0 0 14px 0;}
-p,li{color:#cbd5e1;line-height:1.7;}
-.button,.upgrade-cta{display:inline-block;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-radius:15px;padding:14px 18px;font-weight:950;text-decoration:none;border:none;cursor:pointer;}
-.summary-grid,.market-grid,.feature-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:18px;margin-bottom:22px;}
-.summary-card{background:linear-gradient(180deg,rgba(23,23,23,0.94),rgba(14,14,14,0.94));padding:24px;border-radius:24px;border:1px solid rgba(255,255,255,0.10);}
-.summary-card h2{font-size:42px;margin:0 0 4px 0;}
-.summary-card p{color:#94a3b8;margin:0;font-weight:800;}
-.market-card small{color:#94a3b8;text-transform:uppercase;letter-spacing:0.10em;font-weight:900;font-size:11px;}
-.market-card h3{font-size:20px;margin:10px 0;}
-.status-pill{padding:7px 11px;border-radius:999px;font-weight:950;font-size:12px;display:inline-block;}
-.status-pill.buy{background:rgba(34,197,94,0.14);color:#bbf7d0;border:1px solid rgba(34,197,94,0.28);}
-.status-pill.sell{background:rgba(239,68,68,0.14);color:#fecaca;border:1px solid rgba(239,68,68,0.28);}
-.status-pill.hold{background:rgba(245,158,11,0.14);color:#fde68a;border:1px solid rgba(245,158,11,0.28);}
-table{width:100%;border-collapse:collapse;margin-top:16px;}
-th,td{text-align:left;padding:13px;border-bottom:1px solid rgba(255,255,255,0.08);vertical-align:top;}
-th{color:#94a3b8;text-transform:uppercase;letter-spacing:0.08em;font-size:12px;}
-.signal-buy{color:#86efac;font-weight:950;}
-.signal-sell{color:#fca5a5;font-weight:950;}
-.signal-hold{color:#fde68a;font-weight:950;}
-.live-alert-strip{margin-bottom:22px;background:linear-gradient(90deg,rgba(0,255,170,0.12),rgba(56,189,248,0.10),rgba(255,184,107,0.10));border:1px solid rgba(255,255,255,0.12);border-radius:22px;overflow:hidden;box-shadow:0 22px 60px rgba(0,0,0,0.28);backdrop-filter:blur(18px);}
+.main{flex:1;padding:48px;overflow-y:auto;max-width:1500px;margin:0 auto;}
+.top-bar{display:flex;justify-content:flex-end;align-items:center;margin-bottom:22px;gap:14px;position:sticky;top:0;z-index:50;padding:6px 0 12px 0;backdrop-filter:blur(18px);}
+.smart-search{width:min(430px,100%);position:relative;}
+.smart-search label{display:block;color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:0.12em;font-weight:900;margin-bottom:8px;}
+.smart-search-row{display:flex;gap:10px;background:linear-gradient(135deg,rgba(38,38,38,0.96),rgba(15,23,42,0.92));border:1px solid rgba(255,255,255,0.12);border-radius:20px;padding:9px;box-shadow:0 22px 60px rgba(0,0,0,0.30),0 0 40px rgba(0,255,170,0.05);}
+.smart-search input{flex:1;background:transparent;border:none;color:white;font-size:15px;font-weight:700;outline:none;padding:9px 10px;min-width:0;}
+.smart-search input::placeholder{color:#64748b;}
+.smart-search button{background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border:none;border-radius:14px;padding:10px 15px;font-weight:950;cursor:pointer;}
+.search-hint{color:#94a3b8;font-size:12px;margin-top:8px;line-height:1.45;}
+.search-message{display:none;margin-top:8px;color:#ffce4a;font-size:13px;font-weight:800;}
+.live-alert-strip{position:sticky;top:0;z-index:60;margin-bottom:22px;background:linear-gradient(90deg,rgba(0,255,170,0.12),rgba(56,189,248,0.10),rgba(255,184,107,0.10));border:1px solid rgba(255,255,255,0.12);border-radius:22px;overflow:hidden;box-shadow:0 22px 60px rgba(0,0,0,0.28);backdrop-filter:blur(18px);}
 .live-alert-header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.08);font-weight:950;color:white;text-transform:uppercase;letter-spacing:0.08em;font-size:12px;}
 .live-dot{width:9px;height:9px;border-radius:999px;background:#22c55e;box-shadow:0 0 18px rgba(34,197,94,0.8);}
-.live-alert-track{display:flex;gap:18px;overflow-x:auto;padding:13px 16px;align-items:stretch;}
-.live-headline{display:inline-flex;flex-direction:column;align-items:flex-start;gap:9px;min-width:420px;max-width:560px;color:#e5e7eb;text-decoration:none;font-weight:800;background:rgba(2,6,23,0.35);border:1px solid rgba(255,255,255,0.08);border-radius:18px;padding:14px 16px;white-space:normal;}
+.live-alert-track{display:flex;gap:24px;white-space:nowrap;padding:13px 16px;animation:tickerMove 52s linear infinite;align-items:stretch;}
+.live-alert-strip:hover .live-alert-track{animation-play-state:paused;}
+.live-headline{display:inline-flex;flex-direction:column;align-items:flex-start;gap:9px;min-width:520px;max-width:620px;color:#e5e7eb;text-decoration:none;font-weight:800;background:rgba(2,6,23,0.35);border:1px solid rgba(255,255,255,0.08);border-radius:18px;padding:14px 16px;white-space:normal;}
+.live-headline-main{display:flex;align-items:center;gap:10px;line-height:1.35;}
+.live-headline-main a:last-child{color:#e5e7eb;text-decoration:none;}
 .live-headline-details{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-left:2px;}
 .live-news-meta{color:#94a3b8;font-size:12px;font-weight:950;text-transform:none;letter-spacing:0.02em;}
 .live-news-title{display:block;color:white;font-size:15px;font-weight:950;line-height:1.35;text-decoration:none;}
 .live-news-title:hover{color:#ccfbf1;text-decoration:none;}
 .live-affected-label{color:#94a3b8;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:0.09em;margin-right:2px;}
+.live-headline:hover{text-decoration:none;color:white;}
 .live-tag{display:inline-block;background:rgba(0,255,170,0.12);border:1px solid rgba(0,255,170,0.20);color:#bbf7d0;border-radius:999px;padding:5px 8px;font-size:11px;font-weight:950;letter-spacing:0.08em;text-transform:uppercase;}
+ .live-premium-tag{display:inline-block;background:rgba(255,184,107,0.14);border:1px solid rgba(255,184,107,0.24);color:#fed7aa;border-radius:999px;padding:5px 8px;font-size:11px;font-weight:950;letter-spacing:0.08em;text-transform:uppercase;}
+.live-meta{display:inline-flex;align-items:center;gap:8px;color:#94a3b8;font-size:12px;font-weight:900;}
 .live-score{display:inline-block;background:rgba(56,189,248,0.12);border:1px solid rgba(56,189,248,0.22);color:#bae6fd;border-radius:999px;padding:5px 8px;font-size:11px;font-weight:950;}
-.live-stock-link{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:5px 9px;font-size:11px;font-weight:950;text-decoration:none;border:1px solid rgba(255,255,255,0.12);}
-.live-stock-link.buy{background:rgba(34,197,94,0.16);border-color:rgba(34,197,94,0.34);color:#bbf7d0;}
-.live-stock-link.sell{background:rgba(239,68,68,0.16);border-color:rgba(239,68,68,0.34);color:#fecaca;}
-.live-stock-link.hold{background:rgba(245,158,11,0.16);border-color:rgba(245,158,11,0.34);color:#fde68a;}
-.live-stock-link::before{content:"";width:7px;height:7px;border-radius:999px;background:currentColor;box-shadow:0 0 12px currentColor;}
-.live-stock-link:hover{filter:brightness(1.12);color:white;text-decoration:none;}
-@media(max-width:900px){body{display:block;}.sidebar{width:100%;min-height:auto;position:relative;}.main{padding:24px;}.live-headline{min-width:320px;}h1{font-size:34px;}}
+.live-stock-link{display:inline-block;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);color:#e5e7eb;border-radius:999px;padding:5px 8px;font-size:11px;font-weight:950;text-decoration:none;}
+.live-stock-link:hover{background:rgba(0,255,170,0.12);color:white;text-decoration:none;}
+@keyframes tickerMove{0%{transform:translateX(0);}100%{transform:translateX(-50%);}}
+.card,.market-card{background:linear-gradient(180deg,rgba(23,23,23,0.94),rgba(14,14,14,0.94));padding:28px;border-radius:28px;margin-bottom:22px;border:1px solid rgba(255,255,255,0.10);box-shadow:0 28px 82px rgba(0,0,0,0.35),inset 0 1px 0 rgba(255,255,255,0.07);}
+.summary-grid,.market-grid,.feature-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:18px;margin-bottom:22px;}
+.feature-grid{grid-template-columns:repeat(3,1fr);}
+.summary-card{cursor:pointer;transition:transform 0.18s ease,box-shadow 0.18s ease,border-color 0.18s ease;position:relative;overflow:hidden;border:none;text-align:left;color:white;font-family:inherit;width:100%;}
+.summary-card:hover{transform:translateY(-4px);border-color:rgba(0,255,170,0.30);}
+.summary-card h2{font-size:42px;margin:0 0 4px 0;}
+.summary-card p{color:#94a3b8;margin:0;font-weight:800;}
+.market-card small{color:#94a3b8;text-transform:uppercase;letter-spacing:0.10em;font-weight:900;font-size:11px;}
+.market-card h3{font-size:20px;margin:10px 0;}
+.status-pill{padding:7px 11px;border-radius:999px;font-weight:950;font-size:12px;}
+.status-open{background:rgba(34,197,94,0.14);color:#86efac;}
+.status-closed{background:rgba(239,68,68,0.14);color:#fca5a5;}
+.buy{color:#22c55e;font-weight:bold;}
+.sell{color:#ef4444;font-weight:bold;}
+.hold{color:#f59e0b;font-weight:bold;}
+table{width:100%;border-collapse:collapse;margin-top:16px;}
+th,td{text-align:left;padding:13px;border-bottom:1px solid rgba(255,255,255,0.08);vertical-align:top;}
+th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
+.panel{display:none;}
+.panel.open{display:block;animation:fadeIn 0.22s ease;}
+.dashboard-section{display:none;}
+.dashboard-section.active-section{display:block;animation:fadeIn 0.22s ease;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+.notice{margin-top:18px;padding:18px;border-radius:18px;background:rgba(0,255,170,0.08);border:1px solid rgba(0,255,170,0.16);}
+.notice h3{margin:0 0 8px 0;}
+.notice p{color:#cbd5e1;line-height:1.6;}
+.upgrade-cta{display:inline-block;margin-top:8px;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;padding:12px 16px;border-radius:14px;font-weight:950;}
+.empty-state{color:#94a3b8;padding:18px;background:rgba(255,255,255,0.04);border-radius:16px;margin-top:12px;}
+.signal-guide-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:22px;}
+.signal-guide-card{background:rgba(255,255,255,0.055);border:1px solid rgba(255,255,255,0.10);border-radius:20px;padding:18px;line-height:1.55;}
+.signal-guide-card strong{display:block;color:white;margin-bottom:6px;font-size:16px;}
+.signal-guide-card span{color:#94a3b8;font-size:13px;}
+.premium-signal-callout{margin-top:18px;padding:18px;border-radius:20px;background:linear-gradient(135deg,rgba(0,255,170,0.12),rgba(255,184,107,0.08));border:1px solid rgba(0,255,170,0.18);color:#d1fae5;line-height:1.65;}
+.highlight-target{animation:targetPulse 1.4s ease;}
+@keyframes targetPulse{0%{box-shadow:0 0 0 0 rgba(0,255,170,0.42);}100%{box-shadow:0 0 0 18px rgba(0,255,170,0);}}
+.impact-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:18px;}
+.impact-card{background:linear-gradient(180deg,rgba(15,23,42,0.94),rgba(12,12,12,0.94));border:1px solid rgba(255,255,255,0.10);border-radius:24px;padding:22px;box-shadow:0 24px 65px rgba(0,0,0,0.30);}
+.impact-card small{display:block;color:#00ffaa;text-transform:uppercase;letter-spacing:0.12em;font-size:11px;font-weight:950;margin-bottom:10px;}
+.impact-card h3{font-size:22px;margin:0 0 10px 0;}
+.impact-pill{display:inline-block;padding:7px 11px;border-radius:999px;background:rgba(251,191,36,0.12);color:#fde68a;font-weight:950;font-size:12px;text-transform:uppercase;margin-bottom:12px;}
+.impact-score{font-size:34px;font-weight:950;color:white;margin:10px 0 4px 0;letter-spacing:-0.04em;}
+.impact-direction{color:#94a3b8;font-size:13px;font-weight:900;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px;}
+.watch-next{margin-top:12px;padding:13px;border-radius:15px;background:rgba(56,189,248,0.09);border:1px solid rgba(56,189,248,0.18);color:#dbeafe;line-height:1.6;}
+.radar-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:18px 0;}
+.radar-summary-card{background:rgba(255,255,255,0.055);border:1px solid rgba(255,255,255,0.10);border-radius:18px;padding:16px;}
+.radar-summary-card strong{display:block;color:white;font-size:22px;margin-bottom:4px;}
+.radar-summary-card span{color:#94a3b8;font-size:13px;font-weight:800;}
+.impact-card p{color:#cbd5e1;line-height:1.65;}
+.impact-stocks{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;}
+.impact-stock{display:inline-block;background:rgba(56,189,248,0.10);border:1px solid rgba(56,189,248,0.20);border-radius:999px;padding:7px 10px;color:#bae6fd;font-size:12px;font-weight:900;}
+.premium-impact{margin-top:14px;padding:14px;border-radius:16px;background:rgba(0,255,170,0.08);border:1px solid rgba(0,255,170,0.16);color:#d1fae5;line-height:1.6;}
+.locked-impact{margin-top:14px;padding:14px;border-radius:16px;background:rgba(239,68,68,0.09);border:1px solid rgba(239,68,68,0.18);color:#fecaca;line-height:1.6;}
+.filter-panel{margin-top:18px;background:linear-gradient(135deg,rgba(15,23,42,0.88),rgba(5,5,5,0.72));border:1px solid rgba(255,255,255,0.10);border-radius:24px;padding:18px;}
+.filter-grid{display:grid;grid-template-columns:1.1fr 0.9fr 0.8fr;gap:14px;align-items:end;}
+.filter-control label{display:block;color:#94a3b8;font-size:11px;text-transform:uppercase;letter-spacing:0.12em;font-weight:950;margin-bottom:8px;}
+.filter-control input,.filter-control select{width:100%;background:#020617;border:1px solid rgba(255,255,255,0.13);border-radius:15px;color:white;padding:13px 14px;font-weight:800;outline:none;}
+.filter-control input::placeholder{color:#64748b;}
+.filter-buttons{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px;}
+.filter-button{border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.06);color:white;border-radius:999px;padding:10px 13px;font-weight:950;cursor:pointer;}
+.filter-button.active-filter{background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-color:transparent;}
+.filter-status{margin-top:12px;color:#94a3b8;font-size:13px;font-weight:800;}
+.hidden-signal-row{display:none;}
+@media(max-width:900px){body{flex-direction:column;}.sidebar{width:100%;min-height:auto;position:relative;top:auto;}.main{padding:24px;width:100%;}.top-bar{position:relative;justify-content:stretch;}.smart-search{width:100%;}.live-alert-track{animation-duration:58s;}.summary-grid,.market-grid,.feature-grid,.impact-grid,.radar-summary,.signal-guide-grid,.filter-grid{grid-template-columns:1fr;}}
 </style>
 </head>
 <body>
 <div class="sidebar">
     <div class="logo">StockRadar</div>
-    <a class="nav-link" href="/">Dashboard</a>
-    <a class="nav-link" href="/beginner">Investment Compass</a>
-    <a class="nav-link" href="/?tab=signals">AI Signals</a>
-    <a class="nav-link" href="/?tab=watchlist">Watchlist</a>
-    <a class="nav-link" href="/premium-watchlist">Premium Watchlist</a>
-    <a class="nav-link" href="/portfolio-fit">Portfolio Fit</a>
+    <div class="nav-section-label">Main Menu</div>
+    <div class="menu-help">Use these tabs to jump straight to the section you need.</div>
+     <a class="nav-link tab-button {% if active_tab == 'overview' %}active-tab{% endif %}" href="/?tab=overview">🏠 Overview</a>
+    <a class="nav-link" href="/beginner">🌱 Investment Compass</a>
+    <a class="nav-link tab-button {% if active_tab == 'signals' %}active-tab{% endif %}" href="/?tab=signals">📊 AI Signals</a>
+    <a class="nav-link tab-button {% if active_tab == 'radar' %}active-tab{% endif %}" href="/?tab=radar">🌍 Impact Radar</a>
+    <a class="nav-link tab-button {% if active_tab == 'watchlist' %}active-tab{% endif %}" href="/?tab=watchlist">📋 AI Watchlist</a>
+    <a class="nav-link" href="/premium-watchlist">🧠 Premium Watchlist</a><h2>Risk and concentration check</h2>
+        <a class="nav-link" href="/portfolio-fit">🧩 Portfolio Fit</a>
     <div class="menu-divider"></div>
-    <a class="nav-link pro-button" href="/upgrade">Upgrade</a>
-    <div class="owner-box">Educational market software. Not personal financial advice.</div>
+
+    <div class="nav-section-label">Account</div>
+    {% if owner_logged_in %}
+        <a class="nav-link pro-button" href="/owner">✅ Premium Active</a>
+        <a class="nav-link" href="/logout">🚪 Logout</a>
+    {% else %}
+        <a class="nav-link pro-button" href="/upgrade">🚀 Upgrade to Pro — £5/month</a>
+        <a class="nav-link" href="/login">🔐 Login</a>
+    {% endif %}
+    <div class="owner-box">Premium unlocks full AI reasoning, risk reads, next-move analysis and market intelligence.</div>
 </div>
 
-<div class="main">
-    <div class="live-alert-strip">
+
+<div class="main" id="main-content" tabindex="-1">
+    <div class="live-alert-strip" aria-label="Live market headlines">
         <div class="live-alert-header">
             <span class="live-dot"></span>
-            <span>Market News Feed</span>
+            Market News Impact Feed
+            <span style="color:#94a3b8;font-weight:800;letter-spacing:0;text-transform:none;">Updated {{ ticker_updated }}{% if newsapi_configured %} • Live news enabled{% else %} • Theme mode{% endif %}</span>
         </div>
         <div class="live-alert-track">
-            {% for item in live_headlines %}
-            <div class="live-headline">
-                <a class="live-news-title" href="{{ item.get('article_url', '/') }}" target="_blank" rel="noopener">
-                    {{ item.get('headline', 'Market headlines are reconnecting') }}
-                </a>
-                <div class="live-headline-details">
-                    <span class="live-news-meta">{{ item.get('source', 'StockRadar News Feed') }} · {{ item.get('published_label', 'Fresh') }}</span>
-                    <span class="live-score">{{ item.get('impact_score', 'Pending') }}</span>
-                    <span class="live-tag">{{ item.get('direction', 'Market watch') }}</span>
-                    <span class="live-affected-label">Affected:</span>
-                    {% for link in item.get('stock_links', []) %}
-                    <a class="live-stock-link {{ link.get('signal_class', 'hold') }}" href="{{ link.get('url', '/') }}">{{ link.get('ticker', 'SPY') }} <span>{{ link.get('signal', 'HOLD') }}</span></a>
+            {% for headline in live_headlines %}
+            <span class="live-headline">
+<span class="live-news-meta">{{ headline.get('source', 'StockRadar News Feed') }} • {{ headline.get('published_label', 'Fresh') }}</span>
+                <a class="live-news-title" href="{{ headline.get('article_url', '/') }}" {% if headline.get('article_url', '').startswith('http') %}target="_blank" rel="noopener noreferrer"{% endif %}>{{ headline.get('headline', 'Market headlines are reconnecting') }}</a>
+                <span class="live-headline-details">
+                    <span class="live-affected-label">Affected stocks:</span>
+{% for stock in headline.get('stock_links', []) %}
+<a class="live-stock-link" href="{{ stock.get('url', '/') }}">{{ stock.get('ticker', 'SPY') }}</a>
                     {% endfor %}
-                </div>
-            </div>
+                </span>
+                <span class="live-headline-details">
+<span class="live-score">Impact: {{ headline.get('impact_score', 'Pending') }}</span>
+<span class="live-meta">{{ headline.get('direction', 'Market watch') }}</span>
+                </span>
+            </span>
+            {% endfor %}
+            {% for headline in live_headlines %}
+            <span class="live-headline">
+<span class="live-news-meta">{{ headline.get('source', 'StockRadar News Feed') }} • {{ headline.get('published_label', 'Fresh') }}</span>
+<a class="live-news-title" href="{{ headline.get('article_url', '/') }}" {% if headline.get('article_url', '').startswith('http') %}target="_blank" rel="noopener noreferrer"{% endif %}>{{ headline.get('headline', 'Market headlines are reconnecting') }}</a>
+                <span class="live-headline-details">
+                    <span class="live-affected-label">Affected stocks:</span>
+{% for stock in headline.get('stock_links', []) %}
+<a class="live-stock-link" href="{{ stock.get('url', '/') }}">{{ stock.get('ticker', 'SPY') }}</a>
+                    {% endfor %}
+                </span>
+                <span class="live-headline-details">
+<span class="live-score">Impact: {{ headline.get('impact_score', 'Pending') }}</span>
+<span class="live-meta">{{ headline.get('direction', 'Market watch') }}</span>
+                </span>
+            </span>
             {% endfor %}
         </div>
     </div>
 
-    <div class="card" id="investment-compass-card">
-        <p class="kicker">Investment Compass</p>
-        <h1>Save time finding where to start.</h1>
-        <p>Answer a few simple questions and StockRadar will cut through the noise with a plain-English starting profile, a sensible investment structure, and a clearer research direction. Useful if you are new, returning after a break, or just want to avoid wasting hours searching for the right starting point.</p>
-        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;">
-            <a class="upgrade-cta" href="/beginner">Find My Investment Starting Point</a>
-            <a class="nav-link" style="display:inline-block;width:auto;margin:0;background:rgba(255,255,255,0.06);" href="/?tab=signals">View AI Signals</a>
+<div class="card" id="investment-compass-card">
+    <p style="color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;">Investment Compass</p>
+    <h1 style="margin:0 0 12px 0;">Save time finding where to start.</h1>
+    <p style="color:#cbd5e1;line-height:1.7;max-width:880px;">Answer a few simple questions and StockRadar will cut through the noise with a plain-English starting profile, a sensible investment structure, and a clearer research direction. Useful if you are new, returning after a break, or just want to avoid wasting hours searching for the right starting point.</p>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;">
+        <a class="upgrade-cta" href="/beginner">Find My Investment Starting Point</a>
+        <a class="nav-link" style="display:inline-block;width:auto;margin:0;background:rgba(255,255,255,0.06);" href="/?tab=signals">View AI Signals</a>
+    </div>
+</div>
+
+    <div class="top-bar" aria-label="Quick search and navigation">
+        <form class="smart-search" onsubmit="return runSmartSearch(event)">
+            <label for="smartSearchInput">Quick Search</label>
+            <div class="smart-search-row">
+                <input id="smartSearchInput" type="search" placeholder="Type a ticker, S&P 500, BUY, AI, Pro..." autocomplete="off" aria-label="Type to search stocks, indexes or dashboard sections">
+                <button type="submit">Search</button>
+            </div>
+            <div class="search-hint">Type and press Enter or Search. Try: Apple, Tesla, Nvidia, Microsoft, S&P 500, Nasdaq, BUY, AI or Pro.</div>
+            <div id="searchMessage" class="search-message" role="status"></div>
+        </form>
+    </div>
+    <div id="overview-section" class="dashboard-section {% if active_tab == 'overview' %}active-section{% endif %}">
+<div class="card">
+    <h2>Current UK & US Market Status</h2>
+    <div class="market-grid">
+        <div class="market-card">
+            <small>UK Market</small>
+            <h3>{{ market_status.uk_status }}</h3>
+            <p>London time: {{ market_status.uk_time }}</p>
+        </div>
+
+        <div class="market-card">
+            <small>US Market</small>
+            <h3>{{ market_status.us_status }}</h3>
+            <p>New York time: {{ market_status.us_time }}</p>
         </div>
     </div>
-
+</div>
     <div class="card">
-        <p class="kicker">StockRadar Dashboard</p>
-        <h1>AI market signals, news impact and portfolio direction.</h1>
-        <p>Review current BUY, HOLD and SELL signals across the StockRadar universe. Use the news feed first, then check whether the signal fits your portfolio before acting.</p>
+        <h2>Current UK & US Market Status</h2>
+        <p style="color:#94a3b8;line-height:1.7;">
+            UK market status: <span class="status-pill {% if market_status.uk_status == 'OPEN' %}status-open{% else %}status-closed{% endif %}">{{ market_status.uk_status }}</span>
+            &nbsp; London time: {{ market_status.uk_time }}<br><br>
+            US market status: <span class="status-pill {% if market_status.us_status == 'OPEN' %}status-open{% else %}status-closed{% endif %}">{{ market_status.us_status }}</span>
+            &nbsp; New York time: {{ market_status.us_time }}
+        </p>
+    </div>
+
+    <div class="market-grid">
+        {% for item in market_snapshot %}
+        <div class="market-card">
+            <small>{{ item.market }} • {{ item.symbol }}</small>
+            <h3><a class="stock-link" href="/stock/{{ item.symbol }}">{{ item.label }}</a></h3>
+            <p style="margin:0;">Price: <strong>{{ item.price }}</strong></p>
+            <p class="{{ item.direction }}" style="margin-bottom:0;">Move: {{ item.change }}</p>
+        </div>
+        {% endfor %}
+    </div>
+
+    </div>
+
+    <div id="signals-section" class="dashboard-section {% if active_tab == 'signals' %}active-section{% endif %}">
+    <div class="card">
+        <p style="color:#00ffaa;font-weight:900;text-transform:uppercase;letter-spacing:0.12em;margin:0 0 10px 0;">Signal Intelligence</p>
+        <h2>AI Signal Intelligence Centre</h2>
+        <p style="color:#94a3b8;line-height:1.7;">A cleaner view of opportunity, caution and risk. Free users see the signal preview; Premium users can open the full stock page for confidence, risk read and next-move intelligence.</p>
+        {% if owner_logged_in %}
+        <div class="premium-signal-callout">✅ Premium active: use the linked tickers below to open full AI confidence, risk read and next-move analysis on each stock page.</div>
+        {% else %}
+        <div class="premium-signal-callout">🔒 Premium unlocks deeper reasoning behind each signal, including risk read, momentum interpretation and what to watch next.</div>
+        {% endif %}
+    </div>
+
+       <div id="Starter-Buy-Framework" class="card">
+        <p style="color:#00ffaa;font-weight:900;text-transform:uppercase;letter-spacing:0.12em;margin:0 0 10px 0;">Starter Buy Framework</p>
+        <h2>Start with a clear identity before buying complex stocks or ETFs</h2>
+        <p style="color:#94a3b8;line-height:1.7;max-width:980px;">For a new investor, the first decision is not “what is hot today?” It is “what kind of investor am I?” StockRadar should use the AI signals below as research prompts, but the starter list should stay simple, diversified and easy to understand.</p>
+        <div class="signal-guide-grid">
+            <div class="signal-guide-card"><strong>1. Core first</strong><span>Start with a broad market ETF or simple diversified exposure before adding individual companies.</span></div>
+            <div class="signal-guide-card"><strong>2. Quality next</strong><span>Look for businesses you understand, with durable demand, strong brands, cash flow or clear market leadership.</span></div>
+            <div class="signal-guide-card"><strong>3. Small learning slice</strong><span>Use a controlled percentage for higher-growth names while you build judgement and avoid overconcentration.</span></div>
+            <div class="signal-guide-card"><strong>4. Review monthly</strong><span>Do not chase every signal. Build the habit of checking risk, valuation, concentration and thesis drift.</span></div>
+        </div>
+        <table>
+            <tr><th>Starter bucket</th><th>Example research names</th><th>Why it helps beginners</th><th>How to use StockRadar</th></tr>
+            <tr>
+                <td><strong>Core ETF base</strong></td>
+                <td><a class="stock-link" href="/stock/SPY">SPY</a>, <a class="stock-link" href="/stock/QQQ">QQQ</a></td>
+                <td>Gives diversified market exposure and reduces the pressure to pick the perfect first stock.</td>
+                <td>Check whether the broad market is BUY, HOLD or SELL before adding risk.</td>
+            </tr>
+            <tr>
+                <td><strong>Quality compounders</strong></td>
+                <td><a class="stock-link" href="/stock/MSFT">MSFT</a>, <a class="stock-link" href="/stock/AAPL">AAPL</a>, <a class="stock-link" href="/stock/GOOGL">GOOGL</a></td>
+                <td>Large, understandable businesses can help beginners connect company quality with long-term investing.</td>
+                <td>Use confidence, risk read and AI reason to decide whether to research further, not to blindly buy.</td>
+            </tr>
+            <tr>
+                <td><strong>Growth learning names</strong></td>
+                <td><a class="stock-link" href="/stock/NVDA">NVDA</a>, <a class="stock-link" href="/stock/AMZN">AMZN</a>, <a class="stock-link" href="/stock/META">META</a></td>
+                <td>Shows how growth, AI, cloud and platform businesses behave, but should stay controlled for beginners.</td>
+                <td>Only consider if the signal, confidence and risk view line up with your investor profile.</td>
+            </tr>
+            <tr>
+                <td><strong>Defensive balance</strong></td>
+                <td><a class="stock-link" href="/stock/KO">KO</a>, <a class="stock-link" href="/stock/MCD">MCD</a>, <a class="stock-link" href="/stock/JNJ">JNJ</a></td>
+                <td>Helps beginners see that not every holding needs to be high-growth technology.</td>
+                <td>Use HOLD/BUY signals to understand stability, downside risk and portfolio balance.</td>
+            </tr>
+        </table>
+        <div class="premium-signal-callout">Educational only: this is a starter research framework, not personal financial advice. Beginners should avoid putting all money into one stock, one theme or one signal.</div>
+    </div>
+
+    <div class="signal-guide-grid">
+        <div class="signal-guide-card"><strong class="buy">BUY</strong><span>Opportunity watch: stocks where the scanner sees stronger momentum or improving conviction.</span></div>
+        <div class="signal-guide-card"><strong class="hold">HOLD</strong><span>Monitor zone: stocks that need stronger evidence before becoming an opportunity or risk warning.</span></div>
+        <div class="signal-guide-card"><strong class="sell">SELL</strong><span>Risk warning: stocks where the scanner is flagging weaker momentum or downside pressure.</span></div>
+        <div class="signal-guide-card"><strong>High Conviction</strong><span>The strongest AI-ranked setups by confidence score, designed to guide premium research.</span></div>
     </div>
 
     <div class="summary-grid">
-        <div class="summary-card"><h2>{{ buy_count }}</h2><p>BUY signals</p></div>
-        <div class="summary-card"><h2>{{ hold_count }}</h2><p>HOLD signals</p></div>
-        <div class="summary-card"><h2>{{ sell_count }}</h2><p>SELL warnings</p></div>
-        <div class="summary-card"><h2>{{ high_conviction_count }}</h2><p>High conviction</p></div>
+        <button class="card summary-card" type="button" onclick="togglePanel('buy-panel')" aria-controls="buy-panel" aria-expanded="false"><h2>{{ buy_count }}</h2><p>BUY Signals</p></button>
+        <button class="card summary-card" type="button" onclick="togglePanel('hold-panel')" aria-controls="hold-panel" aria-expanded="false"><h2>{{ hold_count }}</h2><p>HOLD Signals</p></button>
+        <button class="card summary-card" type="button" onclick="togglePanel('sell-panel')" aria-controls="sell-panel" aria-expanded="false"><h2>{{ sell_count }}</h2><p>SELL Signals</p></button>
+        <button class="card summary-card" type="button" onclick="document.getElementById('full-universe-table').scrollIntoView({behavior:'smooth',block:'start'});" aria-controls="full-universe-table"><h2>{{ total_count }}</h2><p>Total Tracked</p></button>
     </div>
 
-    <div class="card">
-        <h2>Market snapshot</h2>
-        <div class="market-grid">
-            {% for item in market_snapshot %}
-            <div class="market-card">
-                <small>{{ item.get('market', 'Market') }}</small>
-                <h3><a href="/stock/{{ item.get('symbol', 'SPY') }}">{{ item.get('label', item.get('symbol', 'SPY')) }}</a></h3>
-                <p>{{ item.get('price', '—') }} · {{ item.get('change', 'Data unavailable') }}</p>
-                <span class="status-pill {{ item.get('direction', 'hold') }}">{{ item.get('direction', 'hold')|upper }}</span>
+    <div id="buy-panel" class="card panel">
+        <h2>Opportunity Watch — BUY Signals</h2>
+        {% if buy_rows %}
+        <table><tr><th>Ticker</th><th>Confidence</th><th>AI Reason</th></tr>{% for item in buy_rows %}<tr><td class="buy"><a class="stock-link" href="/stock/{{ item.ticker }}">{{ item.ticker }}</a></td><td>{{ item.confidence }}</td><td>{{ item.reason }}</td></tr>{% endfor %}</table>
+        {% else %}<div class="empty-state">No BUY signals are currently active in your latest scanner output.</div>{% endif %}
+        {% if owner_logged_in %}<div class="notice"><h3>✅ Premium signal breakdown active</h3><p>You have full premium access. Use the linked tickers above to open the premium stock intelligence pages.</p></div>{% else %}<div class="notice"><h3>🔒 Unlock full AI signal breakdown</h3><p>Pro includes full conviction rankings, live alerts and deeper AI reasoning.</p><a class="upgrade-cta" href="/upgrade">Upgrade to Pro — £5/month</a></div>{% endif %}
+    </div>
+
+    <div id="hold-panel" class="card panel">
+        <h2>Monitor Zone — HOLD Signals</h2>
+        {% if hold_rows %}
+        <table><tr><th>Ticker</th><th>Confidence</th><th>AI Reason</th></tr>{% for item in hold_rows %}<tr><td class="hold"><a class="stock-link" href="/stock/{{ item.ticker }}">{{ item.ticker }}</a></td><td>{{ item.confidence }}</td><td>{{ item.reason }}</td></tr>{% endfor %}</table>
+        {% else %}<div class="empty-state">No HOLD signals are currently active.</div>{% endif %}
+        {% if owner_logged_in %}<div class="notice"><h3>✅ Premium HOLD analysis active</h3><p>You have full premium access to deeper HOLD interpretation and premium stock pages.</p></div>{% else %}<div class="notice"><h3>🔒 Unlock deeper HOLD analysis</h3><p>Pro shows whether HOLD stocks are preparing to flip into BUY or SELL signals.</p><a class="upgrade-cta" href="/upgrade">Upgrade to Pro — £5/month</a></div>{% endif %}
+    </div>
+
+    <div id="sell-panel" class="card panel">
+        <h2>Risk Warning — SELL Signals</h2>
+        {% if sell_rows %}
+        <table><tr><th>Ticker</th><th>Confidence</th><th>AI Reason</th></tr>{% for item in sell_rows %}<tr><td class="sell"><a class="stock-link" href="/stock/{{ item.ticker }}">{{ item.ticker }}</a></td><td>{{ item.confidence }}</td><td>{{ item.reason }}</td></tr>{% endfor %}</table>
+        {% else %}<div class="empty-state">No SELL signals are currently active.</div>{% endif %}
+        {% if owner_logged_in %}<div class="notice"><h3>✅ Premium downside warnings active</h3><p>You have full premium access to downside warnings and premium risk interpretation.</p></div>{% else %}<div class="notice"><h3>🔒 Unlock full downside warnings</h3><p>Pro includes live bearish alerts and AI-driven risk warnings.</p><a class="upgrade-cta" href="/upgrade">Upgrade to Pro — £5/month</a></div>{% endif %}
+    </div>
+
+    <div id="conviction-panel" class="card panel">
+        <h2>Premium Focus — Highest AI Conviction</h2>
+        <table><tr><th>Ticker</th><th>Conviction</th><th>AI Insight</th></tr>{% for item in conviction_rows %}<tr><td class="buy"><a class="stock-link" href="/stock/{{ item.ticker }}">{{ item.ticker }}</a></td><td>{{ item.confidence }}</td><td>{{ item.reason }}</td></tr>{% endfor %}</table>
+        {% if owner_logged_in %}<div class="notice"><h3>✅ Premium AI-ranked opportunities active</h3><p>You have full premium access to the AI watchlist, conviction engine and premium market intelligence.</p></div>{% else %}<div class="notice"><h3>🔒 Unlock premium conviction intelligence</h3><p>Premium turns High Conviction into a research shortlist with deeper AI reasoning, risk read and what-to-watch-next context on each linked stock page.</p><a class="upgrade-cta" href="/upgrade">Upgrade to Pro — £5/month</a></div>{% endif %}
+    </div>
+
+    <div id="full-universe-table" class="card">
+        <h2>Full 100-Stock Signal Universe</h2>
+        <p style="color:#94a3b8;line-height:1.7;">The summary counts above are calculated from every tracked stock below, not just the highlighted examples.</p>
+
+        <div class="filter-panel" aria-label="Signal universe filters">
+            <div class="filter-grid">
+                <div class="filter-control">
+                    <label for="tickerFilterInput">Ticker search</label>
+                    <input id="tickerFilterInput" type="search" placeholder="Search AAPL, NVDA, BP.L, BTC-USD..." oninput="applySignalFilters()" autocomplete="off">
+                </div>
+                <div class="filter-control">
+                    <label for="sectorFilterSelect">Sector filter</label>
+                    <select id="sectorFilterSelect" onchange="applySignalFilters()">
+                        <option value="ALL">All sectors</option>
+                        {% for sector in sectors %}
+                        <option value="{{ sector }}">{{ sector }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="filter-control">
+                    <label for="signalFilterValue">Signal filter</label>
+                    <select id="signalFilterValue" onchange="setSignalFilter(this.value)">
+                        <option value="ALL">All signals</option>
+                        <option value="BUY">BUY only</option>
+                        <option value="HOLD">HOLD only</option>
+                        <option value="SELL">SELL only</option>
+                    </select>
+                </div>
             </div>
-            {% endfor %}
+            <div class="filter-buttons" role="group" aria-label="Quick signal filters">
+                <button class="filter-button active-filter" type="button" data-signal-filter="ALL" onclick="setSignalFilter('ALL')">All</button>
+                <button class="filter-button" type="button" data-signal-filter="BUY" onclick="setSignalFilter('BUY')">BUY</button>
+                <button class="filter-button" type="button" data-signal-filter="HOLD" onclick="setSignalFilter('HOLD')">HOLD</button>
+                <button class="filter-button" type="button" data-signal-filter="SELL" onclick="setSignalFilter('SELL')">SELL</button>
+                <button class="filter-button" type="button" onclick="resetSignalFilters()">Reset filters</button>
+            </div>
+            <div id="signalFilterStatus" class="filter-status">Showing all {{ total_count }} tracked stocks.</div>
         </div>
-    </div>
 
-    <div class="card" id="signals">
-        <h2>AI Signals</h2>
         <table>
-            <tr><th>Ticker</th><th>Signal</th><th>Confidence</th><th>Reason</th><th>Premium</th></tr>
+            <tr><th>Ticker</th><th>Signal</th><th>Confidence</th><th>Sector</th><th>AI Reason</th></tr>
             {% for item in recommendations %}
-            <tr>
-                <td><a href="/stock/{{ item.get('ticker', '') }}">{{ item.get('ticker', '') }}</a></td>
-                <td class="signal-{{ item.get('signal', 'HOLD')|lower }}">{{ item.get('signal', 'HOLD') }}</td>
-                <td>{{ item.get('confidence', '—') }}</td>
-                <td>{{ item.get('reason', '') }}</td>
-                <td><a href="/premium-decision/{{ item.get('ticker', '') }}">Decision Panel</a></td>
+            <tr class="signal-row" data-ticker="{{ item.ticker }}" data-signal="{{ item.signal }}" data-sector="{{ item.sector or 'AI Watchlist' }}">
+                <td><a class="stock-link" href="/stock/{{ item.ticker }}">{{ item.ticker }}</a></td>
+                <td class="{% if item.signal == 'BUY' %}buy{% elif item.signal == 'SELL' %}sell{% else %}hold{% endif %}">{{ item.signal }}</td>
+                <td>{{ item.confidence }}</td>
+                <td>{{ item.sector or 'AI Watchlist' }}</td>
+                <td>{{ item.reason }}</td>
             </tr>
             {% endfor %}
         </table>
     </div>
 
-    <div class="card" id="watchlist">
-        <h2>Watchlist Intelligence</h2>
-        <p>Use Premium Watchlist Intelligence to review strongest signals, caution names, quality names, growth satellites and defensive balance candidates.</p>
-        <a class="button" href="/premium-watchlist">Open Premium Watchlist</a>
-        <a class="button" href="/portfolio-fit" style="margin-left:10px;">Check Portfolio Fit</a>
     </div>
+
+    <div id="recommendations-section" class="dashboard-section {% if active_tab == 'watchlist' %}active-section{% endif %}">
+    <div class="card">
+        <p style="color:#00ffaa;font-weight:900;text-transform:uppercase;letter-spacing:0.12em;margin:0 0 10px 0;">Watchlist</p>
+        <h2>Full AI Watchlist</h2>
+        <p style="color:#94a3b8;line-height:1.7;">Browse every ticker currently supported by the AI recommendation table and open any stock page directly.</p>
+    </div>
+
+    <div class="card">
+        <p style="color:#00ffaa;font-weight:900;text-transform:uppercase;letter-spacing:0.12em;margin:0 0 10px 0;">Premium Watchlist Intelligence</p>
+        <h2>Turn the watchlist into a decision review</h2>
+        <p style="color:#94a3b8;line-height:1.7;max-width:980px;">The normal watchlist shows every tracked signal. Premium Watchlist Intelligence turns that into a structured review: strongest current signal, highest caution name, quality bucket, growth satellite bucket, defensive balance and theme concentration.</p>
+        <a class="upgrade-cta" href="/premium-watchlist">Open Premium Watchlist</a>
+    </div>
+    <div class="card" id="watchlist">
+        <p style="color:#00ffaa;font-weight:900;text-transform:uppercase;letter-spacing:0.12em;margin:0 0 10px 0;">AI Recommendations Page</p>
+        <h2>AI Recommendations</h2>
+        <p style="color:#94a3b8;line-height:1.7;">This section shows your AI recommendation table. Click any ticker to open its live stock chart page.</p>
+        <table>
+            <tr><th>Ticker</th><th>Signal</th><th>Confidence</th><th>AI Reason</th></tr>
+            {% for item in recommendations %}
+            <tr><td><a class="stock-link" href="/stock/{{ item.ticker }}">{{ item.ticker }}</a></td><td class="{% if item.signal == 'BUY' %}buy{% elif item.signal == 'SELL' %}sell{% else %}hold{% endif %}">{{ item.signal }}</td><td>{{ item.confidence }}</td><td>{{ item.reason }}</td></tr>
+            {% endfor %}
+        </table>
+    </div>
+
+    </div>
+
+    <div id="radar-section" class="dashboard-section {% if active_tab == 'radar' %}active-section{% endif %}">
+    <div class="card">
+        <p style="color:#00ffaa;font-weight:900;text-transform:uppercase;letter-spacing:0.12em;margin:0 0 10px 0;">Market Impact</p>
+        <h2>Political & Geopolitical Market Intelligence</h2>
+        <p style="color:#94a3b8;line-height:1.7;">Track political, geopolitical and regulatory themes that may affect sectors and individual stocks.</p>
+    </div>
+    <div class="card"><h2>AI Market Brief</h2><p style="color:#cbd5e1;line-height:1.8;">Your latest AI scanner output is feeding this dashboard, while the market snapshot gives visitors a current UK and US context.</p></div>
+
+    <div class="card" id="market-impact-radar">
+        <p style="color:#00ffaa;font-weight:900;text-transform:uppercase;letter-spacing:0.12em;margin:0 0 10px 0;">Market Intelligence</p>
+        <h2>Market Impact Radar</h2>
+        <p style="color:#94a3b8;line-height:1.7;">News-style market themes mapped to the stocks they may affect. Free users see concise impact headlines and linked stocks; Premium users unlock impact scores, deeper AI interpretation and what to watch next.</p>
+        <div class="radar-summary">
+            <div class="radar-summary-card"><strong>{{ impact_radar|length }}</strong><span>tracked themes</span></div>
+            <div class="radar-summary-card"><strong>Live</strong><span>stock links</span></div>
+            <div class="radar-summary-card"><strong>Free</strong><span>headline view</span></div>
+            <div class="radar-summary-card"><strong>Premium</strong><span>impact score + watch next</span></div>
+        </div>
+        <div class="impact-grid">
+            {% for item in impact_radar %}
+            <div class="impact-card">
+                <small>{{ item.title }}</small>
+                <span class="impact-pill">Impact: {{ item.impact }}</span>
+                {% if owner_logged_in %}
+                    <div class="impact-score">{{ item.impact_score }}</div>
+                    <div class="impact-direction">{{ item.direction }}</div>
+                    <h3>{{ item.sectors }}</h3>
+                    <p>{{ item.free_view }}</p>
+                {% else %}
+                    <h3>{{ item.title }}</h3>
+                    <p>Basic headline: {{ item.impact }} impact theme affecting {{ item.sectors }}.</p>
+                {% endif %}
+                <div class="impact-stocks">
+                    {% for stock in item.stocks %}
+                    <a class="impact-stock" href="/stock/{{ stock }}">{{ stock }}</a>
+                    {% endfor %}
+                </div>
+                {% if owner_logged_in %}
+                    <div class="premium-impact">✅ Premium AI impact: {{ item.premium_view }}</div>
+                    <div class="watch-next"><strong>What to watch next:</strong> {{ item.watch_next }}</div>
+                {% else %}
+                    <div class="locked-impact">🔒 Premium unlocks the AI impact score, full explanation and what to watch next.</div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="feature-grid">
+        <div class="card"><h2>Free Access</h2><p>Market overview, limited signal previews and AI watchlist snapshots.</p></div>
+        {% if owner_logged_in %}<div class="card"><h2>Premium Active</h2><p>Your account has premium access. Upgrade prompts are hidden and premium intelligence is unlocked.</p></div>{% else %}<div class="card"><h2>Pro Preview</h2><p>Live BUY/SELL alerts, conviction scoring and deeper AI explanations.</p></div>{% endif %}
+        <div class="card"><h2>Daily Value</h2><p>Use the dashboard to check what is strengthening, weakening and worth watching.</p></div>
+    </div>
+    </div>
+</div>
+
+<script>
+function showDashboardSection(sectionId, button){var sections=document.querySelectorAll('.dashboard-section');sections.forEach(function(section){section.classList.remove('active-section');});var target=document.getElementById(sectionId);if(target){target.classList.add('active-section');target.scrollIntoView({behavior:'smooth',block:'start'});}var buttons=document.querySelectorAll('.tab-button');buttons.forEach(function(btn){btn.classList.remove('active-tab');});if(button){button.classList.add('active-tab');}}
+function togglePanel(panelId){var panel=document.getElementById(panelId);var button=document.querySelector('[aria-controls="'+panelId+'"]');if(panel.classList.contains('open')){panel.classList.remove('open');if(button){button.setAttribute('aria-expanded','false');}}else{panel.classList.add('open');if(button){button.setAttribute('aria-expanded','true');}panel.scrollIntoView({behavior:'smooth',block:'start'});}}
+function flashTarget(element){if(!element){return;}element.classList.remove('highlight-target');void element.offsetWidth;element.classList.add('highlight-target');}
+function openPanelAndJump(panelId){var panel=document.getElementById(panelId);var button=document.querySelector('[aria-controls="'+panelId+'"]');if(!panel){return;}panel.classList.add('open');if(button){button.setAttribute('aria-expanded','true');}panel.scrollIntoView({behavior:'smooth',block:'start'});flashTarget(panel);}
+function showSearchMessage(message){var messageBox=document.getElementById('searchMessage');if(!messageBox){return;}messageBox.textContent=message;messageBox.style.display='block';}
+function runSmartSearch(event){event.preventDefault();var input=document.getElementById('smartSearchInput');if(!input){return false;}var query=input.value.trim().toUpperCase();if(!query){showSearchMessage('Type a ticker or section name first.');return false;}var map={'APPLE':'AAPL','AAPL':'AAPL','TESLA':'TSLA','TSLA':'TSLA','NVIDIA':'NVDA','NVDA':'NVDA','MICROSOFT':'MSFT','MSFT':'MSFT','AMAZON':'AMZN','AMZN':'AMZN','GOOGLE':'GOOGL','ALPHABET':'GOOGL','META':'META','FACEBOOK':'META','S&P 500':'^GSPC','SP500':'^GSPC','S&P':'^GSPC','NASDAQ':'^IXIC','FTSE':'^FTSE','FTSE 100':'^FTSE','HSBC':'HSBA.L','BP':'BP.L','ASTRAZENECA':'AZN.L','SHELL':'SHEL.L'};if(map[query]){window.location.href='/stock/'+encodeURIComponent(map[query]);return false;}if(['AI','RECOMMENDATIONS','AI RECOMMENDATIONS','WATCHLIST'].includes(query)){window.location.href='/?tab=watchlist';return false;}if(['BUY','BUYS','BUY SIGNALS'].includes(query)){window.location.href='/?tab=signals&open=buy-panel';return false;}if(['HOLD','HOLDS','HOLD SIGNALS'].includes(query)){window.location.href='/?tab=signals&open=hold-panel';return false;}if(['SELL','SELLS','SELL SIGNALS'].includes(query)){window.location.href='/?tab=signals&open=sell-panel';return false;}if(['CONVICTION','HIGH CONVICTION','TOP'].includes(query)){window.location.href='/?tab=signals&open=conviction-panel';return false;}if(['POLITICS','POLITICAL','GEOPOLITICS','GEOPOLITICAL','RADAR','MARKET IMPACT','IMPACT RADAR'].includes(query)){window.location.href='/?tab=radar';return false;}
+if(['PRO','UPGRADE','PAYMENT','SUBSCRIPTION'].includes(query)){window.location.href='/upgrade';return false;}if(/^[A-Z0-9.^-]{1,12}$/.test(query)){window.location.href='/stock/'+encodeURIComponent(query);return false;}showSearchMessage('No matching stock or section found. Try Apple, AAPL, S&P 500, Nasdaq, BUY, SELL, AI or Pro.');return false;}
+function setSignalFilter(signal){var select=document.getElementById('signalFilterValue');if(select){select.value=signal;}document.querySelectorAll('[data-signal-filter]').forEach(function(button){button.classList.toggle('active-filter',button.getAttribute('data-signal-filter')===signal);});applySignalFilters();}
+function resetSignalFilters(){var tickerInput=document.getElementById('tickerFilterInput');var sectorSelect=document.getElementById('sectorFilterSelect');if(tickerInput){tickerInput.value='';}if(sectorSelect){sectorSelect.value='ALL';}setSignalFilter('ALL');}
+function applySignalFilters(){var tickerInput=document.getElementById('tickerFilterInput');var sectorSelect=document.getElementById('sectorFilterSelect');var signalSelect=document.getElementById('signalFilterValue');var tickerQuery=tickerInput ? tickerInput.value.trim().toUpperCase() : '';var selectedSector=sectorSelect ? sectorSelect.value : 'ALL';var selectedSignal=signalSelect ? signalSelect.value : 'ALL';var rows=document.querySelectorAll('.signal-row');var visibleCount=0;rows.forEach(function(row){var rowTicker=(row.getAttribute('data-ticker')||'').toUpperCase();var rowSignal=row.getAttribute('data-signal')||'';var rowSector=row.getAttribute('data-sector')||'AI Watchlist';var tickerMatch=!tickerQuery || rowTicker.includes(tickerQuery);var signalMatch=selectedSignal==='ALL' || rowSignal===selectedSignal;var sectorMatch=selectedSector==='ALL' || rowSector===selectedSector;var shouldShow=tickerMatch && signalMatch && sectorMatch;row.classList.toggle('hidden-signal-row',!shouldShow);if(shouldShow){visibleCount+=1;}});var status=document.getElementById('signalFilterStatus');if(status){var signalText=selectedSignal==='ALL'?'all signals':selectedSignal+' signals';var sectorText=selectedSector==='ALL'?'all sectors':selectedSector;var tickerText=tickerQuery?(' matching '+tickerQuery):'';status.textContent='Showing '+visibleCount+' stocks for '+signalText+', '+sectorText+tickerText+'.';}}
+window.addEventListener('load',function(){var params=new URLSearchParams(window.location.search);var openPanel=params.get('open');if(openPanel){openPanelAndJump(openPanel);}if(window.location.pathname==='/ai-recommendations'){window.location.href='/?tab=watchlist';}applySignalFilters();});
+</script>
+</body>
+</html>
+"""
+
+
+beginner_html = """
+<!DOCTYPE html>
+<html>
+<head>
+<title>Investment Compass — StockRadar</title>
+<style>
+*{box-sizing:border-box;}
+body{margin:0;background:radial-gradient(circle at 20% 10%,rgba(0,255,170,0.15),transparent 28%),radial-gradient(circle at 90% 10%,rgba(255,184,107,0.12),transparent 28%),linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
+a{color:#38bdf8;text-decoration:none;font-weight:900;}
+a:hover{text-decoration:underline;}
+.wrap{max-width:1180px;margin:0 auto;}
+.back{display:inline-block;margin-bottom:22px;}
+.hero,.card{background:linear-gradient(180deg,rgba(23,23,23,0.96),rgba(14,14,14,0.96));border:1px solid rgba(255,255,255,0.11);border-radius:30px;padding:32px;box-shadow:0 30px 85px rgba(0,0,0,0.42);margin-bottom:22px;}
+.kicker{color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;}
+h1{font-size:46px;line-height:1.04;margin:0 0 16px 0;letter-spacing:-0.04em;}
+h2{margin:0 0 12px 0;}
+p{color:#cbd5e1;line-height:1.72;}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.field label{display:block;color:#94a3b8;font-size:11px;text-transform:uppercase;letter-spacing:0.12em;font-weight:950;margin-bottom:8px;}
+select,input{width:100%;background:#020617;border:1px solid rgba(255,255,255,0.13);border-radius:15px;color:white;padding:14px;font-weight:800;outline:none;}
+button,.button{display:inline-block;border:none;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-radius:15px;padding:14px 18px;font-weight:950;cursor:pointer;text-decoration:none;margin-top:16px;}
+.result{border:1px solid rgba(0,255,170,0.20);background:linear-gradient(135deg,rgba(0,255,170,0.12),rgba(56,189,248,0.08));}
+.model-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:16px;}
+.model-box{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:18px;padding:16px;}
+.model-box strong{display:block;font-size:26px;margin-bottom:6px;}
+.warning{background:rgba(239,68,68,0.09);border:1px solid rgba(239,68,68,0.20);border-radius:20px;padding:18px;color:#fecaca;line-height:1.65;}
+ul{color:#cbd5e1;line-height:1.75;padding-left:20px;}
+.tag{display:inline-block;background:rgba(56,189,248,0.12);border:1px solid rgba(56,189,248,0.22);color:#bae6fd;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:950;margin:4px 6px 4px 0;}
+@media(max-width:900px){body{padding:24px;}.grid,.form-grid,.model-grid{grid-template-columns:1fr;}h1{font-size:34px;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+    <a class="back" href="/">← Back to dashboard</a>
+    <div class="hero">
+        <p class="kicker">starter investor profile</p>
+        <h1>Start with a simple structure before chasing stock picks.</h1>
+        <p>Answer five plain-English questions. StockRadar will give you a beginner profile, a starter allocation model and the key risks to understand before using the AI signals dashboard.</p>
+        <div><span class="tag">ETF-first thinking</span><span class="tag">Risk guidance</span><span class="tag">Plain English</span><span class="tag">Educational only</span></div>
+    </div>
+    <div class="grid">
+        <div class="card">
+            <h2>Build your starter profile</h2>
+<form method="POST" action="/beginner#beginner-result">
+{% if result %}
+<div id="beginner-result" class="card result">
+    <p class="kicker">Your beginner profile</p>
+    <h2>{{ result.profile }}</h2>
+    <p style="color:#00ffaa;font-weight:950;margin-top:-4px;">✅ Beginner plan created successfully.</p>
+    <p>{{ result.summary }}</p>             <div class="form-grid">
+                    <div class="field"><label for="goal">Main goal</label><select id="goal" name="goal"><option value="growth">Long-term growth</option><option value="income">Income later</option><option value="learning">Learn investing first</option><option value="balanced">Balanced growth and stability</option></select></div>
+                    <div class="field"><label for="horizon">Time horizon</label><select id="horizon" name="horizon"><option value="10plus">10+ years</option><option value="5to10">5–10 years</option><option value="2to5">2–5 years</option><option value="short">Under 2 years</option></select></div>
+                    <div class="field"><label for="risk">Risk comfort</label><select id="risk" name="risk"><option value="medium">Medium</option><option value="low">Low</option><option value="high">High</option></select></div>
+                    <div class="field"><label for="experience">Experience</label><select id="experience" name="experience"><option value="new">Brand new</option><option value="some">Some basics</option><option value="confident">Confident beginner</option></select></div>
+                    <div class="field"><label for="amount">Monthly amount</label><input id="amount" name="amount" type="number" min="0" step="10" placeholder="100"></div>
+                    <div class="field"><label for="style">Preferred style</label><select id="style" name="style"><option value="simple">Keep it simple</option><option value="stocks">ETFs plus some stocks</option><option value="active">More active research</option></select></div>
+                </div>
+                <button type="submit">Create beginner plan</button>
+            </form>
+        </div>
+        <div class="card">
+            <h2>What beginners should avoid first</h2>
+            <ul>
+                <li>Buying random stocks because they are trending online.</li>
+                <li>Putting short-term savings or emergency cash into volatile shares.</li>
+                <li>Owning only one sector, especially only technology.</li>
+                <li>Thinking BUY means guaranteed profit or SELL means guaranteed collapse.</li>
+                <li>Checking prices every hour when the plan is long-term.</li>
+            </ul>
+            <div class="warning"><strong>Important:</strong> StockRadar is educational market software, not personal financial advice. Users should make their own decisions or speak to a regulated adviser.</div>
+        </div>
+    </div>
+   {% if result %}
+<div id="beginner-result" class="card result">
+    <p class="kicker">Your beginner profile</p>
+    <h2>{{ result.profile }}</h2>
+    <p style="color:#00ffaa;font-weight:950;margin-top:-4px;">✅ Beginner plan created successfully.</p>
+    <p>{{ result.summary }}</p>
+
+    <div class="model-grid">
+        <div class="model-box"><strong>{{ result.etf }}%</strong><span>Core ETFs</span></div>
+        <div class="model-box"><strong>{{ result.quality }}%</strong><span>Quality stocks</span></div>
+        <div class="model-box"><strong>{{ result.defensive }}%</strong><span>Defensive names</span></div>
+        <div class="model-box"><strong>{{ result.learning }}%</strong><span>Learning picks</span></div>
+    </div>
+
+    <h2 style="margin-top:24px;">Next steps</h2>
+    <ul>
+        {% for step in result.steps %}
+        <li>{{ step }}</li>
+        {% endfor %}
+    </ul>
+
+<a class="button" href="/?tab=signals#Starter-Buy-Framework">Open AI Signals</a>
+{% endif %}
+    <div class="card"><h2>How this connects to the main dashboard</h2><p>The beginner path gives the user a structure first. The AI signal table then becomes a research tool instead of a gambling screen.</p></div>
+</div>
+<script>
+window.addEventListener('load', function(){
+    var result = document.getElementById('beginner-result');
+    if(result){
+        result.scrollIntoView({behavior:'smooth', block:'start'});
+    }
+});
+</script>
+</body>
+</html>
+"""
+
+
+def build_beginner_result(form):
+    goal = form.get("goal", "growth")
+    horizon = form.get("horizon", "10plus")
+    risk = form.get("risk", "medium")
+    experience = form.get("experience", "new")
+    style = form.get("style", "simple")
+    amount = form.get("amount", "").strip()
+
+    if horizon == "short":
+        return {
+            "profile": "Short-term saver, not a stock-market starter yet",
+            "summary": "Because your time horizon is under two years, the priority is capital protection and learning. Stocks can move sharply over short periods, so this route should focus on education before risk-taking.",
+            "etf": 0,
+            "quality": 0,
+            "defensive": 0,
+            "learning": 0,
+            "steps": [
+                "Keep emergency money and short-term savings separate from investing money.",
+                "Use the dashboard to learn how markets move before putting real money at risk.",
+                "Only consider investing money that can stay invested for several years.",
+            ],
+        }
+
+    if risk == "low" or goal in {"income", "balanced"}:
+        profile = "Cautious beginner investor"
+        etf, quality, defensive, learning = 75, 10, 10, 5
+        summary = "Your route should start with broad diversification, low complexity and small learning positions. The goal is to build confidence without becoming overexposed to single-stock risk."
+    elif risk == "high" and horizon in {"10plus", "5to10"} and style in {"stocks", "active"}:
+        profile = "Growth-focused beginner investor"
+        etf, quality, defensive, learning = 60, 25, 5, 10
+        summary = "You can handle more growth exposure, but the core still needs to be diversified. Individual stocks should support the plan, not dominate it."
+    else:
+        profile = "Balanced long-term beginner investor"
+        etf, quality, defensive, learning = 70, 15, 10, 5
+        summary = "This is a sensible middle route: a diversified core, a small quality-stock layer and enough flexibility to learn without overtrading."
+
+    monthly_line = f"At around £{amount} per month, automate the core first and keep stock research controlled." if amount else "Decide a monthly amount first, then split it using the model rather than buying randomly."
+
+    steps = [
+        monthly_line,
+        "Start with the core ETF bucket before adding individual stocks.",
+        "Use BUY, HOLD and SELL signals as research prompts, not automatic instructions.",
+        "Avoid putting more than a controlled slice into any single stock while learning.",
+        "Review monthly instead of reacting to every daily market move.",
+    ]
+
+    if experience == "new":
+        steps.insert(1, "Read each stock page in plain English before looking at the confidence score.")
+
+    return {
+        "profile": profile,
+        "summary": summary,
+        "etf": etf,
+        "quality": quality,
+        "defensive": defensive,
+        "learning": learning,
+        "steps": steps,
+    }
+
+
+@app.route("/beginner", methods=["GET", "POST"])
+def beginner():
+    result = None
+    result_html = ""
+
+    if request.method == "POST":
+        result = build_beginner_result(request.form)
+        steps_html = "".join(f"<li>{step}</li>" for step in result["steps"])
+        result_html = f"""
+        <div id="beginner-result" class="card result">
+            <p class="kicker">Your beginner profile</p>
+            <h2>{result["profile"]}</h2>
+            <p style="color:#00ffaa;font-weight:950;margin-top:-4px;">✅ Beginner plan created successfully.</p>
+            <p>{result["summary"]}</p>
+            <div class="model-grid">
+                <div class="model-box"><strong>{result["etf"]}%</strong><span>Core ETFs</span></div>
+                <div class="model-box"><strong>{result["quality"]}%</strong><span>Quality stocks</span></div>
+                <div class="model-box"><strong>{result["defensive"]}%</strong><span>Defensive names</span></div>
+                <div class="model-box"><strong>{result["learning"]}%</strong><span>Learning picks</span></div>
+            </div>
+            <h2 style="margin-top:24px;">Next steps</h2>
+            <ul>{steps_html}</ul>
+            <a class="button" href="/?tab=signals#Starter-Buy-Framework">Open AI Signals</a>
+           </div>
+        """
+
+    page_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <title>Investment Compass — StockRadar</title>
+    <style>
+    *{{box-sizing:border-box;}}
+    html{{scroll-behavior:smooth;}}
+    body{{margin:0;background:radial-gradient(circle at 20% 10%,rgba(0,255,170,0.15),transparent 28%),radial-gradient(circle at 90% 10%,rgba(255,184,107,0.12),transparent 28%),linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}}
+    a{{color:#38bdf8;text-decoration:none;font-weight:900;}}
+    a:hover{{text-decoration:underline;}}
+    .wrap{{max-width:1180px;margin:0 auto;}}
+    .back{{display:inline-block;margin-bottom:22px;}}
+    .hero,.card{{background:linear-gradient(180deg,rgba(23,23,23,0.96),rgba(14,14,14,0.96));border:1px solid rgba(255,255,255,0.11);border-radius:30px;padding:32px;box-shadow:0 30px 85px rgba(0,0,0,0.42);margin-bottom:22px;}}
+    .kicker{{color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;}}
+    h1{{font-size:46px;line-height:1.04;margin:0 0 16px 0;letter-spacing:-0.04em;}}
+    h2{{margin:0 0 12px 0;}}
+    p{{color:#cbd5e1;line-height:1.72;}}
+    .grid{{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;}}
+    .form-grid{{display:grid;grid-template-columns:1fr 1fr;gap:14px;}}
+    .field label{{display:block;color:#94a3b8;font-size:11px;text-transform:uppercase;letter-spacing:0.12em;font-weight:950;margin-bottom:8px;}}
+    select,input{{width:100%;background:#020617;border:1px solid rgba(255,255,255,0.13);border-radius:15px;color:white;padding:14px;font-weight:800;outline:none;}}
+    button,.button{{display:inline-block;border:none;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-radius:15px;padding:14px 18px;font-weight:950;cursor:pointer;text-decoration:none;margin-top:16px;}}
+    .result{{border:1px solid rgba(0,255,170,0.20);background:linear-gradient(135deg,rgba(0,255,170,0.12),rgba(56,189,248,0.08));}}
+    .model-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:16px;}}
+    .model-box{{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:18px;padding:16px;}}
+    .model-box strong{{display:block;font-size:26px;margin-bottom:6px;}}
+    .warning{{background:rgba(239,68,68,0.09);border:1px solid rgba(239,68,68,0.20);border-radius:20px;padding:18px;color:#fecaca;line-height:1.65;}}
+    ul{{color:#cbd5e1;line-height:1.75;padding-left:20px;}}
+    .tag{{display:inline-block;background:rgba(56,189,248,0.12);border:1px solid rgba(56,189,248,0.22);color:#bae6fd;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:950;margin:4px 6px 4px 0;}}
+    @media(max-width:900px){{body{{padding:24px;}}.grid,.form-grid,.model-grid{{grid-template-columns:1fr;}}h1{{font-size:34px;}}}}
+    </style>
+    </head>
+    <body>
+    <div class="wrap">
+        <a class="back" href="/">← Back to dashboard</a>
+        <div class="hero">
+            <p class="kicker">starter investor profile</p>
+            <h1>Start with a simple structure before chasing stock picks.</h1>
+            <p>Answer five plain-English questions. StockRadar will give you a beginner profile, a starter allocation model and the key risks to understand before using the AI signals dashboard.</p>
+            <div><span class="tag">ETF-first thinking</span><span class="tag">Risk guidance</span><span class="tag">Plain English</span><span class="tag">Educational only</span></div>
+        </div>
+        <div class="grid">
+            <div class="card">
+                <h2>Build your starter profile</h2>
+                <form method="POST" action="/beginner#beginner-result">
+                    <div class="form-grid">
+                        <div class="field"><label for="goal">Main goal</label><select id="goal" name="goal"><option value="growth">Long-term growth</option><option value="income">Income later</option><option value="learning">Learn investing first</option><option value="balanced">Balanced growth and stability</option></select></div>
+                        <div class="field"><label for="horizon">Time horizon</label><select id="horizon" name="horizon"><option value="10plus">10+ years</option><option value="5to10">5–10 years</option><option value="2to5">2–5 years</option><option value="short">Under 2 years</option></select></div>
+                        <div class="field"><label for="risk">Risk comfort</label><select id="risk" name="risk"><option value="medium">Medium</option><option value="low">Low</option><option value="high">High</option></select></div>
+                        <div class="field"><label for="experience">Experience</label><select id="experience" name="experience"><option value="new">Brand new</option><option value="some">Some basics</option><option value="confident">Confident beginner</option></select></div>
+                        <div class="field"><label for="amount">Monthly amount</label><input id="amount" name="amount" type="number" min="0" step="10" placeholder="100"></div>
+                        <div class="field"><label for="style">Preferred style</label><select id="style" name="style"><option value="simple">Keep it simple</option><option value="stocks">ETFs plus some stocks</option><option value="active">More active research</option></select></div>
+                    </div>
+                    <button type="submit">Create beginner plan</button>
+                </form>
+            </div>
+            <div class="card">
+                <h2>What beginners should avoid first</h2>
+                <ul>
+                    <li>Buying random stocks because they are trending online.</li>
+                    <li>Putting short-term savings or emergency cash into volatile shares.</li>
+                    <li>Owning only one sector, especially only technology.</li>
+                    <li>Thinking BUY means guaranteed profit or SELL means guaranteed collapse.</li>
+                    <li>Checking prices every hour when the plan is long-term.</li>
+                </ul>
+                <div class="warning"><strong>Important:</strong> StockRadar is educational market software, not personal financial advice.</div>
+            </div>
+        </div>
+        {result_html}
+        <div class="card"><h2>How this connects to the main dashboard</h2><p>The beginner path gives the user a structure first. The AI signal table then becomes a research tool instead of a gambling screen.</p></div>
+    </div>
+    <script>
+    window.addEventListener('load', function(){{
+        var result = document.getElementById('beginner-result');
+        if(result){{result.scrollIntoView({{behavior:'smooth', block:'start'}});}}
+    }});
+    </script>
+    </body>
+    </html>
+    """
+
+    return page_html
+
+login_html = """
+<!DOCTYPE html>
+<html>
+<head><title>Login</title><style>body{background:#020617;color:white;font-family:Arial;display:flex;justify-content:center;align-items:center;height:100vh;}form{background:#0f172a;padding:40px;border-radius:20px;width:340px;border:1px solid rgba(255,255,255,0.08);}input{width:100%;padding:14px;margin-bottom:15px;border:none;border-radius:10px;}button{width:100%;padding:14px;background:#38bdf8;border:none;border-radius:10px;color:white;font-weight:bold;cursor:pointer;}a{color:#38bdf8;}</style></head>
+<body><form method="POST"><h1>🔐 Login</h1><p style="color:#94a3b8;">Sign in to access your account.</p>{% if login_error %}<p style="background:rgba(239,68,68,0.16);border:1px solid rgba(239,68,68,0.35);color:#fecaca;padding:12px;border-radius:10px;font-weight:bold;">{{ login_error }}</p>{% endif %}<input type="email" name="email" placeholder="Email"><input type="password" name="password" placeholder="Password"><button type="submit">Login</button><p style="color:#94a3b8;font-size:13px;margin-top:20px;">Sign in to continue.</p><p><a href="/">Return to Dashboard</a></p></form></body>
+</html>
+"""
+
+
+upgrade_html = """
+<!DOCTYPE html>
+<html>
+<head>
+<title>StockRadar Pro Upgrade</title>
+<style>
+*{box-sizing:border-box;}
+body{background:radial-gradient(circle at 18% 8%,rgba(0,255,170,0.18),transparent 30%),radial-gradient(circle at 86% 12%,rgba(255,184,107,0.14),transparent 28%),linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;margin:0;min-height:100vh;padding:54px;}
+.wrap{max-width:1100px;margin:0 auto;}
+.back{color:#38bdf8;text-decoration:none;font-weight:900;display:inline-block;margin-bottom:24px;}
+.hero{display:grid;grid-template-columns:1.15fr 0.85fr;gap:24px;align-items:stretch;}
+.card{background:linear-gradient(180deg,rgba(23,23,23,0.96),rgba(14,14,14,0.96));border:1px solid rgba(255,255,255,0.11);border-radius:30px;padding:34px;box-shadow:0 30px 85px rgba(0,0,0,0.45),inset 0 1px 0 rgba(255,255,255,0.07);}
+.badge{display:inline-block;color:#00ffaa;background:rgba(0,255,170,0.10);border:1px solid rgba(0,255,170,0.22);padding:9px 13px;border-radius:999px;font-weight:950;text-transform:uppercase;letter-spacing:0.1em;font-size:12px;}
+h1{font-size:54px;line-height:0.94;letter-spacing:-0.06em;margin:14px 0 16px 0;background:linear-gradient(135deg,#ffffff,#00ffaa,#ffb86b);-webkit-background-clip:text;color:transparent;}
+h2{font-size:28px;margin:0 0 12px 0;}
+p{color:#cbd5e1;line-height:1.7;font-size:16px;}
+.feature{display:flex;gap:12px;align-items:flex-start;margin:15px 0;color:#e5e7eb;line-height:1.55;}
+.tick{color:#00ffaa;font-weight:950;}
+.price{font-size:58px;font-weight:950;letter-spacing:-0.06em;margin:10px 0;color:white;}
+.price span{font-size:17px;color:#94a3b8;letter-spacing:0;}
+.pay-box{background:rgba(5,5,5,0.52);border:1px solid rgba(255,255,255,0.13);border-radius:24px;padding:24px;margin-top:20px;}
+.fake-input{width:100%;background:#020617;border:1px solid rgba(255,255,255,0.14);border-radius:16px;padding:15px;color:#94a3b8;margin-bottom:12px;font-weight:800;}
+.button{display:inline-block;text-align:center;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;padding:17px 22px;border-radius:18px;text-decoration:none;font-weight:950;margin-top:12px;margin-right:10px;box-shadow:0 22px 60px rgba(0,255,170,0.20);}
+.button.secondary{background:rgba(255,255,255,0.08);color:white;border:1px solid rgba(255,255,255,0.13);box-shadow:none;}
+.note{font-size:13px;color:#94a3b8;margin-top:14px;line-height:1.55;}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:24px;}
+.mini{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:20px;padding:18px;color:#e5e7eb;line-height:1.55;}
+.mini strong{display:block;color:white;margin-bottom:6px;}
+.active-card{background:linear-gradient(135deg,rgba(0,255,170,0.16),rgba(56,189,248,0.10));border-color:rgba(0,255,170,0.24);}
+@media(max-width:850px){body{padding:24px;}.hero,.grid{grid-template-columns:1fr;}h1{font-size:42px;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+    <a class="back" href="/">← Back to Dashboard</a>
+
+    {% if owner_logged_in %}
+    <div class="card active-card">
+        <span class="badge">Premium active</span>
+        <h1>✅ Premium is already active.</h1>
+        <p>You are logged in with premium/owner access. You do not need to purchase again. Premium stock intelligence, risk reads and next-move analysis are unlocked.</p>
+        <a class="button" href="/stock/AAPL">Open Premium Stock Page</a>
+        <a class="button secondary" href="/">Return to Dashboard</a>
+    </div>
+    {% else %}
+    <div class="hero">
+        <div class="card">
+            <span class="badge">StockRadar Pro</span>
+            <h1>Unlock full AI stock intelligence.</h1>
+            <p>Pro turns each stock page into a premium decision panel: confidence, signal strength, risk read, momentum interpretation and what to watch next.</p>
+            <div class="feature"><span class="tick">✓</span><span>Full Premium Pro Intelligence panel on every supported stock page.</span></div>
+            <div class="feature"><span class="tick">✓</span><span>Risk read and next-move analysis instead of only a free preview.</span></div>
+            <div class="feature"><span class="tick">✓</span><span>Cleaner decision support for users who want faster market context.</span></div>
+            <div class="grid">
+                <div class="mini"><strong>Free</strong>Signal preview and basic confidence meter.</div>
+                <div class="mini"><strong>Pro</strong>Full AI confidence, risk and next move.</div>
+                <div class="mini"><strong>Coming next</strong>Market impact radar and premium alerts.</div>
+            </div>
+        </div>
+        <div class="card">
+            <span class="badge">Premium plan</span>
+            <div class="price">£5 <span>/ month</span></div>
+            <p>Start Premium to unlock the full report view.</p>
+            <div class="pay-box">
+                <form method="POST" action="/create-checkout-session">
+                    <button class="button" type="submit" style="border:none;cursor:pointer;width:100%;">Start Premium with Stripe Checkout</button>
+                </form>
+                <div class="note">Secure payment is handled by Stripe Checkout. Use Stripe test mode first.</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 </div>
 </body>
 </html>
 """
 
-# Add root route if not present
+
+owner_html = """
+<!DOCTYPE html>
+<html><head><title>Owner Area</title><style>body{background:#020617;color:white;font-family:Arial;margin:0;padding:60px;}.card{background:#0f172a;padding:40px;border-radius:24px;max-width:820px;margin:auto;border:1px solid rgba(255,255,255,0.08);}a{color:#38bdf8;font-weight:bold;}</style></head><body><div class="card"><h1>👑 Owner Area</h1><p>You are logged in as the owner with premium access.</p><p>This confirms login and premium unlocking are working.</p><p><a href="/">Return to Dashboard</a></p><p><a href="/stock/AAPL">Open Premium AAPL Page</a></p></div></body></html>
+"""
+
+
+stock_detail_html = """
+<!DOCTYPE html>
+<html>
+<head>
+<title>{{ symbol }} Stock Detail</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+*{box-sizing:border-box;}body{background:radial-gradient(circle at 12% 6%,rgba(0,255,170,0.18),transparent 28%),linear-gradient(135deg,#050505,#121212,#1f2933);color:white;font-family:Arial,sans-serif;margin:0;min-height:100vh;padding:48px;}.card{background:linear-gradient(180deg,rgba(23,23,23,0.94),rgba(14,14,14,0.94));padding:32px;border-radius:30px;margin-bottom:24px;border:1px solid rgba(255,255,255,0.10);box-shadow:0 28px 82px rgba(0,0,0,0.44);}a{color:#38bdf8;text-decoration:none;font-weight:bold;}.range-row{display:flex;gap:12px;flex-wrap:wrap;margin:22px 0;}.range-button{display:inline-block;padding:13px 17px;border-radius:16px;background:rgba(30,41,59,0.78);color:white;text-decoration:none;border:1px solid rgba(255,255,255,0.07);font-weight:800;}.range-button.active{background:linear-gradient(90deg,#38bdf8,#8b5cf6);}.metric-grid,.ai-grid,.example-report-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-bottom:22px;}.metric-grid{grid-template-columns:repeat(4,1fr);}.ai-card,.metric,.example-report-card{background:rgba(15,23,42,0.86);border:1px solid rgba(255,255,255,0.11);border-radius:24px;padding:24px;}.ai-card.warning{background:linear-gradient(145deg,rgba(251,191,36,0.13),rgba(17,24,39,0.92));}.ai-card.risk{background:linear-gradient(145deg,rgba(56,189,248,0.12),rgba(17,24,39,0.92));}.premium-banner,.example-report{background:linear-gradient(135deg,rgba(0,255,170,0.18),rgba(255,184,107,0.12),rgba(56,189,248,0.10));border:1px solid rgba(0,255,170,0.22);border-radius:30px;padding:30px;margin-bottom:24px;}.premium-banner{display:grid;grid-template-columns:1.45fr 0.75fr;gap:24px;align-items:center;}.premium-cta-box{background:rgba(5,5,5,0.58);border:1px solid rgba(255,255,255,0.15);border-radius:24px;padding:22px;text-align:center;}.payment-button{display:inline-block;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-radius:20px;padding:16px 24px;font-size:16px;font-weight:950;text-decoration:none;}.payment-note{color:#94a3b8;font-size:13px;margin-top:12px;}.signal-badge,.free-strength,.strength-pill{display:inline-block;margin-top:10px;padding:8px 12px;border-radius:999px;background:rgba(255,255,255,0.08);font-weight:900;font-size:12px;text-transform:uppercase;}.confidence-large,.confidence-score{font-size:40px;font-weight:950;}.free-meter,.confidence-meter{font-size:26px;letter-spacing:2px;color:#00ffaa;font-weight:950;margin:8px 0;}.buy{color:#22c55e;font-weight:bold;}.sell{color:#ef4444;font-weight:bold;}.hold{color:#f59e0b;font-weight:bold;}canvas{background:#020617;border-radius:18px;padding:18px;}@media(max-width:900px){body{padding:24px;}.metric-grid,.ai-grid,.premium-banner,.example-report-grid{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<div class="card"><p><a href="/">← Back to Dashboard</a></p><h1>{{ symbol }} Stock Detail</h1><p style="color:#94a3b8;">Live chart view for {{ range_label }}. Use the buttons below to change timeframe.</p></div>
+
+<div class="premium-banner"><div><small>Premium AI Intelligence Preview</small><h2>{{ symbol }} intelligence, not just a chart.</h2><p>Every supported stock and index gets the same structure: a useful free preview, then a stronger Premium decision panel with deeper AI explanation, risk read, portfolio role and what to watch next.</p></div><div class="premium-cta-box">{% if has_premium_access %}<strong>✅ Premium Active</strong><p>You have full premium access for {{ symbol }}.</p><a class="payment-button" href="/premium-decision/{{ symbol }}">Open Decision Panel</a>{% else %}<strong>Unlock the full {{ symbol }} Decision Panel</strong><p>Premium adds portfolio role, concentration risk, readiness and before-acting checks.</p><a class="payment-button" href="/premium-decision/{{ symbol }}">Preview Premium Panel</a><div class="payment-note">Non-premium users see the locked preview and upgrade route.</div>{% endif %}</div></div>
+
+<div class="ai-grid"><div class="ai-card"><small>Free Signal Preview</small><h2 class="{% if ai_context.signal == 'BUY' %}buy{% elif ai_context.signal == 'SELL' %}sell{% elif ai_context.signal == 'HOLD' %}hold{% endif %}">{{ ai_context.signal }}</h2><p>Every supported stock page gets the same free AI preview. Current signal for {{ symbol }}: {{ ai_context.signal }}.</p><span class="signal-badge">Live stock page: {{ symbol }}</span></div><div class="ai-card warning"><small>Free Confidence Preview</small><div class="confidence-large">{{ ai_context.confidence }}</div><div class="free-meter">{{ ai_context.confidence_meter }}</div><span class="free-strength">Signal strength: {{ ai_context.strength_label }}</span><p style="margin-top:12px;">Free shows the basic score and meter. Pro explains what is driving it for {{ symbol }}.</p></div><div class="ai-card risk"><small>{% if has_premium_access %}Premium Active{% else %}Pro Preview{% endif %}</small><h2>Next Move</h2>{% if has_premium_access %}<p>{{ ai_context.watch_next }}</p><span class="signal-badge">Premium unlocked</span>{% else %}<p>Pro unlocks the full interpretation behind the meter: why the score matters, what risk is building and what to watch next for {{ symbol }}.</p><a class="signal-badge" href="/upgrade">Unlock Premium</a>{% endif %}</div></div>
+
+{% if has_premium_access and example_report %}<div class="example-report"><small>Premium Decision Intelligence</small><h2>{{ example_report.headline }}</h2><p>{{ example_report.summary }}</p><div class="example-report-grid"><div class="example-report-card"><strong>AI Confidence</strong><div class="confidence-score">{{ example_report.confidence }}</div><div class="confidence-meter">{{ example_report.meter }}</div><span class="strength-pill">Signal strength: {{ example_report.strength }}</span></div><div class="example-report-card"><strong>Portfolio role</strong><span>{{ example_report.portfolio_role }}</span></div><div class="example-report-card"><strong>Decision readiness</strong><span>{{ example_report.readiness }}</span></div></div><div class="example-report-card" style="margin-top:16px;"><strong>Premium decision use</strong><span>{{ example_report.decision_use }}</span></div><div style="margin-top:18px;"><a class="payment-button" href="/premium-decision/{{ symbol }}">Open Full Premium Decision Panel</a></div></div>{% endif %}
+{% if not has_premium_access %}<div class="example-report"><small>Premium locked</small><h2>Unlock the full {{ symbol }} Decision Panel</h2><p>Free shows the basic signal, confidence score and meter. Premium unlocks portfolio role, concentration risk, readiness and before-acting checks.</p><div class="example-report-grid"><div class="example-report-card"><strong>Free preview</strong><div class="confidence-score">{{ ai_context.confidence }}</div><div class="confidence-meter">{{ ai_context.confidence_meter }}</div><span class="strength-pill">Basic signal strength: {{ ai_context.strength_label }}</span></div><div class="example-report-card"><strong>Premium portfolio role</strong><span>Locked until upgrade.</span></div><div class="example-report-card"><strong>Premium decision readiness</strong><span>Locked until upgrade.</span></div></div><a class="payment-button" href="/premium-decision/{{ symbol }}" style="margin-top:18px;">Preview Premium Decision Panel</a><div class="payment-note">The preview opens the locked Premium route and upgrade path.</div></div>{% endif %}
+
+<div class="range-row">{% for key, settings in chart_ranges.items() %}<a class="range-button {% if key == active_range %}active{% endif %}" href="/stock/{{ symbol }}?range={{ key }}">{{ settings.label }}</a>{% endfor %}</div>
+<div class="metric-grid"><div class="metric"><small>Range start</small><h2>{{ chart_data.start_price }}</h2></div><div class="metric"><small>Range latest</small><h2>{{ chart_data.end_price }}</h2></div><div class="metric"><small>Range move</small><h2 class="{{ chart_data.direction }}">{{ chart_data.change_amount }}</h2></div><div class="metric"><small>Range % move</small><h2 class="{{ chart_data.direction }}">{{ chart_data.change_percent }}</h2></div></div>
+<div class="card">{% if chart_data.ok %}<canvas id="stockChart" height="120"></canvas>{% else %}<h2>Chart unavailable</h2><p style="color:#fca5a5;">{{ chart_data.error }}</p>{% endif %}</div>
+<div class="card"><h2>Since market data began</h2><div class="metric-grid"><div class="metric"><small>Earliest available price</small><h2>{{ lifetime.start_price }}</h2></div><div class="metric"><small>Latest available price</small><h2>{{ lifetime.end_price }}</h2></div><div class="metric"><small>Total growth / decrease</small><h2 class="{{ lifetime.direction }}">{{ lifetime.change_amount }}</h2></div><div class="metric"><small>Total % growth / decrease</small><h2 class="{{ lifetime.direction }}">{{ lifetime.change_percent }}</h2></div></div></div>
+<script>
+const labels={{ chart_data.labels | tojson }};
+const prices={{ chart_data.prices | tojson }};
+if(labels.length>0){
+    const ctx=document.getElementById('stockChart');
+    new Chart(ctx,{type:'line',data:{labels:labels,datasets:[{label:'{{ symbol }} close price',data:prices,borderWidth:2,tension:0.25}]},options:{responsive:true,plugins:{legend:{labels:{color:'white'}}},scales:{x:{ticks:{color:'#94a3b8',maxTicksLimit:8},grid:{color:'rgba(255,255,255,0.08)'}},y:{ticks:{color:'#94a3b8'},grid:{color:'rgba(255,255,255,0.08)'}}}}});
+}
+</script>
+</body>
+</html>
+"""
+
+# --- Health and diagnostics routes ---
+@app.route("/health")
+def health():
+    return "OK", 200
+
+
+@app.route("/news-health")
+def news_health():
+    articles = fetch_live_market_news(limit=8)
+    return {
+        "newsapi_configured": bool(NEWSAPI_KEY),
+        "live_articles_returned": len(articles),
+        "mode": "live_news" if articles else "no_live_articles",
+        "provider": LAST_NEWS_FETCH_STATUS.get("provider"),
+        "status": LAST_NEWS_FETCH_STATUS.get("status"),
+        "errors": LAST_NEWS_FETCH_STATUS.get("errors", []),
+        "sample_headlines": [article.get("title") for article in articles],
+        "sources": [article.get("source") for article in articles],
+    }, 200
+
+
+@app.route("/healthz")
+def healthz():
+    return {
+        "status": "ok",
+        "app": "StockRadar",
+        "stripe_configured": stripe_checkout_configured(),
+        "owner_login_configured": owner_login_configured(),
+    }, 200
+
+@app.route("/favicon.ico")
+def favicon():
+    return "", 204
 @app.route("/")
-def dashboard():
-    data = prepare_dashboard_data()
-    return render_template_string(html, **data)
-#
-# Flask local run block (add only if not present)
+def home():
+    dashboard_data = prepare_dashboard_data()
+    active_tab = request.args.get("tab", "overview")
+    if active_tab not in {"overview", "signals", "radar", "watchlist"}:
+        active_tab = "overview"
+    return render_template_string(
+        html,
+        owner_logged_in=owner_has_access(),
+        active_tab=active_tab,
+        **dashboard_data,
+    )
+
+
+@app.route("/ai-recommendations")
+def ai_recommendations():
+    return redirect(url_for("home", tab="watchlist"))
+
+
+@app.route("/stock/<path:symbol>")
+def stock_detail(symbol):
+    cleaned_symbol = symbol.strip().upper()
+    active_range = request.args.get("range", "1mo")
+
+    if active_range not in CHART_RANGES:
+        active_range = "1mo"
+
+    chart_data = stock_history(cleaned_symbol, active_range)
+    lifetime = stock_lifetime_growth(cleaned_symbol)
+    ai_context = get_stock_ai_context(cleaned_symbol)
+    example_report = get_premium_report(cleaned_symbol, ai_context)
+
+    return render_template_string(
+        stock_detail_html,
+        symbol=cleaned_symbol,
+        active_range=active_range,
+        range_label=CHART_RANGES[active_range]["label"],
+        chart_ranges=CHART_RANGES,
+        chart_data=chart_data,
+        lifetime=lifetime,
+        ai_context=ai_context,
+        example_report=example_report,
+        has_premium_access=owner_has_access(),
+    )
+
+
+@app.route("/upgrade")
+def upgrade():
+    return render_template_string(upgrade_html, owner_logged_in=owner_has_access())
+
+
+@app.route("/create-checkout-session", methods=["POST"])
+def create_checkout_session():
+    if not stripe_checkout_configured():
+        return render_template_string("""
+<!doctype html>
+<html>
+<head>
+    <title>Stripe Setup Needed | StockRadar</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body{margin:0;background:#020617;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;}
+        .box{max-width:760px;background:rgba(15,23,42,0.94);border:1px solid rgba(248,113,113,0.30);border-radius:28px;padding:34px;box-shadow:0 24px 80px rgba(0,0,0,0.45);}
+        h1{margin:0 0 14px;font-size:32px;}
+        p{color:#cbd5e1;line-height:1.7;font-size:16px;}
+        code{display:block;background:#020617;color:#bae6fd;border:1px solid rgba(148,163,184,0.22);border-radius:14px;padding:14px;white-space:pre-wrap;margin:14px 0;}
+        a{display:inline-block;margin-top:18px;padding:14px 18px;border-radius:16px;background:#00ffaa;color:#020617;text-decoration:none;font-weight:900;}
+    </style>
+</head>
+<body>
+    <div class="box">
+        <h1>Stripe setup needed</h1>
+        <p>Stripe Checkout is connected, but payment credentials are not configured yet. The dashboard is still live and safe to share.</p>
+        <code>Set STRIPE_SECRET_KEY and STRIPE_PRICE_ID in your hosting environment when ready.</code>
+        <p>Use Stripe test mode first, then switch to live keys only after your Stripe account is verified.</p>
+        <a href="/upgrade">Back to upgrade page</a>
+    </div>
+</body>
+</html>
+        """), 400
+
+    try:
+        checkout_session = stripe.checkout.Session.create(
+            mode="subscription",
+            line_items=[{"price": STRIPE_PRICE_ID, "quantity": 1}],
+            success_url=STRIPE_SUCCESS_URL or url_for("checkout_success", _external=True),
+            cancel_url=STRIPE_CANCEL_URL or url_for("upgrade", _external=True),
+            customer_email=OWNER_EMAIL or None,
+            allow_promotion_codes=True,
+        )
+        return redirect(checkout_session.url, code=303)
+    except Exception as exc:
+        return render_template_string("""
+<!doctype html>
+<html>
+<head>
+    <title>Stripe Checkout Paused | StockRadar</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body{margin:0;background:#020617;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;}
+        .box{max-width:780px;background:rgba(15,23,42,0.94);border:1px solid rgba(248,113,113,0.30);border-radius:28px;padding:34px;box-shadow:0 24px 80px rgba(0,0,0,0.45);}
+        h1{margin:0 0 14px;font-size:32px;}
+        p{color:#cbd5e1;line-height:1.7;font-size:16px;}
+        code{display:block;background:#020617;color:#fecaca;border:1px solid rgba(248,113,113,0.24);border-radius:14px;padding:14px;white-space:pre-wrap;margin:14px 0;}
+        a{display:inline-block;margin-top:18px;padding:14px 18px;border-radius:16px;background:#00ffaa;color:#020617;text-decoration:none;font-weight:900;}
+    </style>
+</head>
+<body>
+    <div class="box">
+        <h1>Stripe Checkout paused</h1>
+        <p>The checkout route is connected, but Stripe rejected the current payment setup. This does not affect the dashboard.</p>
+        <code>{{ error }}</code>
+        <p>When Stripe credentials are ready, update the environment variables and restart the app.</p>
+        <a href="/upgrade">Back to upgrade page</a>
+    </div>
+</body>
+</html>
+        """, error=str(exc)), 400
+
+@app.route("/checkout-success")
+def checkout_success():
+    session["owner_logged_in"] = True
+    return render_template_string("""
+<!doctype html>
+<html>
+<head>
+    <title>Payment Successful | StockRadar</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body{margin:0;background:#020617;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;}
+        .box{max-width:620px;background:rgba(15,23,42,0.92);border:1px solid rgba(148,163,184,0.22);border-radius:28px;padding:34px;box-shadow:0 24px 80px rgba(0,0,0,0.45);}
+        h1{margin:0 0 14px;font-size:34px;}
+        p{color:#94a3b8;line-height:1.7;font-size:16px;}
+        a{display:inline-block;margin-top:18px;padding:14px 18px;border-radius:16px;background:#00ffaa;color:#020617;text-decoration:none;font-weight:900;}
+    </style>
+</head>
+<body>
+    <div class="box">
+        <h1>✅ Premium activated</h1>
+        <p>Your premium dashboard session is now active. You can return to StockRadar and view premium intelligence features.</p>
+        <a href="/">Return to dashboard</a>
+    </div>
+</body>
+</html>
+    """)
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    login_error = None
+
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+
+        if not owner_login_configured():
+            login_error = "login is not configured. Set SIGNALSCOPE_OWNER_EMAIL and SIGNALSCOPE_OWNER_PASSWORD in your environment."
+        elif email == OWNER_EMAIL and password == OWNER_PASSWORD:
+            session["owner_logged_in"] = True
+            return redirect(url_for("owner"))
+        else:
+            login_error = "Invalid owner email or password."
+
+    return render_template_string(login_html, login_error=login_error)
+
+
+@app.route("/owner")
+def owner():
+    if not owner_has_access():
+        return redirect(url_for("login"))
+    return render_template_string(owner_html)
+
+
+@app.route("/logout")
+def logout():
+    session.pop("owner_logged_in", None)
+    return redirect(url_for("home"))
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
