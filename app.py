@@ -1715,7 +1715,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
     <div class="nav-section-label">Main Menu</div>
     <div class="menu-help">Use these tabs to jump straight to the section you need.</div>
      <a class="nav-link tab-button {% if active_tab == 'overview' %}active-tab{% endif %}" href="/?tab=overview">🏠 Overview</a>
-    <a class="nav-link" href="/beginner">🌱 Beginner Start</a>
+    <a class="nav-link" href="/beginner">🌱 Investment Compass</a>
     <a class="nav-link tab-button {% if active_tab == 'signals' %}active-tab{% endif %}" href="/?tab=signals">📊 AI Signals</a>
     <a class="nav-link tab-button {% if active_tab == 'radar' %}active-tab{% endif %}" href="/?tab=radar">🌍 Impact Radar</a>
     <a class="nav-link tab-button {% if active_tab == 'watchlist' %}active-tab{% endif %}" href="/?tab=watchlist">📋 AI Watchlist</a>
@@ -1735,6 +1735,15 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 </div>
 
 <div class="main" id="main-content" tabindex="-1">
+<div class="card" id="investment-compass-card">
+    <p style="color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;">Investment Compass</p>
+    <h1 style="margin:0 0 12px 0;">Save time finding where to start.</h1>
+    <p style="color:#cbd5e1;line-height:1.7;max-width:880px;">Answer a few simple questions and StockRadar will cut through the noise with a plain-English starting profile, a sensible investment structure, and a clearer research direction. Useful if you are new, returning after a break, or just want to avoid wasting hours searching for the right starting point.</p>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;">
+        <a class="upgrade-cta" href="/beginner">Find My Investment Starting Point</a>
+        <a class="nav-link" style="display:inline-block;width:auto;margin:0;background:rgba(255,255,255,0.06);" href="/?tab=signals">View AI Signals</a>
+    </div>
+</div>
     <div class="live-alert-strip" aria-label="Live market headlines">
         <div class="live-alert-header">
             <span class="live-dot"></span>
@@ -1784,7 +1793,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
             SignalScope now includes a beginner route that explains risk, time horizon, starter allocation and what to research first.
             It is designed for people who want a simple structure before looking at individual stock signals.
         </p>
-        <a class="upgrade-cta" href="/beginner">Open Beginner Start</a>
+        <a class="upgrade-cta" href="/beginner">Open Investment Compass</a>
     </div>
     <div class="top-bar" aria-label="Quick search and navigation">
         <form class="smart-search" onsubmit="return runSmartSearch(event)">
@@ -1835,8 +1844,8 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
         {% endif %}
     </div>
 
-       <div id="beginner-buy-framework" class="card">
-        <p style="color:#00ffaa;font-weight:900;text-transform:uppercase;letter-spacing:0.12em;margin:0 0 10px 0;">Beginner Buy Framework</p>
+       <div id="Starter-Buy-Framework" class="card">
+        <p style="color:#00ffaa;font-weight:900;text-transform:uppercase;letter-spacing:0.12em;margin:0 0 10px 0;">Starter Buy Framework</p>
         <h2>Start with a clear identity before buying complex stocks or ETFs</h2>
         <p style="color:#94a3b8;line-height:1.7;max-width:980px;">For a new investor, the first decision is not “what is hot today?” It is “what kind of investor am I?” SignalScope should use the AI signals below as research prompts, but the starter list should stay simple, diversified and easy to understand.</p>
         <div class="signal-guide-grid">
@@ -2079,7 +2088,7 @@ beginner_html = """
 <!DOCTYPE html>
 <html>
 <head>
-<title>Beginner Start — StockRadar</title>
+<title>Investment Compass — StockRadar</title>
 <style>
 *{box-sizing:border-box;}
 body{margin:0;background:radial-gradient(circle at 20% 10%,rgba(0,255,170,0.15),transparent 28%),radial-gradient(circle at 90% 10%,rgba(255,184,107,0.12),transparent 28%),linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
@@ -2111,7 +2120,7 @@ ul{color:#cbd5e1;line-height:1.75;padding-left:20px;}
 <div class="wrap">
     <a class="back" href="/">← Back to dashboard</a>
     <div class="hero">
-        <p class="kicker">Beginner Investor Path</p>
+        <p class="kicker">starter investor profile</p>
         <h1>Start with a simple structure before chasing stock picks.</h1>
         <p>Answer five plain-English questions. SignalScope will give you a beginner profile, a starter allocation model and the key risks to understand before using the AI signals dashboard.</p>
         <div><span class="tag">ETF-first thinking</span><span class="tag">Risk guidance</span><span class="tag">Plain English</span><span class="tag">Educational only</span></div>
@@ -2169,7 +2178,7 @@ ul{color:#cbd5e1;line-height:1.75;padding-left:20px;}
         {% endfor %}
     </ul>
 
-<a class="button" href="/?tab=signals#beginner-buy-framework">Open AI Signals</a>
+<a class="button" href="/?tab=signals#Starter-Buy-Framework">Open AI Signals</a>
 {% endif %}
     <div class="card"><h2>How this connects to the main dashboard</h2><p>The beginner path gives the user a structure first. The AI signal table then becomes a research tool instead of a gambling screen.</p></div>
 </div>
@@ -2268,7 +2277,7 @@ def beginner():
             </div>
             <h2 style="margin-top:24px;">Next steps</h2>
             <ul>{steps_html}</ul>
-            <a class="button" href="/?tab=signals#beginner-buy-framework">Open AI Signals</a>
+            <a class="button" href="/?tab=signals#Starter-Buy-Framework">Open AI Signals</a>
            </div>
         """
 
@@ -2276,7 +2285,7 @@ def beginner():
     <!DOCTYPE html>
     <html>
     <head>
-    <title>Beginner Start — StockRadar</title>
+    <title>Investment Compass — StockRadar</title>
     <style>
     *{{box-sizing:border-box;}}
     html{{scroll-behavior:smooth;}}
@@ -2309,7 +2318,7 @@ def beginner():
     <div class="wrap">
         <a class="back" href="/">← Back to dashboard</a>
         <div class="hero">
-            <p class="kicker">Beginner Investor Path</p>
+            <p class="kicker">starter investor profile</p>
             <h1>Start with a simple structure before chasing stock picks.</h1>
             <p>Answer five plain-English questions. SignalScope will give you a beginner profile, a starter allocation model and the key risks to understand before using the AI signals dashboard.</p>
             <div><span class="tag">ETF-first thinking</span><span class="tag">Risk guidance</span><span class="tag">Plain English</span><span class="tag">Educational only</span></div>
