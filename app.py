@@ -121,6 +121,12 @@ CSV_CANDIDATES = [
     "stock_recommendations.csv",
     "signals.csv",
 ]
+STOCK_UNIVERSE_CSV = "stock_universe.csv"
+STOCK_UNIVERSE_CACHE_TTL_SECONDS = int(os.environ.get("STOCK_UNIVERSE_CACHE_TTL_SECONDS", "300"))
+STOCK_UNIVERSE_CACHE = {
+    "timestamp": 0,
+    "rows": None,
+}
 
 TRACKED_STOCK_UNIVERSE = [
     "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO", "AMD", "NFLX",
@@ -244,6 +250,121 @@ def normalise_confidence(value):
     except Exception:
         return text
 
+def normalise_universe_row(row):
+    lower = {str(k or "").strip().lower(): v for k, v in row.items()}
+    ticker = str(
+        lower.get("ticker")
+        or lower.get("symbol")
+        or lower.get("code")
+        or ""
+    ).strip().upper()
+    name = str(
+        lower.get("company")
+        or lower.get("company name")
+        or lower.get("company_name")
+        or lower.get("name")
+        or ticker
+    ).strip()
+    exchange = str(lower.get("exchange") or lower.get("market") or "").strip()
+    sector = str(lower.get("sector") or SECTOR_MAP.get(ticker, "Stock Universe")).strip()
+
+    if not ticker:
+        return None
+
+    return {
+        "ticker": ticker,
+        "name": name or ticker,
+        "exchange": exchange,
+        "sector": sector or "Stock Universe",
+        "url": f"/stock/{ticker}",
+        "search_text": f"{ticker} {name} {exchange} {sector}".lower(),
+    }
+
+
+def get_stock_universe(force_refresh=False):
+    now = time.time()
+
+    if (
+        not force_refresh
+        and STOCK_UNIVERSE_CACHE["rows"] is not None
+        and now - STOCK_UNIVERSE_CACHE["timestamp"] < STOCK_UNIVERSE_CACHE_TTL_SECONDS
+    ):
+        return STOCK_UNIVERSE_CACHE["rows"]
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(base_dir, STOCK_UNIVERSE_CSV)
+    rows = []
+    seen = set()
+
+    if os.path.exists(path):
+        try:
+            with open(path, newline="", encoding="utf-8-sig") as csvfile:
+                reader = csv.DictReader(csvfile)
+
+                for raw_row in reader:
+                    item = normalise_universe_row(raw_row)
+                    if not item or item["ticker"] in seen:
+                        continue
+                    rows.append(item)
+                    seen.add(item["ticker"])
+        except Exception:
+            rows = []
+            seen = set()
+
+    if not rows:
+        for item in get_recommendations():
+            ticker = str(item.get("ticker", "")).strip().upper()
+            if not ticker or ticker in seen:
+                continue
+            rows.append({
+                "ticker": ticker,
+                "name": ticker,
+                "exchange": "",
+                "sector": str(item.get("sector") or SECTOR_MAP.get(ticker, "Stock Universe")),
+                "url": f"/stock/{ticker}",
+                "search_text": f"{ticker} {item.get('sector', '')}".lower(),
+            })
+            seen.add(ticker)
+
+    STOCK_UNIVERSE_CACHE["timestamp"] = now
+    STOCK_UNIVERSE_CACHE["rows"] = rows
+    return rows
+
+
+def search_stock_universe(query, limit=12):
+    cleaned_query = str(query or "").strip().lower()
+    if not cleaned_query:
+        return []
+
+    exact_matches = []
+    prefix_matches = []
+    contains_matches = []
+
+    for item in get_stock_universe():
+        ticker = item["ticker"].lower()
+        name = item["name"].lower()
+        search_text = item["search_text"]
+
+        if cleaned_query == ticker:
+            exact_matches.append(item)
+        elif ticker.startswith(cleaned_query) or name.startswith(cleaned_query):
+            prefix_matches.append(item)
+        elif cleaned_query in search_text:
+            contains_matches.append(item)
+
+    ordered = exact_matches + prefix_matches + contains_matches
+    deduped = []
+    seen = set()
+
+    for item in ordered:
+        if item["ticker"] in seen:
+            continue
+        deduped.append(item)
+        seen.add(item["ticker"])
+        if len(deduped) >= limit:
+            break
+
+    return deduped
 
 def get_recommendations():
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -570,6 +691,80 @@ def get_premium_report(symbol, ai_context):
         "action_frame": action_frame,
         "checklist": checklist,
     }
+
+@app.route("/universe")
+def stock_universe_page():
+    query = request.args.get("q", "").strip()
+    all_rows = get_stock_universe()
+
+    if query:
+        visible_rows = search_stock_universe(query, limit=250)
+    else:
+        visible_rows = all_rows[:250]
+
+    universe_html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <title>Stock Universe — StockRadar</title>
+    <style>
+    body{margin:0;background:linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:42px;}
+    .wrap{max-width:1180px;margin:0 auto;}
+    .card{background:linear-gradient(180deg,rgba(23,23,23,0.96),rgba(14,14,14,0.96));border:1px solid rgba(255,255,255,0.11);border-radius:28px;padding:30px;box-shadow:0 30px 85px rgba(0,0,0,0.42);margin-bottom:22px;}
+    .kicker{color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;}
+    h1{font-size:44px;line-height:1.04;margin:0 0 14px 0;letter-spacing:-0.04em;}
+    p{color:#cbd5e1;line-height:1.7;}
+    a{color:#38bdf8;font-weight:900;text-decoration:none;}
+    form{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap;}
+    input{flex:1;min-width:260px;border:1px solid rgba(255,255,255,0.16);background:rgba(255,255,255,0.07);color:white;border-radius:15px;padding:14px 15px;font-size:15px;}
+    button{border:0;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-radius:15px;padding:14px 18px;font-weight:950;cursor:pointer;}
+    table{width:100%;border-collapse:collapse;margin-top:16px;}
+    th,td{text-align:left;padding:13px;border-bottom:1px solid rgba(255,255,255,0.08);vertical-align:top;}
+    th{color:#94a3b8;text-transform:uppercase;letter-spacing:0.08em;font-size:12px;}
+    .muted{color:#94a3b8;}
+    @media(max-width:760px){body{padding:24px;}h1{font-size:34px;}table{font-size:14px;}}
+    </style>
+    </head>
+    <body>
+    <div class="wrap">
+        <a href="/">← Back to dashboard</a>
+        <div class="card">
+            <p class="kicker">Stock Universe</p>
+            <h1>Search the full StockRadar universe.</h1>
+            <p>{{ total_count }} tickers are loaded from <strong>stock_universe.csv</strong>. The homepage stays fast by only using a small preview; this page handles the full universe.</p>
+            <form method="get" action="/universe">
+                <input name="q" value="{{ query }}" placeholder="Search ticker or company name, e.g. AAPL or Apple">
+                <button type="submit">Search</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h2>{% if query %}Search results for “{{ query }}”{% else %}Universe preview{% endif %}</h2>
+            <p class="muted">Showing {{ visible_rows|length }} of {{ total_count }} loaded tickers.</p>
+            <table>
+                <tr><th>Ticker</th><th>Company</th><th>Sector</th><th>Exchange</th></tr>
+                {% for item in visible_rows %}
+                <tr>
+                    <td><a href="{{ item.url }}">{{ item.ticker }}</a></td>
+                    <td>{{ item.name }}</td>
+                    <td>{{ item.sector }}</td>
+                    <td>{{ item.exchange or "—" }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+    </div>
+    </body>
+    </html>
+    """
+
+    return render_template_string(
+        universe_html,
+        query=query,
+        visible_rows=visible_rows,
+        total_count=len(all_rows),
+    )
+
 
 @app.route("/premium-decision/<symbol>")
 def premium_decision(symbol):
@@ -2829,6 +3024,8 @@ def favicon():
 @app.route("/")
 def dashboard():
     active_tab = request.args.get("tab", "overview").strip().lower()
+    quick_search_query = request.args.get("q", "").strip()
+    quick_search_results = search_stock_universe(quick_search_query) if quick_search_query else []
 
     if active_tab not in {"overview", "signals", "radar", "watchlist"}:
         active_tab = "overview"
@@ -2889,6 +3086,9 @@ def dashboard():
         )
     )
     data["active_tab"] = active_tab
+    data["quick_search_query"] = quick_search_query
+    data["quick_search_results"] = quick_search_results
+    data["universe_preview"] = get_stock_universe()[:12]
 
     return render_template_string(html, **data)
 
