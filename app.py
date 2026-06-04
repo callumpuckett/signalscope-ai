@@ -27,7 +27,7 @@ STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_PRICE_ID = os.environ.get("STRIPE_PRICE_ID", "")
 STRIPE_SUCCESS_URL = os.environ.get(
     "STRIPE_SUCCESS_URL",
-    "https://signalscope-ai-1-0v3g.onrender.com/checkout-success"
+    "https://stockradar-ai-1-0v3g.onrender.com/checkout-success"
 )
 NEWSAPI_KEY = os.environ.get("NEWSAPI_KEY", "").strip()
 LAST_NEWS_FETCH_STATUS = {
@@ -39,7 +39,7 @@ LAST_NEWS_FETCH_STATUS = {
 
 # --- Helper for fetching JSON from URL with fallback for local SSL certificate errors ---
 def fetch_url_json(url, timeout=8):
-    request_obj = Request(url, headers={"User-Agent": "SignalScopeAI/1.0"})
+    request_obj = Request(url, headers={"User-Agent": "StockRadarAI/1.0"})
 
     try:
         with urlopen(request_obj, timeout=timeout) as response:
@@ -62,7 +62,7 @@ def fetch_url_json(url, timeout=8):
         raise
 STRIPE_CANCEL_URL = os.environ.get(
     "STRIPE_CANCEL_URL",
-    "https://signalscope-ai-1-0v3g.onrender.com/upgrade"
+    "https://stockradar-ai-1-0v3g.onrender.com/upgrade"
 )
 
 if stripe and STRIPE_SECRET_KEY:
@@ -1539,7 +1539,7 @@ def safe_build_live_headlines(recommendations, impact_radar):
             return headlines
     except Exception as exc:
         LAST_NEWS_FETCH_STATUS.update({
-            "provider": "signalscope",
+            "provider": "stockradar",
             "status": "render_error",
             "errors": [str(exc)],
         })
@@ -1790,7 +1790,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
         <p style="color:#00ffaa;font-weight:900;text-transform:uppercase;letter-spacing:0.12em;margin:0 0 10px 0;">New Investor Path</p>
         <h2>Start investing without needing expert knowledge</h2>
         <p style="color:#94a3b8;line-height:1.7;max-width:920px;">
-            SignalScope now includes a beginner route that explains risk, time horizon, starter allocation and what to research first.
+            StockRadar now includes a beginner route that explains risk, time horizon, starter allocation and what to research first.
             It is designed for people who want a simple structure before looking at individual stock signals.
         </p>
         <a class="upgrade-cta" href="/beginner">Open Investment Compass</a>
@@ -1847,7 +1847,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
        <div id="Starter-Buy-Framework" class="card">
         <p style="color:#00ffaa;font-weight:900;text-transform:uppercase;letter-spacing:0.12em;margin:0 0 10px 0;">Starter Buy Framework</p>
         <h2>Start with a clear identity before buying complex stocks or ETFs</h2>
-        <p style="color:#94a3b8;line-height:1.7;max-width:980px;">For a new investor, the first decision is not “what is hot today?” It is “what kind of investor am I?” SignalScope should use the AI signals below as research prompts, but the starter list should stay simple, diversified and easy to understand.</p>
+        <p style="color:#94a3b8;line-height:1.7;max-width:980px;">For a new investor, the first decision is not “what is hot today?” It is “what kind of investor am I?” StockRadar should use the AI signals below as research prompts, but the starter list should stay simple, diversified and easy to understand.</p>
         <div class="signal-guide-grid">
             <div class="signal-guide-card"><strong>1. Core first</strong><span>Start with a broad market ETF or simple diversified exposure before adding individual companies.</span></div>
             <div class="signal-guide-card"><strong>2. Quality next</strong><span>Look for businesses you understand, with durable demand, strong brands, cash flow or clear market leadership.</span></div>
@@ -1855,7 +1855,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
             <div class="signal-guide-card"><strong>4. Review monthly</strong><span>Do not chase every signal. Build the habit of checking risk, valuation, concentration and thesis drift.</span></div>
         </div>
         <table>
-            <tr><th>Starter bucket</th><th>Example research names</th><th>Why it helps beginners</th><th>How to use SignalScope</th></tr>
+            <tr><th>Starter bucket</th><th>Example research names</th><th>Why it helps beginners</th><th>How to use StockRadar</th></tr>
             <tr>
                 <td><strong>Core ETF base</strong></td>
                 <td><a class="stock-link" href="/stock/SPY">SPY</a>, <a class="stock-link" href="/stock/QQQ">QQQ</a></td>
@@ -2122,7 +2122,7 @@ ul{color:#cbd5e1;line-height:1.75;padding-left:20px;}
     <div class="hero">
         <p class="kicker">starter investor profile</p>
         <h1>Start with a simple structure before chasing stock picks.</h1>
-        <p>Answer five plain-English questions. SignalScope will give you a beginner profile, a starter allocation model and the key risks to understand before using the AI signals dashboard.</p>
+        <p>Answer five plain-English questions. StockRadar will give you a beginner profile, a starter allocation model and the key risks to understand before using the AI signals dashboard.</p>
         <div><span class="tag">ETF-first thinking</span><span class="tag">Risk guidance</span><span class="tag">Plain English</span><span class="tag">Educational only</span></div>
     </div>
     <div class="grid">
@@ -2154,7 +2154,7 @@ ul{color:#cbd5e1;line-height:1.75;padding-left:20px;}
                 <li>Thinking BUY means guaranteed profit or SELL means guaranteed collapse.</li>
                 <li>Checking prices every hour when the plan is long-term.</li>
             </ul>
-            <div class="warning"><strong>Important:</strong> SignalScope is educational market software, not personal financial advice. Users should make their own decisions or speak to a regulated adviser.</div>
+            <div class="warning"><strong>Important:</strong> StockRadar is educational market software, not personal financial advice. Users should make their own decisions or speak to a regulated adviser.</div>
         </div>
     </div>
    {% if result %}
@@ -2320,7 +2320,7 @@ def beginner():
         <div class="hero">
             <p class="kicker">starter investor profile</p>
             <h1>Start with a simple structure before chasing stock picks.</h1>
-            <p>Answer five plain-English questions. SignalScope will give you a beginner profile, a starter allocation model and the key risks to understand before using the AI signals dashboard.</p>
+            <p>Answer five plain-English questions. StockRadar will give you a beginner profile, a starter allocation model and the key risks to understand before using the AI signals dashboard.</p>
             <div><span class="tag">ETF-first thinking</span><span class="tag">Risk guidance</span><span class="tag">Plain English</span><span class="tag">Educational only</span></div>
         </div>
         <div class="grid">
@@ -2347,7 +2347,7 @@ def beginner():
                     <li>Thinking BUY means guaranteed profit or SELL means guaranteed collapse.</li>
                     <li>Checking prices every hour when the plan is long-term.</li>
                 </ul>
-                <div class="warning"><strong>Important:</strong> SignalScope is educational market software, not personal financial advice.</div>
+                <div class="warning"><strong>Important:</strong> StockRadar is educational market software, not personal financial advice.</div>
             </div>
         </div>
         {result_html}
@@ -2378,7 +2378,7 @@ upgrade_html = """
 <!DOCTYPE html>
 <html>
 <head>
-<title>SignalScope Pro Upgrade</title>
+<title>StockRadar Pro Upgrade</title>
 <style>
 *{box-sizing:border-box;}
 body{background:radial-gradient(circle at 18% 8%,rgba(0,255,170,0.18),transparent 30%),radial-gradient(circle at 86% 12%,rgba(255,184,107,0.14),transparent 28%),linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;margin:0;min-height:100vh;padding:54px;}
@@ -2421,7 +2421,7 @@ p{color:#cbd5e1;line-height:1.7;font-size:16px;}
     {% else %}
     <div class="hero">
         <div class="card">
-            <span class="badge">SignalScope Pro</span>
+            <span class="badge">StockRadar Pro</span>
             <h1>Unlock full AI stock intelligence.</h1>
             <p>Pro turns each stock page into a premium decision panel: confidence, signal strength, risk read, momentum interpretation and what to watch next.</p>
             <div class="feature"><span class="tick">✓</span><span>Full Premium Pro Intelligence panel on every supported stock page.</span></div>
@@ -2585,7 +2585,7 @@ def create_checkout_session():
 <!doctype html>
 <html>
 <head>
-    <title>Stripe Setup Needed | SignalScope</title>
+    <title>Stripe Setup Needed | StockRadar</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body{margin:0;background:#020617;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;}
@@ -2623,7 +2623,7 @@ def create_checkout_session():
 <!doctype html>
 <html>
 <head>
-    <title>Stripe Checkout Paused | SignalScope</title>
+    <title>Stripe Checkout Paused | StockRadar</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body{margin:0;background:#020617;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;}
@@ -2653,7 +2653,7 @@ def checkout_success():
 <!doctype html>
 <html>
 <head>
-    <title>Payment Successful | SignalScope</title>
+    <title>Payment Successful | StockRadar</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body{margin:0;background:#020617;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;}
@@ -2666,7 +2666,7 @@ def checkout_success():
 <body>
     <div class="box">
         <h1>✅ Premium activated</h1>
-        <p>Your premium dashboard session is now active. You can return to SignalScope and view premium intelligence features.</p>
+        <p>Your premium dashboard session is now active. You can return to StockRadar and view premium intelligence features.</p>
         <a href="/">Return to dashboard</a>
     </div>
 </body>
