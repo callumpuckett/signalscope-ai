@@ -8,6 +8,7 @@ import csv
 import json
 import os
 import ssl
+import time
 
 try:
     import yfinance as yf
@@ -35,7 +36,11 @@ LAST_NEWS_FETCH_STATUS = {
     "status": "not_started",
     "errors": [],
 }
-
+DASHBOARD_CACHE_TTL_SECONDS = int(os.environ.get("DASHBOARD_CACHE_TTL_SECONDS", "300"))
+DASHBOARD_CACHE = {
+    "timestamp": 0,
+    "data": None,
+}
 
 # --- Helper for fetching JSON from URL with fallback for local SSL certificate errors ---
 def fetch_url_json(url, timeout=8):
@@ -1773,6 +1778,27 @@ def prepare_dashboard_data():
         fetch_symbol_snapshot("^FTSE", "FTSE 100", "UK Index"),
         fetch_symbol_snapshot("BP.L", "BP", "UK Stock"),
     ]
+def get_cached_dashboard_data(force_refresh=False):
+    now = time.time()
+    cached_data = DASHBOARD_CACHE.get("data")
+    cached_timestamp = DASHBOARD_CACHE.get("timestamp", 0)
+
+    if (
+        not force_refresh
+        and isinstance(cached_data, dict)
+        and cached_data.get("market_status")
+        and now - cached_timestamp < DASHBOARD_CACHE_TTL_SECONDS
+    ):
+        return cached_data.copy()
+
+    fresh_data = prepare_dashboard_data()
+
+    if not isinstance(fresh_data, dict):
+        fresh_data = {}
+
+    DASHBOARD_CACHE["data"] = fresh_data.copy()
+    DASHBOARD_CACHE["timestamp"] = now
+    return fresh_data.copy()
 
     impact_radar = get_market_impact_radar()
     signal_lookup = build_signal_lookup(recommendations)
@@ -2796,18 +2822,38 @@ def healthz():
 def favicon():
     return "", 204
 @app.route("/")
-def home():
-    dashboard_data = prepare_dashboard_data()
-    active_tab = request.args.get("tab", "overview")
+def dashboard():
+    active_tab = request.args.get("tab", "overview").strip().lower()
+
     if active_tab not in {"overview", "signals", "radar", "watchlist"}:
         active_tab = "overview"
-    return render_template_string(
-        html,
-        owner_logged_in=owner_has_access(),
-        active_tab=active_tab,
-        **dashboard_data,
-    )
 
+    data = get_cached_dashboard_data(force_refresh=request.args.get("refresh") == "1") or {}
+
+    if not isinstance(data, dict) or not data.get("market_status"):
+        data = prepare_dashboard_data() or {}
+
+    data.setdefault("recommendations", [])
+    data.setdefault("buy_rows", [])
+    data.setdefault("hold_rows", [])
+    data.setdefault("sell_rows", [])
+    data.setdefault("conviction_rows", [])
+    data.setdefault("buy_count", 0)
+    data.setdefault("hold_count", 0)
+    data.setdefault("sell_count", 0)
+    data.setdefault("total_count", 0)
+    data.setdefault("sectors", [])
+    data.setdefault("high_conviction_count", 0)
+    data.setdefault("market_snapshot", [])
+    data.setdefault("market_status", market_status())
+    data.setdefault("last_updated", datetime.now().strftime("%d %b %Y, %H:%M"))
+    data.setdefault("ticker_updated", datetime.now().strftime("%H:%M"))
+    data.setdefault("impact_radar", [])
+    data.setdefault("live_headlines", [])
+    data.setdefault("newsapi_configured", bool(NEWSAPI_KEY))
+    data["active_tab"] = active_tab
+
+    return render_template_string(html, **data)
 
 @app.route("/ai-recommendations")
 def ai_recommendations():
