@@ -308,6 +308,7 @@ def get_stock_universe(force_refresh=False):
                     rows.append(item)
                     seen.add(item["ticker"])
         except Exception:
+            app.logger.warning("Stock universe CSV load failed; using fallback universe.")
             rows = []
             seen = set()
 
@@ -400,6 +401,7 @@ def get_recommendations():
             if rows:
                 return expand_recommendations(rows)
         except Exception:
+            app.logger.warning("Recommendation CSV load failed; trying next candidate.")
             continue
 
     return expand_recommendations(DEFAULT_RECOMMENDATIONS)
@@ -1340,6 +1342,7 @@ def stock_history(symbol, range_key):
         }
 
     except Exception as exc:
+        app.logger.warning("Chart data fetch failed for %s; using fallback chart data.", symbol)
         return {
             "ok": False,
             "labels": [],
@@ -1380,6 +1383,7 @@ def stock_lifetime_growth(symbol):
         }
 
     except Exception:
+        app.logger.warning("Lifetime chart data fetch failed for %s; using fallback data.", symbol)
         return {
             "start_price": "—",
             "end_price": "—",
@@ -1413,6 +1417,7 @@ def fetch_symbol_snapshot(symbol, label, market):
         }
 
     except Exception:
+        app.logger.warning("Market snapshot fetch failed for %s; using fallback data.", symbol)
         return {
             "symbol": symbol,
             "label": label,
