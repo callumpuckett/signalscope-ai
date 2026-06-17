@@ -2980,6 +2980,8 @@ def health():
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "newsapi_configured": bool(NEWSAPI_KEY),
         "dashboard_cache_configured": True,
+        "stripe_configured": stripe_checkout_configured(),
+        "owner_login_configured": owner_login_configured(),
         "stock_universe_csv": STOCK_UNIVERSE_CSV,
         "stock_universe_cache_ttl_seconds": STOCK_UNIVERSE_CACHE_TTL_SECONDS,
         "dashboard_cache_ttl_seconds": DASHBOARD_CACHE_TTL_SECONDS,
