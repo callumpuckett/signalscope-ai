@@ -1812,7 +1812,8 @@ def get_market_impact_radar():
 # --- News-style market impact ticker function ---
 def build_live_headlines(recommendations, impact_radar):
     headlines = []
-    live_articles = fetch_live_market_news(signal_lookup = build_signal_lookup(recommendations))
+    signal_lookup = build_signal_lookup(recommendations)
+    live_articles = fetch_live_market_news()
 
     for article in live_articles:
         title = str(article.get("title", "")).strip()
@@ -1973,6 +1974,59 @@ def prepare_dashboard_data():
         fetch_symbol_snapshot("^FTSE", "FTSE 100", "UK Index"),
         fetch_symbol_snapshot("BP.L", "BP", "UK Stock"),
     ]
+
+    impact_radar = get_market_impact_radar()
+    live_headlines = safe_build_live_headlines(recommendations, impact_radar) or []
+
+    blocked_news_phrases = (
+        "Market headlines are reconnecting",
+        "Add NEWSAPI_KEY",
+        "NEWSAPI_KEY",
+        "NewsAPI key required",
+        "Setup needed",
+        "Live market headlines are temporarily unavailable",
+    )
+
+    live_headlines = [
+        item for item in live_headlines
+        if isinstance(item, dict)
+        and str(item.get("label", "")).upper() == "LIVE NEWS"
+        and str(item.get("article_url", "")).startswith("http")
+        and not any(
+            phrase in str(item.get(field, ""))
+            for phrase in blocked_news_phrases
+            for field in ("headline", "text", "direction", "published_label")
+        )
+    ]
+
+    live_news_active = any(
+        str(item.get("label", "")).upper() == "LIVE NEWS"
+        and str(item.get("article_url", "")).startswith("http")
+        for item in live_headlines
+    )
+
+    return {
+        "recommendations": recommendations,
+        "buy_rows": buy_rows,
+        "hold_rows": hold_rows,
+        "sell_rows": sell_rows,
+        "conviction_rows": conviction_rows,
+        "buy_count": buy_count,
+        "hold_count": hold_count,
+        "sell_count": sell_count,
+        "total_count": len(recommendations),
+        "sectors": sorted({item.get("sector") or "AI Watchlist" for item in recommendations}),
+        "high_conviction_count": high_conviction_count,
+        "market_snapshot": market_snapshot,
+        "market_status": market_status(),
+        "last_updated": datetime.now().strftime("%d %b %Y, %H:%M"),
+        "ticker_updated": datetime.now().strftime("%H:%M"),
+        "impact_radar": impact_radar,
+        "live_headlines": live_headlines,
+        "live_news_active": live_news_active,
+        "newsapi_configured": bool(NEWSAPI_KEY),
+    }
+
 def get_cached_dashboard_data(force_refresh=False):
     now = time.time()
     cached_data = DASHBOARD_CACHE.get("data")
@@ -1994,78 +2048,6 @@ def get_cached_dashboard_data(force_refresh=False):
     DASHBOARD_CACHE["data"] = fresh_data.copy()
     DASHBOARD_CACHE["timestamp"] = now
     return fresh_data.copy()
-
-    impact_radar = get_market_impact_radar()
-    signal_lookup = build_signal_lookup(recommendations)
-    live_headlines = safe_build_live_headlines(recommendations, impact_radar) or []
-
-    blocked_news_phrases = (
-        "Add NEWSAPI_KEY",
-        "NEWSAPI_KEY",
-        "NewsAPI key required",
-        "Setup needed",
-    )
-
-    live_headlines = [
-        headline for headline in live_headlines
-        if not any(
-            phrase in str(headline.get("headline", ""))
-            or phrase in str(headline.get("text", ""))
-            or phrase in str(headline.get("direction", ""))
-            or phrase in str(headline.get("published_label", ""))
-            for phrase in blocked_news_phrases
-        )
-    ]
-
-    if not live_headlines:
-        live_headlines = []
-        for item in impact_radar[:8]:
-            stocks = item.get("stocks", []) or ["SPY", "QQQ"]
-            primary_stock = stocks[0] if stocks else "SPY"
-            headline = item.get("title", "Market impact theme on watch")
-            theme = item.get("free_view") or item.get("theme") or headline
-
-            live_headlines.append({
-                "label": "STOCKRADAR THEME",
-                "headline": headline,
-                "text": theme,
-                "url": f"/stock/{primary_stock}",
-                "article_url": f"/stock/{primary_stock}",
-                "stock_url": f"/stock/{primary_stock}",
-                "stock_text": ", ".join(stocks),
-"stock_links": build_stock_links_with_signals(stocks, signal_lookup),
-                "impact_score": item.get("impact_score", item.get("impact", "Pending")),
-                "direction": item.get("direction", "Theme watch"),
-                "source": "StockRadar Market Impact Feed",
-                "published_label": "Theme watch",
-                "premium_text": item.get("premium_view", theme),
-            })
-
-    return {
-        "recommendations": recommendations,
-        "buy_rows": buy_rows,
-        "hold_rows": hold_rows,
-        "sell_rows": sell_rows,
-        "conviction_rows": conviction_rows,
-        "buy_count": buy_count,
-        "hold_count": hold_count,
-        "sell_count": sell_count,
-        "total_count": len(recommendations),
-        "sectors": sorted({item.get("sector") or "AI Watchlist" for item in recommendations}),
-        "high_conviction_count": high_conviction_count,
-        "market_snapshot": market_snapshot,
-        "market_status": market_status(),
-        "last_updated": datetime.now().strftime("%d %b %Y, %H:%M"),
-        "ticker_updated": datetime.now().strftime("%H:%M"),
-        "impact_radar": impact_radar,
-        "live_headlines": live_headlines,
-        "live_news_active": any(
-    str(item.get("label", "")).upper() == "LIVE NEWS"
-    and str(item.get("article_url", "")).startswith("http")
-    for item in live_headlines
-),
-        "newsapi_configured": bool(NEWSAPI_KEY),
-    }
 html = """
 <!DOCTYPE html>
 <html>
@@ -3057,34 +3039,17 @@ def dashboard():
     data.setdefault("impact_radar", [])
     data.setdefault("live_headlines", [])
 
-    if not data.get("live_headlines"):
-        data["live_headlines"] = [{
-            "label": "STOCKRADAR THEME",
-            "headline": "Market headlines are reconnecting",
-            "text": "StockRadar is showing market-impact themes while live article headlines reconnect.",
-            "url": "/news-health",
-            "article_url": "/news-health",
-            "stock_url": "/stock/SPY",
-            "stock_text": "SPY, QQQ",
-            "stock_links": [
-                {"ticker": "SPY", "url": "/stock/SPY", "signal": "HOLD", "signal_class": "hold", "action_text": "Hold"},
-                {"ticker": "QQQ", "url": "/stock/QQQ", "signal": "BUY", "signal_class": "buy", "action_text": "Buy"},
-            ],
-            "impact_score": "Pending",
-            "direction": "Feed health check active",
-            "source": "StockRadar Market Impact Feed",
-            "published_label": "Theme watch",
-            "premium_text": "StockRadar is showing market-impact themes while live article headlines reconnect.",
-        }]
+    data["live_headlines"] = [
+        item for item in data.get("live_headlines", [])
+        if str(item.get("label", "")).upper() == "LIVE NEWS"
+        and str(item.get("article_url", "")).startswith("http")
+    ]
 
     data.setdefault("newsapi_configured", bool(NEWSAPI_KEY))
-    data.setdefault(
-        "live_news_active",
-        any(
-            str(item.get("label", "")).upper() == "LIVE NEWS"
-            and str(item.get("article_url", "")).startswith("http")
-            for item in data.get("live_headlines", [])
-        )
+    data["live_news_active"] = any(
+        str(item.get("label", "")).upper() == "LIVE NEWS"
+        and str(item.get("article_url", "")).startswith("http")
+        for item in data.get("live_headlines", [])
     )
     data["active_tab"] = active_tab
     data["quick_search_query"] = quick_search_query
