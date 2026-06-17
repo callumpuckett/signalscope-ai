@@ -1,4 +1,4 @@
-from flask import Flask, render_template_string, redirect, url_for, request, session
+from flask import Flask, render_template_string, redirect, url_for, request, session, jsonify
 from datetime import datetime, time as dt_time, timezone
 from zoneinfo import ZoneInfo
 from urllib.parse import urlencode
@@ -2974,7 +2974,16 @@ if(labels.length>0){
 # --- Health and diagnostics routes ---
 @app.route("/health")
 def health():
-    return "OK", 200
+    return jsonify({
+        "status": "ok",
+        "app": "StockRadar",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "newsapi_configured": bool(NEWSAPI_KEY),
+        "dashboard_cache_configured": True,
+        "stock_universe_csv": STOCK_UNIVERSE_CSV,
+        "stock_universe_cache_ttl_seconds": STOCK_UNIVERSE_CACHE_TTL_SECONDS,
+        "dashboard_cache_ttl_seconds": DASHBOARD_CACHE_TTL_SECONDS,
+    })
 
 
 @app.route("/news-health")
