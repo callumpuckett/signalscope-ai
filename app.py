@@ -7,8 +7,31 @@ from urllib.error import URLError
 import csv
 import json
 import os
+import pandas as pd
 import ssl
 import time
+
+
+def is_production_environment():
+    return (
+        os.environ.get("RENDER", "").strip().lower() == "true"
+        or os.environ.get("FLASK_ENV", "").strip().lower() == "production"
+        or os.environ.get("ENVIRONMENT", "").strip().lower() == "production"
+    )
+
+
+def configure_session_security(flask_app, secret_key, production):
+    configured_secret = str(secret_key or "").strip()
+
+    if production and len(configured_secret) < 32:
+        raise RuntimeError("A strong session secret of at least 32 characters is required in production.")
+
+    flask_app.secret_key = configured_secret or "stockradar-local-development-only"
+    flask_app.config.update(
+        SESSION_COOKIE_SECURE=bool(production),
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+    )
 
 try:
     import yfinance as yf
@@ -21,7 +44,14 @@ except ImportError:
     stripe = None
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SIGNALSCOPE_SECRET_KEY") or os.environ.get("SECRET_KEY", "signalscope-local-dev-secret-key-change-before-production")
+IS_PRODUCTION = is_production_environment()
+SESSION_SECRET = (
+    os.environ.get("SIGNALSCOPE_SECRET_KEY")
+    or os.environ.get("SESSION_SECRET")
+    or os.environ.get("SECRET_KEY")
+    or ""
+)
+configure_session_security(app, SESSION_SECRET, IS_PRODUCTION)
 OWNER_EMAIL = os.environ.get("SIGNALSCOPE_OWNER_EMAIL", "").strip().lower()
 OWNER_PASSWORD = os.environ.get("SIGNALSCOPE_OWNER_PASSWORD", "")
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
@@ -1349,12 +1379,69 @@ def safe_history(ticker, **kwargs):
         raise RuntimeError("yfinance is not installed")
 
     stock = yf.Ticker(ticker)
+    kwargs.setdefault("auto_adjust", False)
 
     try:
         return stock.history(**kwargs)
     except TypeError:
         kwargs.pop("timeout", None)
         return stock.history(**kwargs)
+
+
+def extract_history_price_series(history, symbol):
+    if history is None or history.empty:
+        return pd.Series(dtype="float64")
+
+    symbol_token = str(symbol or "").strip().upper()
+
+    for field in ("Close", "Adj Close"):
+        field_token = field.upper()
+        selected_column = None
+
+        if isinstance(history.columns, pd.MultiIndex):
+            candidates = []
+
+            for column in history.columns:
+                column_parts = tuple(str(part).strip().upper() for part in column)
+                if field_token not in column_parts:
+                    continue
+                candidates.append((0 if symbol_token in column_parts else 1, column))
+
+            if candidates:
+                selected_column = sorted(candidates, key=lambda item: item[0])[0][1]
+        else:
+            for column in history.columns:
+                if str(column).strip().upper() == field_token:
+                    selected_column = column
+                    break
+
+        if selected_column is None:
+            continue
+
+        values = history.loc[:, selected_column]
+        if isinstance(values, pd.DataFrame):
+            values = values.iloc[:, 0]
+
+        numeric_values = pd.to_numeric(values, errors="coerce").dropna()
+        if not numeric_values.empty:
+            return numeric_values
+
+    return pd.Series(dtype="float64")
+
+
+def normalize_history_points(history, symbol):
+    prices = extract_history_price_series(history, symbol)
+    points = []
+
+    for index, value in prices.items():
+        date_value = index.isoformat() if hasattr(index, "isoformat") else str(index)
+        points.append({
+            "date": date_value,
+            "label": str(index)[:16],
+            "price": round(float(value), 2),
+        })
+
+    return points
 
 
 def money(value):
@@ -1367,19 +1454,6 @@ def money(value):
 def stock_history(symbol, range_key):
     settings = CHART_RANGES.get(range_key, CHART_RANGES["1mo"])
 
-    if symbol == "SPCX":
-        return {
-            "ok": False,
-            "labels": [],
-            "prices": [],
-            "start_price": "—",
-            "end_price": "—",
-            "change_amount": "—",
-            "change_percent": "—",
-            "direction": "hold",
-            "error": "Live public-market price data is not available for SpaceX/SPCX. StockRadar will not substitute or invent chart data.",
-        }
-
     try:
         history = safe_history(
             symbol,
@@ -1388,19 +1462,15 @@ def stock_history(symbol, range_key):
             timeout=6,
         )
 
-        if history is None or history.empty or "Close" not in history.columns:
+        points = normalize_history_points(history, symbol)
+        if not points:
             raise ValueError("Live price data is temporarily unavailable for this ticker.")
 
-        close = history["Close"].dropna()
+        labels = [point["label"] for point in points]
+        prices = [point["price"] for point in points]
 
-        if close.empty:
-            raise ValueError("No close prices available.")
-
-        labels = [str(index)[:16] for index in close.index]
-        prices = [round(float(value), 2) for value in close.values]
-
-        start = float(close.iloc[0])
-        end = float(close.iloc[-1])
+        start = prices[0]
+        end = prices[-1]
         change = end - start
         percent = (change / start) * 100 if start else 0
         direction = "buy" if change > 0 else "sell" if change < 0 else "hold"
@@ -1433,23 +1503,9 @@ def stock_history(symbol, range_key):
 
 
 def stock_lifetime_growth(symbol):
-    if symbol == "SPCX":
-        return {
-            "start_price": "—",
-            "end_price": "—",
-            "change_amount": "—",
-            "change_percent": "—",
-            "direction": "hold",
-        }
-
     try:
         history = safe_history(symbol, period="max", interval="1mo", timeout=8)
-
-        if history is None or history.empty or "Close" not in history.columns:
-            raise ValueError("No lifetime data available")
-
-        close = history["Close"].dropna()
-
+        close = extract_history_price_series(history, symbol)
         if close.empty:
             raise ValueError("No lifetime close data available")
 
@@ -1481,11 +1537,9 @@ def stock_lifetime_growth(symbol):
 def fetch_symbol_snapshot(symbol, label, market):
     try:
         history = safe_history(symbol, period="5d", timeout=4)
-
-        if history is None or history.empty or "Close" not in history.columns:
+        close = extract_history_price_series(history, symbol)
+        if close.empty:
             raise ValueError("No data")
-
-        close = history["Close"].dropna()
         latest = float(close.iloc[-1])
         previous = float(close.iloc[-2]) if len(close) > 1 else latest
         change = latest - previous
