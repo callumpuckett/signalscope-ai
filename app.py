@@ -149,6 +149,7 @@ DEFAULT_RECOMMENDATIONS = [
     {"ticker": "AMZN", "signal": "BUY", "confidence": "79%", "reason": "Positive trend and improving AI signal profile."},
     {"ticker": "GOOGL", "signal": "HOLD", "confidence": "67%", "reason": "Balanced setup with no major downside warning in the current scanner."},
     {"ticker": "META", "signal": "BUY", "confidence": "81%", "reason": "Strong relative momentum and improving conviction score."},
+    {"ticker": "PLTR", "signal": "HOLD", "confidence": "63%", "reason": "Palantir has strong AI and data analytics momentum, but valuation and volatility need a controlled research approach."},
     {"ticker": "SPCX", "signal": "HOLD", "confidence": "50%", "reason": "SpaceX is a high-growth space and Starlink-linked research candidate. Treat it as a controlled satellite because valuation, volatility, liquidity and public trading history may be limited."},
     {"ticker": "NFLX", "signal": "HOLD", "confidence": "58%", "reason": "Mixed short-term trend. Worth monitoring for a stronger signal."},
     {"ticker": "AMD", "signal": "BUY", "confidence": "76%", "reason": "AI semiconductor exposure gives positive momentum, but conviction is not yet extreme."},
@@ -177,7 +178,7 @@ STOCK_UNIVERSE_CACHE = {
 }
 
 TRACKED_STOCK_UNIVERSE = [
-    "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "SPCX", "AVGO", "AMD", "NFLX",
+    "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "PLTR", "SPCX", "AVGO", "AMD", "NFLX",
     "ORCL", "CRM", "ADBE", "INTC", "CSCO", "QCOM", "IBM", "NOW", "SHOP", "UBER",
     "JPM", "BAC", "GS", "MS", "WFC", "C", "V", "MA", "AXP", "PYPL",
     "XOM", "CVX", "COP", "SLB", "OXY", "BP.L", "SHEL.L", "HSBA.L", "LLOY.L", "BARC.L",
@@ -193,6 +194,7 @@ TRACKED_STOCK_UNIVERSE = [
 SECTOR_MAP = {
     "AAPL": "Technology", "MSFT": "Technology", "NVDA": "Semiconductors", "AMZN": "Consumer / Cloud",
     "GOOGL": "Technology", "META": "Technology", "TSLA": "EV / Growth", "AVGO": "Semiconductors",
+    "PLTR": "Technology / Data Analytics",
     "SPCX": "Space / Aerospace / Growth",
     "AMD": "Semiconductors", "NFLX": "Media", "JPM": "Banks", "BAC": "Banks", "GS": "Banks",
     "MS": "Banks", "WFC": "Banks", "C": "Banks", "V": "Payments", "MA": "Payments",
@@ -210,10 +212,39 @@ SECTOR_MAP = {
 }
 
 STOCK_SYMBOL_ALIASES = {
+    "PALANTIR": "PLTR",
+    "PALANTIR TECHNOLOGIES": "PLTR",
+    "PALANTIR TECHNOLOGIES INC": "PLTR",
+    "PALANTIR TECHNOLOGIES INC.": "PLTR",
     "SPACEX": "SPCX",
     "SPACE X": "SPCX",
     "SPAX.PVT": "SPCX",
 }
+
+
+def canonical_stock_symbol(value):
+    cleaned = str(value or "").strip()
+    if not cleaned:
+        return ""
+    upper_value = cleaned.upper()
+    normalized_name = " ".join(
+        upper_value.replace("-", " ").replace("_", " ").split()
+    )
+    alias_match = STOCK_SYMBOL_ALIASES.get(upper_value) or STOCK_SYMBOL_ALIASES.get(normalized_name)
+    if alias_match:
+        return alias_match
+    try:
+        for item in get_stock_universe():
+            ticker = str(item.get("ticker", "")).strip().upper()
+            name = str(item.get("name", "")).strip().upper()
+            normalized_item_name = " ".join(
+                name.replace("-", " ").replace("_", " ").split()
+            )
+            if upper_value == ticker or normalized_name == normalized_item_name:
+                return ticker
+    except Exception:
+        pass
+    return upper_value
 
 
 def generated_signal_for_ticker(ticker, index):
@@ -575,7 +606,7 @@ def build_stock_links_with_signals(tickers, signal_lookup=None):
 
 def get_stock_ai_context(symbol):
     recommendations = get_recommendations()
-    cleaned_symbol = symbol.strip().upper()
+    cleaned_symbol = canonical_stock_symbol(symbol)
 
     matching_item = None
 
@@ -851,7 +882,7 @@ def stock_universe_page():
 
 @app.route("/premium-decision/<symbol>")
 def premium_decision(symbol):
-    cleaned_symbol = symbol.strip().upper()
+    cleaned_symbol = canonical_stock_symbol(symbol)
     ai_context = get_stock_ai_context(cleaned_symbol)
     report = get_premium_report(cleaned_symbol, ai_context)
 
@@ -1452,6 +1483,7 @@ def money(value):
 
 
 def stock_history(symbol, range_key):
+    symbol = canonical_stock_symbol(symbol)
     settings = CHART_RANGES.get(range_key, CHART_RANGES["1mo"])
 
     try:
@@ -1503,6 +1535,7 @@ def stock_history(symbol, range_key):
 
 
 def stock_lifetime_growth(symbol):
+    symbol = canonical_stock_symbol(symbol)
     try:
         history = safe_history(symbol, period="max", interval="1mo", timeout=8)
         close = extract_history_price_series(history, symbol)
@@ -1535,6 +1568,7 @@ def stock_lifetime_growth(symbol):
 
 
 def fetch_symbol_snapshot(symbol, label, market):
+    symbol = canonical_stock_symbol(symbol)
     try:
         history = safe_history(symbol, period="5d", timeout=4)
         close = extract_history_price_series(history, symbol)
@@ -3229,7 +3263,7 @@ def ai_recommendations():
 @app.route("/stock/<path:symbol>")
 def stock_detail(symbol):
     requested_symbol = symbol.strip().upper()
-    cleaned_symbol = STOCK_SYMBOL_ALIASES.get(requested_symbol, requested_symbol)
+    cleaned_symbol = canonical_stock_symbol(symbol)
     active_range = request.args.get("range", "1mo")
 
     if active_range not in CHART_RANGES:
