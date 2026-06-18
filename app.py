@@ -1,4 +1,4 @@
-from flask import Flask, render_template_string, redirect, url_for, request, session, jsonify
+from flask import Flask, Response, render_template_string, redirect, url_for, request, session, jsonify
 from datetime import datetime, time as dt_time, timezone
 from zoneinfo import ZoneInfo
 from urllib.parse import urlencode
@@ -44,6 +44,17 @@ except ImportError:
     stripe = None
 
 app = Flask(__name__)
+
+
+@app.after_request
+def add_security_headers(response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    return response
+
+
 IS_PRODUCTION = is_production_environment()
 SESSION_SECRET = (
     os.environ.get("SIGNALSCOPE_SECRET_KEY")
@@ -182,6 +193,82 @@ a{color:#38bdf8;}
 
 def render_legal_page(title, content):
     return render_template_string(legal_page_html, title=title, content=content)
+
+
+error_page_html = """
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ title }} — StockRadar</title>
+<style>
+body{margin:0;background:radial-gradient(circle at 20% 10%,rgba(0,255,170,0.13),transparent 28%),linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;display:flex;align-items:center;justify-content:center;}
+.card{width:min(760px,100%);background:rgba(15,23,42,0.94);border:1px solid rgba(255,255,255,0.11);border-radius:28px;padding:34px;box-shadow:0 28px 82px rgba(0,0,0,0.42);}
+.code{color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;}
+h1{font-size:44px;line-height:1.04;margin:12px 0 16px;}
+p{color:#cbd5e1;line-height:1.75;}
+.links{display:flex;flex-wrap:wrap;gap:12px;margin-top:22px;}
+a{display:inline-block;color:#050505;background:linear-gradient(135deg,#00ffaa,#ffb86b);padding:12px 16px;border-radius:14px;text-decoration:none;font-weight:950;}
+a.secondary{color:#dbeafe;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);}
+@media(max-width:700px){body{padding:24px;}h1{font-size:34px;}}
+</style>
+</head>
+<body>
+<main class="card">
+    <div class="code">{{ code }}</div>
+    <h1>{{ heading }}</h1>
+    <p>{{ message }}</p>
+    {% if support_html %}<p>{{ support_html | safe }}</p>{% endif %}
+    <div class="links">
+        <a href="/">Dashboard</a>
+        <a class="secondary" href="/universe">Explore Stocks</a>
+        <a class="secondary" href="/feedback">Feedback</a>
+        <a class="secondary" href="/contact">Contact</a>
+    </div>
+</main>
+</body>
+</html>
+"""
+
+
+def render_error_page(code, title, heading, message, support_html=""):
+    return render_template_string(
+        error_page_html,
+        code=code,
+        title=title,
+        heading=heading,
+        message=message,
+        support_html=support_html,
+    )
+
+
+@app.errorhandler(404)
+def page_not_found(error):
+    return render_error_page(
+        "404",
+        "Page Not Found",
+        "This page could not be found.",
+        "The address may be incorrect, or the page may have moved.",
+    ), 404
+
+
+@app.errorhandler(500)
+def internal_server_error(error):
+    if SUPPORT_EMAIL:
+        support_html = render_template_string(
+            'For support, email <a class="secondary" href="mailto:{{ support_email }}">{{ support_email }}</a>.',
+            support_email=SUPPORT_EMAIL,
+        )
+    else:
+        support_html = "Support contact coming soon."
+
+    return render_error_page(
+        "500",
+        "Something Went Wrong",
+        "Something went wrong.",
+        "StockRadar could not complete this request. Please try again shortly.",
+        support_html=support_html,
+    ), 500
 
 
 CHART_RANGES = {
@@ -3323,6 +3410,43 @@ def healthz():
 @app.route("/favicon.ico")
 def favicon():
     return "", 204
+
+
+@app.route("/robots.txt")
+def robots_txt():
+    content = (
+        "User-agent: *\n"
+        "Allow: /\n"
+        f"Sitemap: {PRODUCTION_BASE_URL}/sitemap.xml\n"
+    )
+    return Response(content, mimetype="text/plain")
+
+
+@app.route("/sitemap.xml")
+def sitemap_xml():
+    public_paths = [
+        "/",
+        "/universe",
+        "/upgrade",
+        "/privacy",
+        "/terms",
+        "/refund-policy",
+        "/risk-disclaimer",
+        "/contact",
+        "/manage-subscription",
+        "/feedback",
+    ]
+    urls = "".join(
+        f"<url><loc>{PRODUCTION_BASE_URL}{path}</loc></url>"
+        for path in public_paths
+    )
+    content = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+        f"{urls}"
+        "</urlset>"
+    )
+    return Response(content, mimetype="application/xml")
 
 
 @app.route("/privacy")
