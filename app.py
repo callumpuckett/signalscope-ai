@@ -56,10 +56,18 @@ OWNER_EMAIL = os.environ.get("SIGNALSCOPE_OWNER_EMAIL", "").strip().lower()
 OWNER_PASSWORD = os.environ.get("SIGNALSCOPE_OWNER_PASSWORD", "")
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_PRICE_ID = os.environ.get("STRIPE_PRICE_ID", "")
-STRIPE_SUCCESS_URL = os.environ.get(
-    "STRIPE_SUCCESS_URL",
-    "https://stockradar-ai-1-0v3g.onrender.com/checkout-success"
+PRODUCTION_BASE_URL = "https://signalscope-ai-1-0v3g.onrender.com"
+DEFAULT_STRIPE_SUCCESS_URL = (
+    f"{PRODUCTION_BASE_URL}/checkout-success?session_id={{CHECKOUT_SESSION_ID}}"
 )
+DEFAULT_STRIPE_CANCEL_URL = f"{PRODUCTION_BASE_URL}/upgrade"
+
+
+def configured_url(environment_name, default):
+    return os.environ.get(environment_name, default)
+
+
+STRIPE_SUCCESS_URL = configured_url("STRIPE_SUCCESS_URL", DEFAULT_STRIPE_SUCCESS_URL)
 NEWSAPI_KEY = os.environ.get("NEWSAPI_KEY", "").strip()
 LAST_NEWS_FETCH_STATUS = {
     "provider": "none",
@@ -100,10 +108,7 @@ def fetch_url_json(url, timeout=8):
                 return json.loads(response.read().decode("utf-8"))
 
         raise
-STRIPE_CANCEL_URL = os.environ.get(
-    "STRIPE_CANCEL_URL",
-    "https://stockradar-ai-1-0v3g.onrender.com/upgrade"
-)
+STRIPE_CANCEL_URL = configured_url("STRIPE_CANCEL_URL", DEFAULT_STRIPE_CANCEL_URL)
 
 if stripe and STRIPE_SECRET_KEY:
     stripe.api_key = STRIPE_SECRET_KEY
@@ -3257,7 +3262,7 @@ def dashboard():
 
 @app.route("/ai-recommendations")
 def ai_recommendations():
-    return redirect(url_for("home", tab="watchlist"))
+    return redirect(url_for("dashboard", tab="watchlist"))
 
 
 @app.route("/stock/<path:symbol>")
@@ -3366,12 +3371,52 @@ def create_checkout_session():
 
 @app.route("/checkout-success")
 def checkout_success():
-    session["owner_logged_in"] = True
+    checkout_session_id = request.args.get("session_id", "").strip()
+    premium_activated = False
+    heading = "Payment verification required"
+    message = "Premium access has not been activated. Please complete checkout from the upgrade page."
+    response_status = 400
+
+    if not stripe_checkout_configured():
+        heading = "Payment verification unavailable"
+        message = "Premium access has not been activated because Stripe Checkout is not configured."
+        response_status = 503
+    elif not checkout_session_id:
+        message = "Premium access has not been activated because the Stripe checkout session is missing."
+    else:
+        try:
+            verified_session = stripe.checkout.Session.retrieve(checkout_session_id)
+            if isinstance(verified_session, dict):
+                payment_status = str(verified_session.get("payment_status") or "").lower()
+                checkout_status = str(verified_session.get("status") or "").lower()
+            else:
+                payment_status = str(getattr(verified_session, "payment_status", "") or "").lower()
+                checkout_status = str(getattr(verified_session, "status", "") or "").lower()
+
+            payment_verified = (
+                payment_status == "paid"
+                if payment_status
+                else checkout_status == "complete"
+            )
+
+            if payment_verified:
+                session["owner_logged_in"] = True
+                premium_activated = True
+                heading = "✅ Premium activated"
+                message = "Your verified premium dashboard session is now active."
+                response_status = 200
+            else:
+                heading = "Payment pending"
+                message = "Premium access has not been activated because Stripe has not confirmed payment."
+        except Exception:
+            heading = "Payment verification failed"
+            message = "Premium access has not been activated. Please return to the upgrade page and try again."
+
     return render_template_string("""
 <!doctype html>
 <html>
 <head>
-    <title>Payment Successful | StockRadar</title>
+    <title>{{ heading }} | StockRadar</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body{margin:0;background:#020617;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;}
@@ -3383,13 +3428,17 @@ def checkout_success():
 </head>
 <body>
     <div class="box">
-        <h1>✅ Premium activated</h1>
-        <p>Your premium dashboard session is now active. You can return to StockRadar and view premium intelligence features.</p>
-        <a href="/">Return to dashboard</a>
+        <h1>{{ heading }}</h1>
+        <p>{{ message }}</p>
+        <a href="{{ '/' if premium_activated else '/upgrade' }}">{{ 'Return to dashboard' if premium_activated else 'Return to upgrade' }}</a>
     </div>
 </body>
 </html>
-    """)
+    """,
+        heading=heading,
+        message=message,
+        premium_activated=premium_activated,
+    ), response_status
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -3421,7 +3470,7 @@ def owner():
 @app.route("/logout")
 def logout():
     session.pop("owner_logged_in", None)
-    return redirect(url_for("home"))
+    return redirect(url_for("dashboard"))
 
 
 if __name__ == "__main__":
