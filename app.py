@@ -54,6 +54,7 @@ SESSION_SECRET = (
 configure_session_security(app, SESSION_SECRET, IS_PRODUCTION)
 OWNER_EMAIL = os.environ.get("SIGNALSCOPE_OWNER_EMAIL", "").strip().lower()
 OWNER_PASSWORD = os.environ.get("SIGNALSCOPE_OWNER_PASSWORD", "")
+SUPPORT_EMAIL = os.environ.get("SUPPORT_EMAIL", "").strip()
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_PRICE_ID = os.environ.get("STRIPE_PRICE_ID", "")
 PRODUCTION_BASE_URL = "https://signalscope-ai-1-0v3g.onrender.com"
@@ -127,13 +128,58 @@ def owner_login_configured():
 def disclaimer_footer():
     return """
     <footer style="margin:32px auto 0;padding:18px 0 0;border-top:1px solid rgba(255,255,255,0.10);color:#94a3b8;font-size:12px;line-height:1.65;max-width:1180px;">
-        <strong style="color:#cbd5e1;">Educational only.</strong>
-        StockRadar provides educational market information and research tools only. It does not provide personal financial, investment, tax, or legal advice. BUY, HOLD, and SELL signals are research prompts—not instructions or guarantees. Investments can fall as well as rise, and you may lose money. Consider your circumstances and seek advice from a regulated professional where appropriate.
+        <div>
+            <strong style="color:#cbd5e1;">Educational only.</strong>
+            StockRadar provides educational market information and research tools only. It does not provide personal financial, investment, tax, or legal advice. BUY, HOLD, and SELL signals are research prompts—not instructions or guarantees. Investments can fall as well as rise, and you may lose money. Consider your circumstances and seek advice from a regulated professional where appropriate.
+        </div>
+        <nav aria-label="Legal and support links" style="display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;">
+            <a href="/privacy" style="color:#94a3b8;">Privacy</a>
+            <a href="/terms" style="color:#94a3b8;">Terms</a>
+            <a href="/refund-policy" style="color:#94a3b8;">Refund Policy</a>
+            <a href="/risk-disclaimer" style="color:#94a3b8;">Risk Disclaimer</a>
+            <a href="/contact" style="color:#94a3b8;">Contact</a>
+        </nav>
     </footer>
     """
 
 
 app.jinja_env.globals["disclaimer_footer"] = disclaimer_footer
+
+
+legal_page_html = """
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ title }} — StockRadar</title>
+<style>
+body{margin:0;background:linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
+.wrap{max-width:900px;margin:0 auto;}
+.card{background:rgba(15,23,42,0.94);border:1px solid rgba(255,255,255,0.11);border-radius:26px;padding:32px;box-shadow:0 24px 70px rgba(0,0,0,0.35);}
+h1{font-size:42px;margin:0 0 18px;}
+h2{font-size:22px;margin:26px 0 8px;}
+p,li{color:#cbd5e1;line-height:1.75;}
+a{color:#38bdf8;}
+.back{display:inline-block;margin-bottom:22px;font-weight:900;text-decoration:none;}
+@media(max-width:700px){body{padding:24px;}h1{font-size:34px;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+    <a class="back" href="/">← Back to StockRadar</a>
+    <main class="card">
+        <h1>{{ title }}</h1>
+        {{ content | safe }}
+    </main>
+    {{ disclaimer_footer() | safe }}
+</div>
+</body>
+</html>
+"""
+
+
+def render_legal_page(title, content):
+    return render_template_string(legal_page_html, title=title, content=content)
 
 
 CHART_RANGES = {
@@ -3103,6 +3149,7 @@ p{color:#cbd5e1;line-height:1.7;font-size:16px;}
             <div class="price">£5 <span>/ month</span></div>
             <p>Start Premium to unlock the full report view.</p>
             <div class="pay-box">
+                <p class="note">Premium access provides research tools and analysis only. StockRadar is not financial advice.</p>
                 <form method="POST" action="/create-checkout-session">
                     <button class="button" type="submit" style="border:none;cursor:pointer;width:100%;">Start Premium with Stripe Checkout</button>
                 </form>
@@ -3206,6 +3253,80 @@ def healthz():
 @app.route("/favicon.ico")
 def favicon():
     return "", 204
+
+
+@app.route("/privacy")
+def privacy():
+    return render_legal_page(
+        "Privacy Policy",
+        """
+        <p>StockRadar uses the minimum information needed to operate the service, provide requested features, maintain security, and support customers.</p>
+        <h2>Information we may process</h2>
+        <p>This may include account or support details you provide, session information needed for login and premium access, and technical logs used to keep the service reliable and secure.</p>
+        <h2>Payments</h2>
+        <p>Payments are handled by Stripe. StockRadar does not store full payment-card details.</p>
+        <h2>Your choices</h2>
+        <p>You may contact support to ask about personal information associated with your use of StockRadar, subject to applicable legal requirements.</p>
+        """,
+    )
+
+
+@app.route("/terms")
+def terms():
+    return render_legal_page(
+        "Terms of Use",
+        """
+        <p>By using StockRadar, you agree to use the service lawfully and for educational and informational research purposes.</p>
+        <h2>No investment advice</h2>
+        <p>StockRadar does not provide regulated financial advice or guarantee investment outcomes. Market information can be delayed, incomplete, or unavailable.</p>
+        <h2>Subscriptions</h2>
+        <p>Premium features require an active subscription. You are responsible for providing accurate payment and contact information.</p>
+        <h2>Service availability</h2>
+        <p>Features and data providers may change, pause, or become unavailable. We may update these terms as the service develops.</p>
+        """,
+    )
+
+
+@app.route("/refund-policy")
+def refund_policy():
+    return render_legal_page(
+        "Refund Policy",
+        """
+        <p>Subscriptions can be cancelled through support while self-service cancellation is being built.</p>
+        <p>Refund requests should be sent to support.</p>
+        <p>Refunds are reviewed case by case.</p>
+        <p>This does not affect statutory rights.</p>
+        """,
+    )
+
+
+@app.route("/risk-disclaimer")
+def risk_disclaimer():
+    return render_legal_page(
+        "Risk Disclaimer",
+        """
+        <p><strong>StockRadar provides educational and informational market research only. It does not provide regulated financial advice, personalised investment recommendations, brokerage services, or trade execution. Users are responsible for their own investment decisions.</strong></p>
+        <p>Investing involves risk. Prices can rise or fall, historical performance does not guarantee future results, and you may lose some or all of the money invested.</p>
+        <p>Market data, signals, confidence scores, and analysis may be delayed, incomplete, or incorrect. Consider your circumstances and seek advice from a suitably regulated professional where appropriate.</p>
+        """,
+    )
+
+
+@app.route("/contact")
+def contact():
+    if SUPPORT_EMAIL:
+        support_content = """
+        <p>For account, subscription, cancellation, refund, or general support, email <a href="mailto:{{ support_email }}">{{ support_email }}</a>.</p>
+        """
+    else:
+        support_content = """
+        <p>Support contact coming soon.</p>
+        """
+
+    content = render_template_string(support_content, support_email=SUPPORT_EMAIL)
+    return render_legal_page("Contact", content)
+
+
 @app.route("/")
 def dashboard():
     active_tab = request.args.get("tab", "overview").strip().lower()
