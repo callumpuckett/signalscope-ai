@@ -41,6 +41,11 @@ DASHBOARD_CACHE = {
     "timestamp": 0,
     "data": None,
 }
+RECOMMENDATIONS_CACHE_TTL_SECONDS = int(os.environ.get("RECOMMENDATIONS_CACHE_TTL_SECONDS", "300"))
+RECOMMENDATIONS_CACHE = {
+    "timestamp": 0,
+    "rows": None,
+}
 
 # --- Helper for fetching JSON from URL with fallback for local SSL certificate errors ---
 def fetch_url_json(url, timeout=8):
@@ -368,6 +373,14 @@ def search_stock_universe(query, limit=12):
     return deduped
 
 def get_recommendations():
+    now = time.time()
+
+    if (
+        RECOMMENDATIONS_CACHE["rows"] is not None
+        and now - RECOMMENDATIONS_CACHE["timestamp"] < RECOMMENDATIONS_CACHE_TTL_SECONDS
+    ):
+        return RECOMMENDATIONS_CACHE["rows"]
+
     base_dir = os.path.dirname(os.path.abspath(__file__))
 
     for filename in CSV_CANDIDATES:
@@ -399,12 +412,18 @@ def get_recommendations():
                         })
 
             if rows:
-                return expand_recommendations(rows)
+                recommendations = expand_recommendations(rows)
+                RECOMMENDATIONS_CACHE["timestamp"] = now
+                RECOMMENDATIONS_CACHE["rows"] = recommendations
+                return recommendations
         except Exception:
             app.logger.warning("Recommendation CSV load failed; trying next candidate.")
             continue
 
-    return expand_recommendations(DEFAULT_RECOMMENDATIONS)
+    recommendations = expand_recommendations(DEFAULT_RECOMMENDATIONS)
+    RECOMMENDATIONS_CACHE["timestamp"] = now
+    RECOMMENDATIONS_CACHE["rows"] = recommendations
+    return recommendations
 
 def confidence_number(value):
     text = str(value).replace("%", "").strip()
