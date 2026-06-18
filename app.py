@@ -89,6 +89,18 @@ def owner_login_configured():
     return bool(OWNER_EMAIL and OWNER_PASSWORD)
 
 
+def disclaimer_footer():
+    return """
+    <footer style="margin:32px auto 0;padding:18px 0 0;border-top:1px solid rgba(255,255,255,0.10);color:#94a3b8;font-size:12px;line-height:1.65;max-width:1180px;">
+        <strong style="color:#cbd5e1;">Educational only.</strong>
+        StockRadar provides educational market information and research tools only. It does not provide personal financial, investment, tax, or legal advice. BUY, HOLD, and SELL signals are research prompts—not instructions or guarantees. Investments can fall as well as rise, and you may lose money. Consider your circumstances and seek advice from a regulated professional where appropriate.
+    </footer>
+    """
+
+
+app.jinja_env.globals["disclaimer_footer"] = disclaimer_footer
+
+
 CHART_RANGES = {
     "1h": {"label": "1 hour", "period": "1d", "interval": "5m"},
     "24h": {"label": "24 hours", "period": "1d", "interval": "15m"},
@@ -775,6 +787,7 @@ def stock_universe_page():
                 {% endfor %}
             </table>
         </div>
+        {{ disclaimer_footer() | safe }}
     </div>
     </body>
     </html>
@@ -823,6 +836,7 @@ def premium_decision(symbol):
                 <div class="locked"><strong>Locked:</strong> Upgrade to unlock the full Premium Decision Panel for {{ symbol }}.</div>
                 <a class="button" href="/upgrade">Unlock Premium</a>
             </div>
+            {{ disclaimer_footer() | safe }}
         </div>
         </body>
         </html>
@@ -913,6 +927,7 @@ def premium_decision(symbol):
             <p>{{ report.next_move }}</p>
             <div class="note">{{ report.pro_angle }}</div>
         </div>
+        {{ disclaimer_footer() | safe }}
     </div>
     </body>
     </html>
@@ -980,6 +995,7 @@ def premium_watchlist():
                 <div class="locked"><strong>Locked:</strong> Upgrade to unlock the full watchlist intelligence layer.</div>
                 <a class="button" href="/upgrade">Unlock Premium</a>
             </div>
+            {{ disclaimer_footer() | safe }}
         </div>
         </body>
         </html>
@@ -1066,6 +1082,7 @@ def premium_watchlist():
                         <div class="note">Premium read: do not just chase the strongest BUY signal. Review whether your next addition improves the overall mix.</div>
             <a class="button" href="/portfolio-fit">Check Portfolio Fit</a>
         </div>
+        {{ disclaimer_footer() | safe }}
     </div>
     </body>
     </html>
@@ -1208,6 +1225,7 @@ def portfolio_fit():
                 <div class="locked"><strong>Locked:</strong> Upgrade to unlock portfolio fit reviews.</div>
                 <a class="button" href="/upgrade">Unlock Premium</a>
             </div>
+            {{ disclaimer_footer() | safe }}
         </div>
         </body>
         </html>
@@ -1299,6 +1317,7 @@ def portfolio_fit():
             <div class="note">Educational only: this is a structure review, not personal financial advice.</div>
         </div>
         {% endif %}
+        {{ disclaimer_footer() | safe }}
     </div>
     </body>
     </html>
@@ -2573,6 +2592,7 @@ Updated {{ ticker_updated }}{% if live_news_active %} • Live headlines{% else 
         <div class="card"><h2>Daily Value</h2><p>Use the dashboard to check what is strengthening, weakening and worth watching.</p></div>
     </div>
     </div>
+    {{ disclaimer_footer() | safe }}
 </div>
 
 <script>
@@ -2880,7 +2900,7 @@ login_html = """
 <!DOCTYPE html>
 <html>
 <head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Login</title><style>body{background:#020617;color:white;font-family:Arial;display:flex;justify-content:center;align-items:center;height:100vh;}form{background:#0f172a;padding:40px;border-radius:20px;width:340px;border:1px solid rgba(255,255,255,0.08);}input{width:100%;padding:14px;margin-bottom:15px;border:none;border-radius:10px;}button{width:100%;padding:14px;background:#38bdf8;border:none;border-radius:10px;color:white;font-weight:bold;cursor:pointer;}a{color:#38bdf8;}</style></head>
-<body><form method="POST"><h1>🔐 Login</h1><p style="color:#94a3b8;">Sign in to access your account.</p>{% if login_error %}<p style="background:rgba(239,68,68,0.16);border:1px solid rgba(239,68,68,0.35);color:#fecaca;padding:12px;border-radius:10px;font-weight:bold;">{{ login_error }}</p>{% endif %}<input type="email" name="email" placeholder="Email"><input type="password" name="password" placeholder="Password"><button type="submit">Login</button><p style="color:#94a3b8;font-size:13px;margin-top:20px;">Sign in to continue.</p><p><a href="/">Return to Dashboard</a></p></form></body>
+<body><form method="POST"><h1>🔐 Login</h1><p style="color:#94a3b8;">Sign in to access your account.</p>{% if login_error %}<p style="background:rgba(239,68,68,0.16);border:1px solid rgba(239,68,68,0.35);color:#fecaca;padding:12px;border-radius:10px;font-weight:bold;">{{ login_error }}</p>{% endif %}<input type="email" name="email" placeholder="Email"><input type="password" name="password" placeholder="Password"><button type="submit">Login</button><p style="color:#94a3b8;font-size:13px;margin-top:20px;">Sign in to continue.</p><p><a href="/">Return to Dashboard</a></p>{{ disclaimer_footer() | safe }}</form></body>
 </html>
 """
 
@@ -2958,6 +2978,7 @@ p{color:#cbd5e1;line-height:1.7;font-size:16px;}
         </div>
     </div>
     {% endif %}
+    {{ disclaimer_footer() | safe }}
 </div>
 </body>
 </html>
@@ -2966,7 +2987,7 @@ p{color:#cbd5e1;line-height:1.7;font-size:16px;}
 
 owner_html = """
 <!DOCTYPE html>
-<html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Owner Area</title><style>body{background:#020617;color:white;font-family:Arial;margin:0;padding:60px;}.card{background:#0f172a;padding:40px;border-radius:24px;max-width:820px;margin:auto;border:1px solid rgba(255,255,255,0.08);}a{color:#38bdf8;font-weight:bold;}</style></head><body><div class="card"><h1>👑 Owner Area</h1><p>You are logged in as the owner with premium access.</p><p>This confirms login and premium unlocking are working.</p><p><a href="/">Return to Dashboard</a></p><p><a href="/stock/AAPL">Open Premium AAPL Page</a></p></div></body></html>
+<html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Owner Area</title><style>body{background:#020617;color:white;font-family:Arial;margin:0;padding:60px;}.card{background:#0f172a;padding:40px;border-radius:24px;max-width:820px;margin:auto;border:1px solid rgba(255,255,255,0.08);}a{color:#38bdf8;font-weight:bold;}</style></head><body><div class="card"><h1>👑 Owner Area</h1><p>You are logged in as the owner with premium access.</p><p>This confirms login and premium unlocking are working.</p><p><a href="/">Return to Dashboard</a></p><p><a href="/stock/AAPL">Open Premium AAPL Page</a></p>{{ disclaimer_footer() | safe }}</div></body></html>
 """
 
 
@@ -2995,6 +3016,7 @@ stock_detail_html = """
 <div class="metric-grid"><div class="metric"><small>Range start</small><h2>{{ chart_data.start_price }}</h2></div><div class="metric"><small>Range latest</small><h2>{{ chart_data.end_price }}</h2></div><div class="metric"><small>Range move</small><h2 class="{{ chart_data.direction }}">{{ chart_data.change_amount }}</h2></div><div class="metric"><small>Range % move</small><h2 class="{{ chart_data.direction }}">{{ chart_data.change_percent }}</h2></div></div>
 <div class="card">{% if chart_data.ok %}<canvas id="stockChart" height="120"></canvas>{% else %}<h2>Chart unavailable</h2><p style="color:#fca5a5;">{{ chart_data.error }}</p>{% endif %}</div>
 <div class="card"><h2>Since market data began</h2><div class="metric-grid"><div class="metric"><small>Earliest available price</small><h2>{{ lifetime.start_price }}</h2></div><div class="metric"><small>Latest available price</small><h2>{{ lifetime.end_price }}</h2></div><div class="metric"><small>Total growth / decrease</small><h2 class="{{ lifetime.direction }}">{{ lifetime.change_amount }}</h2></div><div class="metric"><small>Total % growth / decrease</small><h2 class="{{ lifetime.direction }}">{{ lifetime.change_percent }}</h2></div></div></div>
+{{ disclaimer_footer() | safe }}
 <script>
 const labels={{ chart_data.labels | tojson }};
 const prices={{ chart_data.prices | tojson }};
