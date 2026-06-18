@@ -137,6 +137,7 @@ def disclaimer_footer():
             <a href="/terms" style="color:#94a3b8;">Terms</a>
             <a href="/refund-policy" style="color:#94a3b8;">Refund Policy</a>
             <a href="/risk-disclaimer" style="color:#94a3b8;">Risk Disclaimer</a>
+            <a href="/manage-subscription" style="color:#94a3b8;">Manage Subscription</a>
             <a href="/contact" style="color:#94a3b8;">Contact</a>
         </nav>
     </footer>
@@ -3157,6 +3158,7 @@ p{color:#cbd5e1;line-height:1.7;font-size:16px;}
                     <button class="button" type="submit" style="border:none;cursor:pointer;width:100%;">Start Premium with Stripe Checkout</button>
                 </form>
                 <div class="note">Secure payment is handled by Stripe Checkout. Use Stripe test mode first.</div>
+                <div class="note">Need to cancel later? Visit <a href="/manage-subscription">Manage Subscription</a>. Early access cancellations are handled through support until self-service billing management is added.</div>
             </div>
         </div>
     </div>
@@ -3328,6 +3330,31 @@ def contact():
 
     content = render_template_string(support_content, support_email=SUPPORT_EMAIL)
     return render_legal_page("Contact", content)
+
+
+@app.route("/manage-subscription")
+def manage_subscription():
+    if SUPPORT_EMAIL:
+        support_contact = render_template_string(
+            '<a href="mailto:{{ support_email }}">{{ support_email }}</a>',
+            support_email=SUPPORT_EMAIL,
+        )
+    else:
+        support_contact = "support contact coming soon"
+
+    return render_legal_page(
+        "Manage Subscription",
+        f"""
+        <p>StockRadar Premium is currently in early access.</p>
+        <p>Self-service subscription management is being built. Until then, users can request cancellation through support.</p>
+        <h2>How to cancel</h2>
+        <p>Contact {support_contact} using the email address used at checkout and the subject line: <strong>Cancel StockRadar Premium</strong>.</p>
+        <h2>Refund requests</h2>
+        <p>Refund requests are reviewed case by case. This does not affect statutory rights.</p>
+        <h2>Educational use</h2>
+        <p>StockRadar is educational and informational only and does not provide regulated financial advice.</p>
+        """,
+    )
 
 
 @app.route("/")

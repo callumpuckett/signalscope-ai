@@ -8,6 +8,7 @@ LEGAL_ROUTES = [
     "/terms",
     "/refund-policy",
     "/risk-disclaimer",
+    "/manage-subscription",
     "/contact",
 ]
 
@@ -69,3 +70,21 @@ def test_contact_uses_support_email_when_configured(monkeypatch):
     response = app.app.test_client().get("/contact")
 
     assert b"support@example.test" in response.data
+
+
+def test_manage_subscription_uses_support_email_and_cancellation_subject(monkeypatch):
+    monkeypatch.setattr(app, "SUPPORT_EMAIL", "support@example.test")
+
+    response = app.app.test_client().get("/manage-subscription")
+
+    assert response.status_code == 200
+    assert b"support@example.test" in response.data
+    assert b"Cancel StockRadar Premium" in response.data
+
+
+def test_upgrade_links_to_manage_subscription():
+    response = app.app.test_client().get("/upgrade")
+
+    assert response.status_code == 200
+    assert b'href="/manage-subscription"' in response.data
+    assert b"Early access cancellations are handled through support" in response.data
