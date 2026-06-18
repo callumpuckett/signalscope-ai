@@ -119,6 +119,7 @@ DEFAULT_RECOMMENDATIONS = [
     {"ticker": "AMZN", "signal": "BUY", "confidence": "79%", "reason": "Positive trend and improving AI signal profile."},
     {"ticker": "GOOGL", "signal": "HOLD", "confidence": "67%", "reason": "Balanced setup with no major downside warning in the current scanner."},
     {"ticker": "META", "signal": "BUY", "confidence": "81%", "reason": "Strong relative momentum and improving conviction score."},
+    {"ticker": "SPCX", "signal": "HOLD", "confidence": "50%", "reason": "SpaceX is a high-growth space and Starlink-linked research candidate. Treat it as a controlled satellite because valuation, volatility, liquidity and public trading history may be limited."},
     {"ticker": "NFLX", "signal": "HOLD", "confidence": "58%", "reason": "Mixed short-term trend. Worth monitoring for a stronger signal."},
     {"ticker": "AMD", "signal": "BUY", "confidence": "76%", "reason": "AI semiconductor exposure gives positive momentum, but conviction is not yet extreme."},
     {"ticker": "INTC", "signal": "SELL", "confidence": "64%", "reason": "Scanner is flagging weaker momentum versus stronger chip peers."},
@@ -146,7 +147,7 @@ STOCK_UNIVERSE_CACHE = {
 }
 
 TRACKED_STOCK_UNIVERSE = [
-    "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO", "AMD", "NFLX",
+    "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "SPCX", "AVGO", "AMD", "NFLX",
     "ORCL", "CRM", "ADBE", "INTC", "CSCO", "QCOM", "IBM", "NOW", "SHOP", "UBER",
     "JPM", "BAC", "GS", "MS", "WFC", "C", "V", "MA", "AXP", "PYPL",
     "XOM", "CVX", "COP", "SLB", "OXY", "BP.L", "SHEL.L", "HSBA.L", "LLOY.L", "BARC.L",
@@ -162,6 +163,7 @@ TRACKED_STOCK_UNIVERSE = [
 SECTOR_MAP = {
     "AAPL": "Technology", "MSFT": "Technology", "NVDA": "Semiconductors", "AMZN": "Consumer / Cloud",
     "GOOGL": "Technology", "META": "Technology", "TSLA": "EV / Growth", "AVGO": "Semiconductors",
+    "SPCX": "Space / Aerospace / Growth",
     "AMD": "Semiconductors", "NFLX": "Media", "JPM": "Banks", "BAC": "Banks", "GS": "Banks",
     "MS": "Banks", "WFC": "Banks", "C": "Banks", "V": "Payments", "MA": "Payments",
     "AXP": "Payments", "PYPL": "Payments", "XOM": "Energy", "CVX": "Energy", "COP": "Energy",
@@ -177,8 +179,16 @@ SECTOR_MAP = {
     "USO": "Commodity ETF", "TLT": "Bond ETF", "HYG": "Bond ETF",
 }
 
+STOCK_SYMBOL_ALIASES = {
+    "SPACEX": "SPCX",
+    "SPACE X": "SPCX",
+    "SPAX.PVT": "SPCX",
+}
+
 
 def generated_signal_for_ticker(ticker, index):
+    if ticker == "SPCX":
+        return "HOLD", "50%"
     if ticker in {"NVDA", "MSFT", "AAPL", "AVGO", "LLY", "SPY", "QQQ", "SMH", "COST", "AMZN", "GOOGL", "META"}:
         return "BUY", "82%"
     if ticker in {"TSLA", "PYPL", "INTC", "VOD.L", "BT-A.L", "USO", "SLV", "BTC-USD"}:
@@ -217,7 +227,11 @@ def expand_recommendations(rows):
             "ticker": ticker,
             "signal": signal,
             "confidence": confidence,
-            "reason": "Included in the 100-stock StockRadar universe. This keeps the live dashboard complete until the full scanner CSV/API feed is connected.",
+            "reason": (
+                "SpaceX is a high-growth space and Starlink-linked research candidate. Treat it as a controlled satellite because valuation, volatility, liquidity and public trading history may be limited."
+                if ticker == "SPCX"
+                else "Included in the 100-stock StockRadar universe. This keeps the live dashboard complete until the full scanner CSV/API feed is connected."
+            ),
             "sector": SECTOR_MAP.get(ticker, "AI Watchlist"),
         })
         seen.add(ticker)
@@ -353,6 +367,10 @@ def search_stock_universe(query, limit=12):
     cleaned_query = str(query or "").strip().lower()
     if not cleaned_query:
         return []
+
+    alias_ticker = STOCK_SYMBOL_ALIASES.get(cleaned_query.upper())
+    if alias_ticker:
+        cleaned_query = alias_ticker.lower()
 
     exact_matches = []
     prefix_matches = []
@@ -1349,6 +1367,19 @@ def money(value):
 def stock_history(symbol, range_key):
     settings = CHART_RANGES.get(range_key, CHART_RANGES["1mo"])
 
+    if symbol == "SPCX":
+        return {
+            "ok": False,
+            "labels": [],
+            "prices": [],
+            "start_price": "—",
+            "end_price": "—",
+            "change_amount": "—",
+            "change_percent": "—",
+            "direction": "hold",
+            "error": "Live public-market price data is not available for SpaceX/SPCX. StockRadar will not substitute or invent chart data.",
+        }
+
     try:
         history = safe_history(
             symbol,
@@ -1402,6 +1433,15 @@ def stock_history(symbol, range_key):
 
 
 def stock_lifetime_growth(symbol):
+    if symbol == "SPCX":
+        return {
+            "start_price": "—",
+            "end_price": "—",
+            "change_amount": "—",
+            "change_percent": "—",
+            "direction": "hold",
+        }
+
     try:
         history = safe_history(symbol, period="max", interval="1mo", timeout=8)
 
@@ -2601,7 +2641,7 @@ function togglePanel(panelId){var panel=document.getElementById(panelId);var but
 function flashTarget(element){if(!element){return;}element.classList.remove('highlight-target');void element.offsetWidth;element.classList.add('highlight-target');}
 function openPanelAndJump(panelId){var panel=document.getElementById(panelId);var button=document.querySelector('[aria-controls="'+panelId+'"]');if(!panel){return;}panel.classList.add('open');if(button){button.setAttribute('aria-expanded','true');}panel.scrollIntoView({behavior:'smooth',block:'start'});flashTarget(panel);}
 function showSearchMessage(message){var messageBox=document.getElementById('searchMessage');if(!messageBox){return;}messageBox.textContent=message;messageBox.style.display='block';}
-function runSmartSearch(event){event.preventDefault();var input=document.getElementById('smartSearchInput');if(!input){return false;}var query=input.value.trim().toUpperCase();if(!query){showSearchMessage('Type a ticker or section name first.');return false;}var map={'APPLE':'AAPL','AAPL':'AAPL','TESLA':'TSLA','TSLA':'TSLA','NVIDIA':'NVDA','NVDA':'NVDA','MICROSOFT':'MSFT','MSFT':'MSFT','AMAZON':'AMZN','AMZN':'AMZN','GOOGLE':'GOOGL','ALPHABET':'GOOGL','META':'META','FACEBOOK':'META','S&P 500':'^GSPC','SP500':'^GSPC','S&P':'^GSPC','NASDAQ':'^IXIC','FTSE':'^FTSE','FTSE 100':'^FTSE','HSBC':'HSBA.L','BP':'BP.L','ASTRAZENECA':'AZN.L','SHELL':'SHEL.L'};if(map[query]){window.location.href='/stock/'+encodeURIComponent(map[query]);return false;}if(['AI','RECOMMENDATIONS','AI RECOMMENDATIONS','WATCHLIST'].includes(query)){window.location.href='/?tab=watchlist';return false;}if(['BUY','BUYS','BUY SIGNALS'].includes(query)){window.location.href='/?tab=signals&open=buy-panel';return false;}if(['HOLD','HOLDS','HOLD SIGNALS'].includes(query)){window.location.href='/?tab=signals&open=hold-panel';return false;}if(['SELL','SELLS','SELL SIGNALS'].includes(query)){window.location.href='/?tab=signals&open=sell-panel';return false;}if(['CONVICTION','HIGH CONVICTION','TOP'].includes(query)){window.location.href='/?tab=signals&open=conviction-panel';return false;}if(['POLITICS','POLITICAL','GEOPOLITICS','GEOPOLITICAL','RADAR','MARKET IMPACT','IMPACT RADAR'].includes(query)){window.location.href='/?tab=radar';return false;}
+function runSmartSearch(event){event.preventDefault();var input=document.getElementById('smartSearchInput');if(!input){return false;}var query=input.value.trim().toUpperCase();if(!query){showSearchMessage('Type a ticker or section name first.');return false;}var map={'APPLE':'AAPL','AAPL':'AAPL','TESLA':'TSLA','TSLA':'TSLA','NVIDIA':'NVDA','NVDA':'NVDA','MICROSOFT':'MSFT','MSFT':'MSFT','AMAZON':'AMZN','AMZN':'AMZN','GOOGLE':'GOOGL','ALPHABET':'GOOGL','META':'META','FACEBOOK':'META','SPCX':'SPCX','SPACEX':'SPCX','SPACE X':'SPCX','SPAX.PVT':'SPCX','S&P 500':'^GSPC','SP500':'^GSPC','S&P':'^GSPC','NASDAQ':'^IXIC','FTSE':'^FTSE','FTSE 100':'^FTSE','HSBC':'HSBA.L','BP':'BP.L','ASTRAZENECA':'AZN.L','SHELL':'SHEL.L'};if(map[query]){window.location.href='/stock/'+encodeURIComponent(map[query]);return false;}if(['AI','RECOMMENDATIONS','AI RECOMMENDATIONS','WATCHLIST'].includes(query)){window.location.href='/?tab=watchlist';return false;}if(['BUY','BUYS','BUY SIGNALS'].includes(query)){window.location.href='/?tab=signals&open=buy-panel';return false;}if(['HOLD','HOLDS','HOLD SIGNALS'].includes(query)){window.location.href='/?tab=signals&open=hold-panel';return false;}if(['SELL','SELLS','SELL SIGNALS'].includes(query)){window.location.href='/?tab=signals&open=sell-panel';return false;}if(['CONVICTION','HIGH CONVICTION','TOP'].includes(query)){window.location.href='/?tab=signals&open=conviction-panel';return false;}if(['POLITICS','POLITICAL','GEOPOLITICS','GEOPOLITICAL','RADAR','MARKET IMPACT','IMPACT RADAR'].includes(query)){window.location.href='/?tab=radar';return false;}
 if(['PRO','UPGRADE','PAYMENT','SUBSCRIPTION'].includes(query)){window.location.href='/upgrade';return false;}if(/^[A-Z0-9.^-]{1,12}$/.test(query)){window.location.href='/stock/'+encodeURIComponent(query);return false;}showSearchMessage('No matching stock or section found. Try Apple, AAPL, S&P 500, Nasdaq, BUY, SELL, AI or Pro.');return false;}
 function setSignalFilter(signal){var select=document.getElementById('signalFilterValue');if(select){select.value=signal;}document.querySelectorAll('[data-signal-filter]').forEach(function(button){button.classList.toggle('active-filter',button.getAttribute('data-signal-filter')===signal);});applySignalFilters();}
 function resetSignalFilters(){var tickerInput=document.getElementById('tickerFilterInput');var sectorSelect=document.getElementById('sectorFilterSelect');if(tickerInput){tickerInput.value='';}if(sectorSelect){sectorSelect.value='ALL';}setSignalFilter('ALL');}
@@ -3134,11 +3174,15 @@ def ai_recommendations():
 
 @app.route("/stock/<path:symbol>")
 def stock_detail(symbol):
-    cleaned_symbol = symbol.strip().upper()
+    requested_symbol = symbol.strip().upper()
+    cleaned_symbol = STOCK_SYMBOL_ALIASES.get(requested_symbol, requested_symbol)
     active_range = request.args.get("range", "1mo")
 
     if active_range not in CHART_RANGES:
         active_range = "1mo"
+
+    if cleaned_symbol != requested_symbol:
+        return redirect(url_for("stock_detail", symbol=cleaned_symbol, range=active_range))
 
     chart_data = stock_history(cleaned_symbol, active_range)
     lifetime = stock_lifetime_growth(cleaned_symbol)
