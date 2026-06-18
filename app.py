@@ -278,6 +278,13 @@ STOCK_SYMBOL_ALIASES = {
     "SPAX.PVT": "SPCX",
 }
 
+STOCK_SEARCH_ALIASES = {
+    "GOOGLE": "GOOGL",
+    "ALPHABET": "GOOGL",
+    "ALPHABET CLASS A": "GOOGL",
+    "GOOGLE STOCK": "GOOGL",
+}
+
 
 def canonical_stock_symbol(value):
     cleaned = str(value or "").strip()
@@ -527,7 +534,13 @@ def search_stock_universe(query, limit=12):
     if not cleaned_query:
         return []
 
-    alias_ticker = STOCK_SYMBOL_ALIASES.get(cleaned_query.upper())
+    normalized_query = " ".join(
+        cleaned_query.upper().replace("-", " ").replace("_", " ").split()
+    )
+    alias_ticker = (
+        STOCK_SEARCH_ALIASES.get(normalized_query)
+        or STOCK_SYMBOL_ALIASES.get(normalized_query)
+    )
     if alias_ticker:
         cleaned_query = alias_ticker.lower()
 

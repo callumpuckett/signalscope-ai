@@ -50,6 +50,30 @@ def test_universe_search_displays_company_and_ticker_links():
     assert 'href="/stock/AAPL"' in apple_page
 
 
+def test_google_and_alphabet_search_aliases_return_googl():
+    client = app.app.test_client()
+
+    for query in ("google", "alphabet", "alphabet class a", "google stock"):
+        response = client.get("/universe", query_string={"q": query})
+        page = response.get_data(as_text=True)
+
+        assert response.status_code == 200
+        assert "Alphabet" in page
+        assert "(GOOGL)" in page
+        assert 'href="/stock/GOOGL"' in page
+
+
+def test_googl_stock_route_still_returns_200():
+    index = pd.to_datetime(["2026-01-01", "2026-01-02"])
+    history = pd.DataFrame({"Close": [200.0, 202.5]}, index=index)
+
+    with patch.object(app, "safe_history", return_value=history):
+        response = app.app.test_client().get("/stock/GOOGL")
+
+    assert response.status_code == 200
+    assert b"Alphabet Inc Class A (GOOGL)" in response.data
+
+
 def test_palantir_alias_redirects_and_displays_company_with_ticker():
     index = pd.to_datetime(["2026-01-01", "2026-01-02"])
     history = pd.DataFrame({"Close": [22.0, 24.5]}, index=index)
