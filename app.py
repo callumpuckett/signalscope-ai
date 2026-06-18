@@ -2491,12 +2491,14 @@ Updated {{ ticker_updated }}{% if live_news_active %} • Live headlines{% else 
     </div>
 
     <div class="card" id="investment-compass-card">
-        <p style="color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;">Investment Compass</p>
-        <h1 style="margin:0 0 12px 0;">Save time finding where to start.</h1>
-        <p style="color:#cbd5e1;line-height:1.7;max-width:880px;">Answer a few simple questions and StockRadar will cut through the noise with a plain-English starting profile, a sensible investment structure, and a clearer research direction. Useful if you are new, returning after a break, or just want to avoid wasting hours searching for the right starting point.</p>
+        <p style="color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;">AI-powered market research</p>
+        <h1 style="margin:0 0 12px 0;font-size:clamp(38px,5vw,64px);line-height:0.98;letter-spacing:-0.05em;">Research stocks with clearer signals, context and risk awareness.</h1>
+        <p style="color:#cbd5e1;line-height:1.7;max-width:920px;font-size:17px;">StockRadar is an AI-powered stock market research dashboard. Explore stock signals, risk summaries, chart context and portfolio-fit tools in one place—built to help you research more clearly, not tell you what to buy or sell.</p>
+        <p style="color:#94a3b8;line-height:1.6;max-width:920px;margin-bottom:0;"><strong style="color:#cbd5e1;">Educational and informational only.</strong> StockRadar is not financial advice, and you remain responsible for your own investment decisions.</p>
         <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;">
-            <a class="upgrade-cta" href="/beginner">Find My Investment Starting Point</a>
-            <a class="nav-link" style="display:inline-block;width:auto;margin:0;background:rgba(255,255,255,0.06);" href="/?tab=signals">View AI Signals</a>
+            <a class="upgrade-cta" href="/universe">Explore Stocks</a>
+            <a class="nav-link pro-button" style="display:inline-block;width:auto;margin:0;" href="/upgrade">Unlock Premium</a>
+            <a class="nav-link" style="display:inline-block;width:auto;margin:0;background:rgba(255,255,255,0.06);" href="/beginner">New to investing? Start here</a>
         </div>
     </div>
     <div id="overview-section" class="dashboard-section {% if active_tab == 'overview' %}active-section{% endif %}">
@@ -3133,21 +3135,22 @@ p{color:#cbd5e1;line-height:1.7;font-size:16px;}
     <div class="hero">
         <div class="card">
             <span class="badge">StockRadar Pro</span>
-            <h1>Unlock full AI stock intelligence.</h1>
-            <p>Pro turns each stock page into a premium decision panel: confidence, signal strength, risk read, momentum interpretation and what to watch next.</p>
-            <div class="feature"><span class="tick">✓</span><span>Full Premium Pro Intelligence panel on every supported stock page.</span></div>
-            <div class="feature"><span class="tick">✓</span><span>Risk read and next-move analysis instead of only a free preview.</span></div>
-            <div class="feature"><span class="tick">✓</span><span>Cleaner decision support for users who want faster market context.</span></div>
+            <h1>Unlock Premium research tools.</h1>
+            <p>Get the deeper StockRadar research layer across individual stocks, your watchlist and your current portfolio structure.</p>
+            <div class="feature"><span class="tick">✓</span><span><strong>Premium Decision Panels</strong> — deeper signal context, risk reads, portfolio role and what to watch next.</span></div>
+            <div class="feature"><span class="tick">✓</span><span><strong>Premium Watchlist Intelligence</strong> — review strongest signals, caution names and theme concentration.</span></div>
+            <div class="feature"><span class="tick">✓</span><span><strong>Portfolio Fit Checker</strong> — classify holdings and identify concentration risks before adding more exposure.</span></div>
             <div class="grid">
-                <div class="mini"><strong>Free</strong>Signal preview and basic confidence meter.</div>
-                <div class="mini"><strong>Pro</strong>Full AI confidence, risk and next move.</div>
-                <div class="mini"><strong>Coming next</strong>Market impact radar and premium alerts.</div>
+                <div class="mini"><strong>Individual stocks</strong>Premium Decision Panels.</div>
+                <div class="mini"><strong>Your watchlist</strong>Premium Watchlist Intelligence.</div>
+                <div class="mini"><strong>Your holdings</strong>Portfolio Fit Checker.</div>
             </div>
         </div>
         <div class="card">
             <span class="badge">Premium plan</span>
             <div class="price">£5 <span>/ month</span></div>
-            <p>Start Premium to unlock the full report view.</p>
+            <p>One monthly subscription unlocks the full premium research toolkit.</p>
+            <p class="note"><strong style="color:#cbd5e1;">Educational only.</strong> Premium provides research tools and analysis—not financial advice or personalised investment recommendations.</p>
             <div class="pay-box">
                 <p class="note">Premium access provides research tools and analysis only. StockRadar is not financial advice.</p>
                 <form method="POST" action="/create-checkout-session">
