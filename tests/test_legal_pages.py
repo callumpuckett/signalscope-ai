@@ -72,6 +72,16 @@ def test_contact_uses_support_email_when_configured(monkeypatch):
     assert b"support@example.test" in response.data
 
 
+def test_refund_policy_uses_support_email_when_configured(monkeypatch):
+    monkeypatch.setattr(app, "SUPPORT_EMAIL", "support@example.test")
+
+    response = app.app.test_client().get("/refund-policy")
+
+    assert response.status_code == 200
+    assert b"Refund requests can be sent to:" in response.data
+    assert b"support@example.test" in response.data
+
+
 def test_manage_subscription_uses_support_email_and_cancellation_subject(monkeypatch):
     monkeypatch.setattr(app, "SUPPORT_EMAIL", "support@example.test")
 

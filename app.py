@@ -3297,11 +3297,19 @@ def terms():
 
 @app.route("/refund-policy")
 def refund_policy():
+    if SUPPORT_EMAIL:
+        support_contact = render_template_string(
+            '<a href="mailto:{{ support_email }}">{{ support_email }}</a>',
+            support_email=SUPPORT_EMAIL,
+        )
+    else:
+        support_contact = "support contact coming soon"
+
     return render_legal_page(
         "Refund Policy",
-        """
+        f"""
         <p>Subscriptions can be cancelled through support while self-service cancellation is being built.</p>
-        <p>Refund requests should be sent to support.</p>
+        <p>Refund requests can be sent to: {support_contact}</p>
         <p>Refunds are reviewed case by case.</p>
         <p>This does not affect statutory rights.</p>
         """,
