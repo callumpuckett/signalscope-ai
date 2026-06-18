@@ -2495,6 +2495,7 @@ Updated {{ ticker_updated }}{% if live_news_active %} • Live headlines{% else 
         <p style="color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;">AI-powered market research</p>
         <h1 style="margin:0 0 12px 0;font-size:clamp(38px,5vw,64px);line-height:0.98;letter-spacing:-0.05em;">Research stocks with clearer signals, context and risk awareness.</h1>
         <p style="color:#cbd5e1;line-height:1.7;max-width:920px;font-size:17px;">StockRadar is an AI-powered stock market research dashboard. Explore stock signals, risk summaries, chart context and portfolio-fit tools in one place—built to help you research more clearly, not tell you what to buy or sell.</p>
+        <div style="display:inline-block;margin-top:2px;padding:9px 12px;border-radius:14px;background:rgba(56,189,248,0.08);border:1px solid rgba(56,189,248,0.16);color:#bae6fd;font-size:13px;line-height:1.5;"><strong>Early Access:</strong> StockRadar is currently in early access. Premium features and support processes are still being improved.</div>
         <p style="color:#94a3b8;line-height:1.6;max-width:920px;margin-bottom:0;"><strong style="color:#cbd5e1;">Educational and informational only.</strong> StockRadar is not financial advice, and you remain responsible for your own investment decisions.</p>
         <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;">
             <a class="upgrade-cta" href="/universe">Explore Stocks</a>
@@ -3151,6 +3152,8 @@ p{color:#cbd5e1;line-height:1.7;font-size:16px;}
             <span class="badge">Premium plan</span>
             <div class="price">£5 <span>/ month</span></div>
             <p>One monthly subscription unlocks the full premium research toolkit.</p>
+            <div class="note" style="padding:12px;border-radius:14px;background:rgba(56,189,248,0.08);border:1px solid rgba(56,189,248,0.16);color:#bae6fd;"><strong>Early Access:</strong> StockRadar is currently in early access. Premium features and support processes are still being improved.</div>
+            <p class="note">£5/month early access premium subscription. Cancellation requests are handled through <a href="/manage-subscription">Manage Subscription</a> while self-service billing is being built.</p>
             <p class="note"><strong style="color:#cbd5e1;">Educational only.</strong> Premium provides research tools and analysis—not financial advice or personalised investment recommendations.</p>
             <div class="pay-box">
                 <p class="note">Premium access provides research tools and analysis only. StockRadar is not financial advice.</p>
