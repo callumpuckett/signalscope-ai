@@ -31,6 +31,7 @@ def test_homepage_explains_product_and_has_primary_calls_to_action():
     ) in page
     assert 'href="/universe">Explore Stocks</a>' in page
     assert 'href="/upgrade">Unlock Premium</a>' in page
+    assert 'href="/feedback">Send Feedback</a>' in page
 
 
 def test_upgrade_page_clearly_lists_price_and_premium_tools():
@@ -49,4 +50,5 @@ def test_upgrade_page_clearly_lists_price_and_premium_tools():
     ) in page
     assert "£5/month early access premium subscription." in page
     assert 'href="/manage-subscription">Manage Subscription</a>' in page
+    assert 'href="/feedback">Send Feedback</a>' in page
     assert 'href="/risk-disclaimer"' in page

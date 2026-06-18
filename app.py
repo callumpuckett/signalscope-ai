@@ -138,6 +138,7 @@ def disclaimer_footer():
             <a href="/refund-policy" style="color:#94a3b8;">Refund Policy</a>
             <a href="/risk-disclaimer" style="color:#94a3b8;">Risk Disclaimer</a>
             <a href="/manage-subscription" style="color:#94a3b8;">Manage Subscription</a>
+            <a href="/feedback" style="color:#94a3b8;">Feedback</a>
             <a href="/contact" style="color:#94a3b8;">Contact</a>
         </nav>
     </footer>
@@ -2501,6 +2502,7 @@ Updated {{ ticker_updated }}{% if live_news_active %} • Live headlines{% else 
             <a class="upgrade-cta" href="/universe">Explore Stocks</a>
             <a class="nav-link pro-button" style="display:inline-block;width:auto;margin:0;" href="/upgrade">Unlock Premium</a>
             <a class="nav-link" style="display:inline-block;width:auto;margin:0;background:rgba(255,255,255,0.06);" href="/beginner">New to investing? Start here</a>
+            <a class="nav-link" style="display:inline-block;width:auto;margin:0;background:transparent;color:#94a3b8;" href="/feedback">Send Feedback</a>
         </div>
     </div>
     <div id="overview-section" class="dashboard-section {% if active_tab == 'overview' %}active-section{% endif %}">
@@ -3162,6 +3164,7 @@ p{color:#cbd5e1;line-height:1.7;font-size:16px;}
                 </form>
                 <div class="note">Secure payment is handled by Stripe Checkout. Use Stripe test mode first.</div>
                 <div class="note">Need to cancel later? Visit <a href="/manage-subscription">Manage Subscription</a>. Early access cancellations are handled through support until self-service billing management is added.</div>
+                <div class="note"><a href="/feedback">Send Feedback</a> about the upgrade experience while StockRadar is in early access.</div>
             </div>
         </div>
     </div>
@@ -3364,6 +3367,33 @@ def manage_subscription():
         <p>Refund requests are reviewed case by case. This does not affect statutory rights.</p>
         <h2>Educational use</h2>
         <p>StockRadar is educational and informational only and does not provide regulated financial advice.</p>
+        """,
+    )
+
+
+@app.route("/feedback")
+def feedback():
+    if SUPPORT_EMAIL:
+        support_contact = render_template_string(
+            '<a href="mailto:{{ support_email }}?subject=StockRadar%20Feedback">{{ support_email }}</a>',
+            support_email=SUPPORT_EMAIL,
+        )
+    else:
+        support_contact = "support contact coming soon"
+
+    return render_legal_page(
+        "StockRadar Feedback",
+        f"""
+        <p>StockRadar is in early access. Feedback helps improve the dashboard before wider public launch.</p>
+        <p>Send feedback to: {support_contact}</p>
+        <h2>What to include</h2>
+        <ul>
+            <li>What page or feature you tested</li>
+            <li>What worked well</li>
+            <li>What felt confusing, broken, slow, or unclear</li>
+            <li>What stock or ticker you searched for, if relevant</li>
+            <li>Whether the upgrade flow, legal links, and support pages were easy to understand</li>
+        </ul>
         """,
     )
 

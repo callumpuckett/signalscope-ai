@@ -9,6 +9,7 @@ LEGAL_ROUTES = [
     "/refund-policy",
     "/risk-disclaimer",
     "/manage-subscription",
+    "/feedback",
     "/contact",
 ]
 
@@ -98,3 +99,14 @@ def test_upgrade_links_to_manage_subscription():
     assert response.status_code == 200
     assert b'href="/manage-subscription"' in response.data
     assert b"Early access cancellations are handled through support" in response.data
+
+
+def test_feedback_uses_support_email_and_mail_subject(monkeypatch):
+    monkeypatch.setattr(app, "SUPPORT_EMAIL", "support@example.test")
+
+    response = app.app.test_client().get("/feedback")
+
+    assert response.status_code == 200
+    assert b"StockRadar Feedback" in response.data
+    assert b"support@example.test" in response.data
+    assert b"subject=StockRadar%20Feedback" in response.data
