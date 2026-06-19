@@ -70,6 +70,7 @@ OWNER_PASSWORD = os.environ.get("SIGNALSCOPE_OWNER_PASSWORD", "")
 SUPPORT_EMAIL = os.environ.get("SUPPORT_EMAIL", "").strip()
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_PRICE_ID = os.environ.get("STRIPE_PRICE_ID", "")
+PREMIUM_PAYMENTS_ENABLED = os.environ.get("PREMIUM_PAYMENTS_ENABLED", "").strip().lower() == "true"
 PRODUCTION_BASE_URL = "https://signalscope-ai-1-0v3g.onrender.com"
 DEFAULT_STRIPE_SUCCESS_URL = (
     f"{PRODUCTION_BASE_URL}/checkout-success?session_id={{CHECKOUT_SESSION_ID}}"
@@ -128,8 +129,12 @@ STRIPE_CANCEL_URL = configured_url("STRIPE_CANCEL_URL", DEFAULT_STRIPE_CANCEL_UR
 if stripe and STRIPE_SECRET_KEY:
     stripe.api_key = STRIPE_SECRET_KEY
 
-def stripe_checkout_configured():
+def stripe_credentials_configured():
     return bool(stripe and STRIPE_SECRET_KEY and STRIPE_PRICE_ID)
+
+
+def stripe_checkout_configured():
+    return bool(PREMIUM_PAYMENTS_ENABLED and stripe_credentials_configured())
 
 def owner_has_access():
     return session.get("owner_logged_in") is True
@@ -4057,19 +4062,29 @@ p{color:#cbd5e1;line-height:1.7;font-size:16px;}
             </div>
         </div>
         <div class="card">
-            <span class="badge">Premium plan</span>
+            <span class="badge">{% if premium_payments_enabled %}Premium plan{% else %}Premium preview{% endif %}</span>
             <div class="price">£5 <span>/ month</span></div>
+            {% if premium_payments_enabled %}
             <p>One monthly subscription unlocks the full premium research toolkit.</p>
-            <div class="note" style="padding:12px;border-radius:14px;background:rgba(56,189,248,0.08);border:1px solid rgba(56,189,248,0.16);color:#bae6fd;"><strong>Early Access:</strong> StockRadar is currently in early access. Premium features and support processes are still being improved.</div>
+            <div class="note" style="padding:12px;border-radius:14px;background:rgba(56,189,248,0.08);border:1px solid rgba(56,189,248,0.16);color:#bae6fd;"><strong>Controlled early access:</strong> Checkout is explicitly enabled for the current environment.</div>
             <p class="note">£5/month early access premium subscription. Cancellation requests are handled through <a href="/manage-subscription">Manage Subscription</a> while self-service billing is being built.</p>
+            {% else %}
+            <p>Premium subscriptions are not open yet. This page previews the planned £5/month research toolkit while StockRadar completes payment readiness checks.</p>
+            <div class="note" style="padding:12px;border-radius:14px;background:rgba(245,158,11,0.09);border:1px solid rgba(245,158,11,0.20);color:#fde68a;"><strong>Soft launch:</strong> No payment can be started from this environment unless checkout is explicitly enabled.</div>
+            {% endif %}
             <p class="note"><strong style="color:#cbd5e1;">Educational only.</strong> Premium provides research tools and analysis—not financial advice or personalised investment recommendations.</p>
             <div class="pay-box">
                 <p class="note">Premium access provides research tools and analysis only. StockRadar is not financial advice.</p>
+                {% if premium_payments_enabled %}
                 <form method="POST" action="/create-checkout-session">
                     <button class="button" type="submit" style="border:none;cursor:pointer;width:100%;">Start Premium with Stripe Checkout</button>
                 </form>
-                <div class="note">Secure payment is handled by Stripe Checkout. Use Stripe test mode first.</div>
+                <div class="note">Secure payment is handled by Stripe Checkout.</div>
                 <div class="note">Need to cancel later? Visit <a href="/manage-subscription">Manage Subscription</a>. Early access cancellations are handled through support until self-service billing management is added.</div>
+                {% else %}
+                <a class="button secondary" href="/feedback" style="width:100%;margin-right:0;">Join the testing feedback loop</a>
+                <div class="note">Checkout remains disabled during soft launch. No payment details are collected on this page.</div>
+                {% endif %}
                 <div class="note"><a href="/feedback">Send Feedback</a> about the upgrade experience while StockRadar is in early access.</div>
             </div>
         </div>
@@ -4196,7 +4211,8 @@ def health():
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "newsapi_configured": bool(NEWSAPI_KEY),
         "dashboard_cache_configured": True,
-        "stripe_configured": stripe_checkout_configured(),
+        "stripe_configured": stripe_credentials_configured(),
+        "premium_payments_enabled": PREMIUM_PAYMENTS_ENABLED,
         "owner_login_configured": owner_login_configured(),
         "stock_universe_csv": STOCK_UNIVERSE_CSV,
         "stock_universe_cache_ttl_seconds": STOCK_UNIVERSE_CACHE_TTL_SECONDS,
@@ -4224,7 +4240,8 @@ def healthz():
     return {
         "status": "ok",
         "app": "StockRadar",
-        "stripe_configured": stripe_checkout_configured(),
+        "stripe_configured": stripe_credentials_configured(),
+        "premium_payments_enabled": PREMIUM_PAYMENTS_ENABLED,
         "owner_login_configured": owner_login_configured(),
     }, 200
 
@@ -4360,12 +4377,12 @@ def manage_subscription():
             support_email=SUPPORT_EMAIL,
         )
     else:
-        support_contact = "support contact coming soon"
+        support_contact = '<a href="/contact">the StockRadar contact page</a>'
 
     return render_legal_page(
         "Manage Subscription",
         f"""
-        <p>StockRadar Premium is currently in early access.</p>
+        <p>StockRadar Premium is currently in early access and paid subscriptions may not yet be open.</p>
         <p>Self-service subscription management is being built. Until then, users can request cancellation through support.</p>
         <h2>How to cancel</h2>
         <p>Contact {support_contact} using the email address used at checkout and the subject line: <strong>Cancel StockRadar Premium</strong>.</p>
@@ -4492,11 +4509,18 @@ def stock_detail(symbol):
 
 @app.route("/upgrade")
 def upgrade():
-    return render_template_string(upgrade_html, owner_logged_in=owner_has_access())
+    return render_template_string(
+        upgrade_html,
+        owner_logged_in=owner_has_access(),
+        premium_payments_enabled=stripe_checkout_configured(),
+    )
 
 
-@app.route("/create-checkout-session", methods=["POST"])
+@app.route("/create-checkout-session", methods=["GET", "POST"])
 def create_checkout_session():
+    if request.method == "GET":
+        return redirect(url_for("upgrade"))
+
     if not stripe_checkout_configured():
         return render_template_string("""
 <!doctype html>
@@ -4515,10 +4539,9 @@ def create_checkout_session():
 </head>
 <body>
     <div class="box">
-        <h1>Stripe setup needed</h1>
-        <p>Stripe Checkout is connected, but payment credentials are not configured yet. The dashboard is still live and safe to share.</p>
-        <code>Set STRIPE_SECRET_KEY and STRIPE_PRICE_ID in your hosting environment when ready.</code>
-        <p>Use Stripe test mode first, then switch to live keys only after your Stripe account is verified.</p>
+        <h1>Checkout unavailable</h1>
+        <p>Stripe Checkout is not available in this environment. The dashboard remains live and no payment was started.</p>
+        <p>Checkout remains disabled until payment credentials are present and the environment is explicitly approved for checkout.</p>
         <a href="/upgrade">Back to upgrade page</a>
     </div>
 </body>
@@ -4531,11 +4554,11 @@ def create_checkout_session():
             line_items=[{"price": STRIPE_PRICE_ID, "quantity": 1}],
             success_url=STRIPE_SUCCESS_URL or url_for("checkout_success", _external=True),
             cancel_url=STRIPE_CANCEL_URL or url_for("upgrade", _external=True),
-            customer_email=OWNER_EMAIL or None,
             allow_promotion_codes=True,
         )
         return redirect(checkout_session.url, code=303)
-    except Exception as exc:
+    except Exception:
+        app.logger.error("Stripe Checkout session creation failed.")
         return render_template_string("""
 <!doctype html>
 <html>
@@ -4555,13 +4578,12 @@ def create_checkout_session():
     <div class="box">
         <h1>Stripe Checkout paused</h1>
         <p>The checkout route is connected, but Stripe rejected the current payment setup. This does not affect the dashboard.</p>
-        <code>{{ error }}</code>
-        <p>When Stripe credentials are ready, update the environment variables and restart the app.</p>
+        <p>No payment was started. Please return to the upgrade page or contact support if the issue continues.</p>
         <a href="/upgrade">Back to upgrade page</a>
     </div>
 </body>
 </html>
-        """, error=str(exc)), 400
+        """), 502
 
 @app.route("/checkout-success")
 def checkout_success():
