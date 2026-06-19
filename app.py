@@ -147,6 +147,7 @@ def disclaimer_footer():
             StockRadar provides educational market information and research tools only. It does not provide personal financial, investment, tax, or legal advice. BUY, HOLD, and SELL signals are research prompts—not instructions or guarantees. Investments can fall as well as rise, and you may lose money. Consider your circumstances and seek advice from a regulated professional where appropriate.
         </div>
         <nav aria-label="Legal and support links" style="display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;">
+            <a href="/newsletter" style="color:#94a3b8;">Newsletter</a>
             <a href="/privacy" style="color:#94a3b8;">Privacy</a>
             <a href="/terms" style="color:#94a3b8;">Terms</a>
             <a href="/refund-policy" style="color:#94a3b8;">Refund Policy</a>
@@ -445,7 +446,7 @@ def expand_recommendations(rows):
             "reason": (
                 "SpaceX is a high-growth space and Starlink-linked research candidate. Treat it as a controlled satellite because valuation, volatility, liquidity and public trading history may be limited."
                 if ticker == "SPCX"
-                else "Included in the 100-stock StockRadar universe. This keeps the live dashboard complete until the full scanner CSV/API feed is connected."
+                else "Included in the StockRadar universe as a research watchlist name. Signal strength may update as more market, scanner and news data becomes available."
             ),
             "sector": SECTOR_MAP.get(ticker, "AI Watchlist"),
         })
@@ -1033,6 +1034,7 @@ def stock_universe_page():
     form{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap;}
     input{flex:1;min-width:260px;border:1px solid rgba(255,255,255,0.16);background:rgba(255,255,255,0.07);color:white;border-radius:15px;padding:14px 15px;font-size:15px;}
     button{border:0;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-radius:15px;padding:14px 18px;font-weight:950;cursor:pointer;}
+    .newsletter-button{display:inline-block;margin-top:8px;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;padding:13px 17px;border-radius:15px;font-weight:950;text-decoration:none;}
     table{width:100%;border-collapse:collapse;margin-top:16px;}
     th,td{text-align:left;padding:13px;border-bottom:1px solid rgba(255,255,255,0.08);vertical-align:top;}
     th{color:#94a3b8;text-transform:uppercase;letter-spacing:0.08em;font-size:12px;}
@@ -1051,6 +1053,13 @@ def stock_universe_page():
                 <input name="q" value="{{ query }}" placeholder="Search ticker or company name, e.g. AAPL or Apple">
                 <button type="submit">Search</button>
             </form>
+        </div>
+
+        <div class="card">
+            <p class="kicker">StockRadar Weekly</p>
+            <h2>Get the weekly StockRadar watchlist</h2>
+            <p>A concise weekly brief covering what’s strengthening, what’s weakening and what deserves further research.</p>
+            <a class="newsletter-button" href="/newsletter">Join StockRadar Weekly</a>
         </div>
 
         <div class="card">
@@ -2409,6 +2418,21 @@ def newsletter_headline_is_relevant(article):
     if not headline:
         return False
 
+    healthcare_exclusion_terms = (
+        "fda panel", "flu vaccine", "vaccine", "mrna",
+        "clinical trial", "drug approval", "medical study",
+    )
+    healthcare_market_override_terms = (
+        "stock", "stocks", "shares", "market", "markets", "earnings",
+        "revenue", "profit", "guidance", "analyst", "nasdaq", "nyse",
+        "s&p", "dow", "ftse", "listed", "ticker",
+    )
+    if (
+        any(term in headline for term in healthcare_exclusion_terms)
+        and not any(term in headline for term in healthcare_market_override_terms)
+    ):
+        return False
+
     priority_terms = (
         "stock market", "stocks", "equities", "shares", "earnings",
         "interest rate", "interest rates", "rate cut", "rate hike",
@@ -3359,6 +3383,12 @@ Updated {{ ticker_updated }}{% if live_news_active %} • Live headlines{% else 
             <a class="nav-link" style="display:inline-block;width:auto;margin:0;background:transparent;color:#94a3b8;" href="/feedback">Send Feedback</a>
         </div>
     </div>
+    <div class="card" id="newsletter-cta">
+        <p style="color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;">Free Sunday briefing</p>
+        <h2 style="margin:0 0 10px 0;">StockRadar Weekly</h2>
+        <p style="color:#cbd5e1;line-height:1.7;max-width:850px;">Get the 5-minute market signal every Sunday — what’s strengthening, what’s weakening, and what may matter next.</p>
+        <a class="upgrade-cta" href="/newsletter">Join Free</a>
+    </div>
     <div id="overview-section" class="dashboard-section {% if active_tab == 'overview' %}active-section{% endif %}">
 <div class="card">
     <h2>Current UK & US Market Status</h2>
@@ -4053,6 +4083,8 @@ stock_detail_html = """
 <div class="premium-banner"><div><small>Premium AI Intelligence Preview</small><h2>{{ stock_display_label(symbol) }} intelligence, not just a chart.</h2><p>Every supported stock and index gets the same structure: a useful free preview, then a stronger Premium decision panel with deeper AI explanation, risk read, portfolio role and what to watch next.</p></div><div class="premium-cta-box">{% if has_premium_access %}<strong>✅ Premium Active</strong><p>You have full premium access for {{ stock_display_label(symbol) }}.</p><a class="payment-button" href="/premium-decision/{{ symbol }}">Open Decision Panel</a>{% else %}<strong>Unlock the full {{ stock_display_label(symbol) }} Decision Panel</strong><p>Premium adds portfolio role, concentration risk, readiness and before-acting checks.</p><a class="payment-button" href="/premium-decision/{{ symbol }}">Preview Premium Panel</a><div class="payment-note">Non-premium users see the locked preview and upgrade route.</div>{% endif %}</div></div>
 
 <div class="ai-grid"><div class="ai-card"><small>Free Signal Preview</small><h2 class="{% if ai_context.signal == 'BUY' %}buy{% elif ai_context.signal == 'SELL' %}sell{% elif ai_context.signal == 'HOLD' %}hold{% endif %}">{{ ai_context.signal }}</h2><p>Every supported stock page gets the same free AI preview. Current signal for {{ stock_display_label(symbol) }}: {{ ai_context.signal }}.</p><span class="signal-badge">Live stock page: {{ stock_display_label(symbol) }}</span></div><div class="ai-card warning"><small>Free Confidence Preview</small><div class="confidence-large">{{ ai_context.confidence }}</div><div class="free-meter">{{ ai_context.confidence_meter }}</div><span class="free-strength">Signal strength: {{ ai_context.strength_label }}</span><p style="margin-top:12px;">Free shows the basic score and meter. Pro explains what is driving it for {{ stock_display_label(symbol) }}.</p></div><div class="ai-card risk"><small>{% if has_premium_access %}Premium Active{% else %}Pro Preview{% endif %}</small><h2>Next Move</h2>{% if has_premium_access %}<p>{{ ai_context.watch_next }}</p><span class="signal-badge">Premium unlocked</span>{% else %}<p>Pro unlocks the full interpretation behind the meter: why the score matters, what risk is building and what to watch next for {{ stock_display_label(symbol) }}.</p><a class="signal-badge" href="/upgrade">Unlock Premium</a>{% endif %}</div></div>
+
+<div class="card" style="background:linear-gradient(135deg,rgba(0,255,170,0.12),rgba(56,189,248,0.08));border-color:rgba(0,255,170,0.22);"><small style="color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.1em;">StockRadar Weekly</small><h2>Want the weekly market signal?</h2><p style="color:#cbd5e1;line-height:1.7;">Get StockRadar Weekly for market pulse, signal highlights, watchlist moves and risk checks.</p><a class="payment-button" href="/newsletter">Get the Weekly Brief</a></div>
 
 {% if has_premium_access and example_report %}<div class="example-report"><small>Premium Decision Intelligence</small><h2>{{ example_report.headline }}</h2><p>{{ example_report.summary }}</p><div class="example-report-grid"><div class="example-report-card"><strong>AI Confidence</strong><div class="confidence-score">{{ example_report.confidence }}</div><div class="confidence-meter">{{ example_report.meter }}</div><span class="strength-pill">Signal strength: {{ example_report.strength }}</span></div><div class="example-report-card"><strong>Portfolio role</strong><span>{{ example_report.portfolio_role }}</span></div><div class="example-report-card"><strong>Decision readiness</strong><span>{{ example_report.readiness }}</span></div></div><div class="example-report-card" style="margin-top:16px;"><strong>Premium decision use</strong><span>{{ example_report.decision_use }}</span></div><div style="margin-top:18px;"><a class="payment-button" href="/premium-decision/{{ symbol }}">Open Full Premium Decision Panel</a></div></div>{% endif %}
 {% if not has_premium_access %}<div class="example-report"><small>Premium locked</small><h2>Unlock the full {{ stock_display_label(symbol) }} Decision Panel</h2><p>Free shows the basic signal, confidence score and meter. Premium unlocks portfolio role, concentration risk, readiness and before-acting checks.</p><div class="example-report-grid"><div class="example-report-card"><strong>Free preview</strong><div class="confidence-score">{{ ai_context.confidence }}</div><div class="confidence-meter">{{ ai_context.confidence_meter }}</div><span class="strength-pill">Basic signal strength: {{ ai_context.strength_label }}</span></div><div class="example-report-card"><strong>Premium portfolio role</strong><span>Locked until upgrade.</span></div><div class="example-report-card"><strong>Premium decision readiness</strong><span>Locked until upgrade.</span></div></div><a class="payment-button" href="/premium-decision/{{ symbol }}" style="margin-top:18px;">Preview Premium Decision Panel</a><div class="payment-note">The preview opens the locked Premium route and upgrade path.</div></div>{% endif %}
