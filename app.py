@@ -1,5 +1,7 @@
 from flask import Flask, Response, render_template_string, redirect, url_for, request, session, jsonify
 from datetime import datetime, time as dt_time, timezone
+from email.utils import format_datetime
+from xml.sax.saxutils import escape as xml_escape
 from zoneinfo import ZoneInfo
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -2714,16 +2716,87 @@ def build_newsletter_plain_text(draft):
     return "\n".join(lines)
 
 
+def newsletter_issue_metadata(now=None):
+    issue_time = now or datetime.now(timezone.utc)
+    iso_year, iso_week, _ = issue_time.isocalendar()
+    return {
+        "title": f"StockRadar Weekly — Week {iso_week}, {iso_year}",
+        "guid": f"stockradar-weekly-{iso_year}-W{iso_week:02d}",
+        "published_at": issue_time,
+    }
+
+
+newsletter_issue_body_html = """
+<section>
+<h2>Market pulse</h2>
+<p><strong>Market mood:</strong> {{ draft.market_mood }}</p>
+<p>{{ draft.market_pulse }}</p>
+</section>
+<section>
+<h2>Signal highlights</h2>
+{% if draft.signal_highlights %}
+{% for item in draft.signal_highlights[:5] %}
+<article>
+<h3>{{ item.name }}</h3>
+<p><strong>{{ item.badge }}</strong> · {{ item.status }} · Data confidence: {{ item.data_confidence }}</p>
+<p><strong>Why it appears:</strong> {{ item.reason }}</p>
+<p>{{ item.plain_english_takeaway }}</p>
+</article>
+{% endfor %}
+{% else %}
+<p>Signal data unavailable.</p>
+{% endif %}
+</section>
+<section>
+<h2>Trending vs forecasting</h2>
+<h3>Trending now</h3>
+<ul>
+{% for item in draft.trending_vs_forecasting.trending %}
+<li>{{ item.headline }} — {{ item.source }}</li>
+{% endfor %}
+</ul>
+<h3>What may matter next</h3>
+<ul>
+{% for item in draft.trending_vs_forecasting.forecasting %}
+<li>{{ item }}</li>
+{% endfor %}
+</ul>
+</section>
+<section>
+<h2>Watchlist</h2>
+<ul>
+{% for item in draft.watchlist %}
+<li><strong>{{ item.name }}</strong> — {{ item.badge }} · {{ item.status }}: {{ item.reason }}</li>
+{% endfor %}
+</ul>
+</section>
+<section>
+<h2>Risk check</h2>
+<ul>
+{% for item in draft.risk_check %}
+<li>{{ item }}</li>
+{% endfor %}
+</ul>
+<p><strong>Educational only.</strong> {{ draft.disclaimer }}</p>
+</section>
+"""
+
+
+def render_newsletter_issue_body(draft):
+    return render_template_string(newsletter_issue_body_html, draft=draft)
+
+
 newsletter_landing_html = """
 <!doctype html>
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>StockRadar Weekly Brief</title>
+<link rel="alternate" type="application/rss+xml" title="StockRadar Weekly RSS" href="/newsletter/rss">
 <style>
 *{box-sizing:border-box;}body{margin:0;min-height:100vh;padding:42px 22px;background:radial-gradient(circle at 18% 8%,rgba(0,255,170,.15),transparent 30%),linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;}
 .wrap{max-width:900px;margin:0 auto;}.back{color:#38bdf8;text-decoration:none;font-weight:900;}.hero{margin-top:24px;padding:46px;border-radius:30px;background:linear-gradient(180deg,rgba(23,23,23,.96),rgba(14,14,14,.96));border:1px solid rgba(255,255,255,.11);box-shadow:0 28px 82px rgba(0,0,0,.4);}
-.eyebrow{color:#00ffaa;font-size:12px;font-weight:950;letter-spacing:.13em;text-transform:uppercase;}h1{font-size:clamp(38px,7vw,66px);line-height:1.02;margin:14px 0 18px;}p{color:#cbd5e1;line-height:1.7;font-size:18px;}.signup{margin-top:28px;padding:24px;border-radius:22px;background:rgba(15,23,42,.88);border:1px solid rgba(0,255,170,.2);}.fallback{color:#fde68a;font-weight:900;margin:0;}.notes{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:24px;}.note{padding:18px;border-radius:18px;background:rgba(255,255,255,.05);color:#cbd5e1;line-height:1.55;}@media(max-width:700px){.hero{padding:28px}.notes{grid-template-columns:1fr;}}
+.eyebrow{color:#00ffaa;font-size:12px;font-weight:950;letter-spacing:.13em;text-transform:uppercase;}h1{font-size:clamp(38px,7vw,66px);line-height:1.02;margin:14px 0 18px;}p{color:#cbd5e1;line-height:1.7;font-size:18px;}.signup{margin-top:28px;padding:24px;border-radius:22px;background:rgba(15,23,42,.88);border:1px solid rgba(0,255,170,.2);}.fallback{color:#fde68a;font-weight:900;margin:0;}.notes{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:24px;}.note{padding:18px;border-radius:18px;background:rgba(255,255,255,.05);color:#cbd5e1;line-height:1.55;}.feed-link{display:inline-block;margin-top:22px;color:#38bdf8;font-size:14px;font-weight:900;text-decoration:none;}@media(max-width:700px){.hero{padding:28px}.notes{grid-template-columns:1fr;}}
 </style>
 </head>
 <body>
@@ -2745,8 +2818,70 @@ newsletter_landing_html = """
 <div class="note"><strong>Plain English.</strong><br>Signals explain why they appear.</div>
 <div class="note"><strong>Research-first.</strong><br>No trade instructions or guarantees.</div>
 </div>
+<a class="feed-link" href="/newsletter/latest">Read the latest issue</a>
+<span aria-hidden="true"> · </span>
+<a class="feed-link" href="/newsletter/rss">RSS feed</a>
 </main>
 {{ disclaimer_footer() | safe }}
+</div>
+</body>
+</html>
+"""
+
+
+newsletter_latest_html = """
+<!doctype html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ issue.title }} — StockRadar</title>
+<link rel="alternate" type="application/rss+xml" title="StockRadar Weekly RSS" href="/newsletter/rss">
+<style>
+*{box-sizing:border-box;}body{margin:0;padding:34px 20px;background:radial-gradient(circle at 18% 8%,rgba(0,255,170,.12),transparent 30%),#020617;color:#e5e7eb;font-family:Arial,sans-serif;}.wrap{max-width:860px;margin:0 auto;}a{color:#38bdf8;font-weight:900;text-decoration:none;}.header,.section{background:rgba(15,23,42,.94);border:1px solid rgba(255,255,255,.1);border-radius:24px;padding:26px;margin-bottom:18px;}.kicker{color:#00ffaa;font-size:12px;font-weight:950;letter-spacing:.12em;text-transform:uppercase;}h1{font-size:clamp(36px,7vw,54px);line-height:1.04;margin:12px 0;}h2{margin:0 0 14px;}h3{margin:20px 0 8px;}p,li{color:#cbd5e1;line-height:1.65;}.meta{color:#94a3b8;}.badge{display:inline-block;padding:6px 10px;border-radius:999px;background:rgba(0,255,170,.12);color:#bbf7d0;font-size:12px;font-weight:950;text-transform:uppercase;}.status{margin-left:7px;color:#fde68a;font-size:12px;font-weight:900;}.signal{padding:18px 0;border-bottom:1px solid rgba(255,255,255,.08);}.signal:last-child{border-bottom:0;padding-bottom:0;}.confidence{color:#94a3b8;font-size:12px;font-weight:900;}.top-links{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:18px;}@media(max-width:700px){.header,.section{padding:22px;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="top-links"><a href="/newsletter">← Newsletter signup</a><a href="/newsletter/rss">RSS feed</a></nav>
+<header class="header">
+<div class="kicker">The 5-minute market signal</div>
+<h1>{{ issue.title }}</h1>
+<p class="meta">Generated {{ draft.generated_at }}</p>
+<p><strong>Market mood:</strong> {{ draft.market_mood }}</p>
+<p>{{ draft.market_pulse }}</p>
+</header>
+<section class="section">
+<h2>Signal highlights</h2>
+{% if draft.signal_highlights %}
+{% for item in draft.signal_highlights[:5] %}
+<article class="signal">
+<h3>{{ item.name }}</h3>
+<span class="badge">{{ item.badge }}</span><span class="status">{{ item.status }}</span>
+<p><strong>Why it appears:</strong> {{ item.reason }}</p>
+<p>{{ item.plain_english_takeaway }}</p>
+<div class="confidence">Data confidence: {{ item.data_confidence }}</div>
+</article>
+{% endfor %}
+{% else %}
+<p>Signal data unavailable.</p>
+{% endif %}
+</section>
+<section class="section">
+<h2>Trending vs forecasting</h2>
+<h3>Trending now</h3>
+<ul>{% for item in draft.trending_vs_forecasting.trending %}<li>{{ item.headline }} — {{ item.source }}</li>{% endfor %}</ul>
+<h3>What may matter next</h3>
+<ul>{% for item in draft.trending_vs_forecasting.forecasting %}<li>{{ item }}</li>{% endfor %}</ul>
+</section>
+<section class="section">
+<h2>Watchlist</h2>
+<ul>{% for item in draft.watchlist %}<li><strong>{{ item.name }}</strong> — {{ item.badge }} · {{ item.status }}: {{ item.reason }}</li>{% endfor %}</ul>
+</section>
+<section class="section">
+<h2>Risk check</h2>
+<ul>{% for item in draft.risk_check %}<li>{{ item }}</li>{% endfor %}</ul>
+<p><strong>Educational only.</strong> {{ draft.disclaimer }}</p>
+</section>
 </div>
 </body>
 </html>
@@ -3877,6 +4012,46 @@ def newsletter():
     )
 
 
+@app.route("/newsletter/latest")
+def newsletter_latest():
+    draft = build_free_weekly_newsletter()
+    issue = newsletter_issue_metadata()
+    return render_template_string(
+        newsletter_latest_html,
+        draft=draft,
+        issue=issue,
+    )
+
+
+@app.route("/newsletter/rss")
+def newsletter_rss():
+    draft = build_free_weekly_newsletter()
+    issue = newsletter_issue_metadata()
+    feed_url = f"{PRODUCTION_BASE_URL}/newsletter"
+    item_url = f"{PRODUCTION_BASE_URL}/newsletter/latest"
+    issue_body = render_newsletter_issue_body(draft).replace("]]>", "]]&gt;")
+    rss_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel>
+<title>StockRadar Weekly</title>
+<link>{xml_escape(feed_url)}</link>
+<description>The 5-minute market signal for investors who want clarity without noise.</description>
+<language>en-gb</language>
+<lastBuildDate>{format_datetime(issue["published_at"])}</lastBuildDate>
+<item>
+<title>{xml_escape(issue["title"])}</title>
+<link>{xml_escape(item_url)}</link>
+<guid isPermaLink="false">{xml_escape(issue["guid"])}</guid>
+<pubDate>{format_datetime(issue["published_at"])}</pubDate>
+<description>{xml_escape(draft.get("market_pulse") or "Market pulse data unavailable.")}</description>
+<content:encoded><![CDATA[{issue_body}]]></content:encoded>
+</item>
+</channel>
+</rss>
+"""
+    return Response(rss_xml, content_type="application/rss+xml; charset=utf-8")
+
+
 @app.route("/admin/newsletter-preview")
 def admin_newsletter_preview():
     if not owner_has_access():
@@ -3947,6 +4122,7 @@ def sitemap_xml():
     public_paths = [
         "/",
         "/newsletter",
+        "/newsletter/latest",
         "/universe",
         "/upgrade",
         "/privacy",
