@@ -178,6 +178,10 @@ h2{font-size:22px;margin:26px 0 8px;}
 p,li{color:#b9c5d2;line-height:1.78;}
 a{color:#38bdf8;}
 .back{display:inline-block;margin-bottom:22px;font-weight:900;text-decoration:none;}
+.prompt-list{display:grid;gap:10px;padding:0;margin:22px 0;list-style:none;}
+.prompt-list li{padding:14px 16px;border-radius:16px;background:rgba(148,163,184,0.07);border:1px solid rgba(148,163,184,0.12);color:#c6d0da;}
+.feedback-cta{display:inline-block;margin-top:8px;padding:14px 18px;border-radius:15px;background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;text-decoration:none;font-weight:950;box-shadow:0 14px 34px rgba(0,255,170,0.12);}
+.feedback-email{color:#dce6ef;font-weight:900;}
 @media(max-width:700px){body{padding:24px;}h1{font-size:34px;}}
 </style>
 </head>
@@ -4375,27 +4379,23 @@ def manage_subscription():
 
 @app.route("/feedback")
 def feedback():
-    if SUPPORT_EMAIL:
-        support_contact = render_template_string(
-            '<a href="mailto:{{ support_email }}?subject=StockRadar%20Feedback">{{ support_email }}</a>',
-            support_email=SUPPORT_EMAIL,
-        )
-    else:
-        support_contact = "support contact coming soon"
-
     return render_legal_page(
         "StockRadar Feedback",
-        f"""
-        <p>StockRadar is in early access. Feedback helps improve the dashboard before wider public launch.</p>
-        <p>Send feedback to: {support_contact}</p>
-        <h2>What to include</h2>
-        <ul>
-            <li>What page or feature you tested</li>
-            <li>What worked well</li>
-            <li>What felt confusing, broken, slow, or unclear</li>
-            <li>What stock or ticker you searched for, if relevant</li>
-            <li>Whether the upgrade flow, legal links, and support pages were easy to understand</li>
+        """
+        <p>StockRadar is in soft launch. Short, honest feedback from early testers helps us improve clarity, usefulness and trust before a wider release.</p>
+        <p>You do not need to write a long review. A few direct answers are genuinely useful.</p>
+        <h2>Useful questions to answer</h2>
+        <ul class="prompt-list">
+            <li>Did StockRadar make sense within 10 seconds?</li>
+            <li>What felt useful?</li>
+            <li>What felt confusing or overloaded?</li>
+            <li>Would you subscribe to StockRadar Weekly?</li>
+            <li>What would make the site feel more trustworthy?</li>
+            <li>Did anything look broken on mobile?</li>
         </ul>
+        <h2>Send your feedback</h2>
+        <p>Email <span class="feedback-email">stock.radar.support@gmail.com</span>. If something looked broken, please include the page, device and browser you used.</p>
+        <a class="feedback-cta" href="mailto:stock.radar.support@gmail.com?subject=StockRadar%20Feedback">Send Feedback</a>
         """,
     )
 
