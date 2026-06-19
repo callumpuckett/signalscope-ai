@@ -81,6 +81,7 @@ def configured_url(environment_name, default):
 
 STRIPE_SUCCESS_URL = configured_url("STRIPE_SUCCESS_URL", DEFAULT_STRIPE_SUCCESS_URL)
 NEWSAPI_KEY = os.environ.get("NEWSAPI_KEY", "").strip()
+NEWSLETTER_EMBED_HTML = os.environ.get("NEWSLETTER_EMBED_HTML", "").strip()
 LAST_NEWS_FETCH_STATUS = {
     "provider": "none",
     "status": "not_started",
@@ -2338,6 +2339,507 @@ def safe_build_live_headlines(recommendations, impact_radar):
         "premium_text": "Market headlines are reconnecting.",
     }]
 
+
+def newsletter_data_confidence(item):
+    reason = str(item.get("reason") or "").strip().lower()
+    confidence = confidence_number(item.get("confidence"))
+
+    if not reason or "included in the 100-stock stockradar universe" in reason:
+        return "Low"
+    if confidence >= 80:
+        return "High"
+    if confidence >= 60:
+        return "Medium"
+    return "Low"
+
+
+def newsletter_status(signal, ticker=""):
+    if ticker == "SPCX":
+        return "High Risk"
+    if signal == "BUY":
+        return "Positive"
+    if signal == "SELL":
+        return "Caution"
+    return "Steady"
+
+
+def newsletter_plain_english_takeaway(signal, ticker=""):
+    if ticker == "SPCX":
+        return (
+            "Treat SpaceX as speculative satellite exposure only. Public-market history, "
+            "liquidity, valuation and chart data may be limited or unavailable."
+        )
+    if signal == "BUY":
+        return (
+            "The available signal data is constructive and may deserve further research. "
+            "This is not an instruction to buy."
+        )
+    if signal == "SELL":
+        return (
+            "The available signal data is weakening, so risk deserves closer review. "
+            "This is not an instruction to sell."
+        )
+    return (
+        "The evidence is mixed or stable, so waiting for a clearer change may be sensible. "
+        "This is not an instruction to hold."
+    )
+
+
+def build_newsletter_signal_highlights(recommendations, limit=5):
+    usable_rows = [
+        item for item in recommendations
+        if str(item.get("ticker") or "").strip()
+        and "included in the 100-stock stockradar universe"
+        not in str(item.get("reason") or "").strip().lower()
+    ]
+    ranked_rows = sorted(
+        usable_rows,
+        key=lambda item: confidence_number(item.get("confidence")),
+        reverse=True,
+    )
+
+    selected = []
+    selected_tickers = set()
+
+    for desired_signal in ("BUY", "HOLD", "SELL"):
+        match = next(
+            (
+                item for item in ranked_rows
+                if clean_signal(item.get("signal"), item.get("confidence")) == desired_signal
+                and str(item.get("ticker") or "").strip().upper() not in selected_tickers
+            ),
+            None,
+        )
+        if match:
+            selected.append(match)
+            selected_tickers.add(str(match.get("ticker") or "").strip().upper())
+
+    for item in ranked_rows:
+        ticker = str(item.get("ticker") or "").strip().upper()
+        if ticker and ticker not in selected_tickers:
+            selected.append(item)
+            selected_tickers.add(ticker)
+        if len(selected) >= limit:
+            break
+
+    highlights = []
+    for item in selected[:limit]:
+        ticker = str(item.get("ticker") or "").strip().upper()
+        signal = clean_signal(item.get("signal"), item.get("confidence"))
+        highlights.append({
+            "ticker": ticker,
+            "name": stock_display_label(ticker),
+            "badge": "WATCH" if ticker == "SPCX" else f"{signal} pattern",
+            "status": newsletter_status(signal, ticker),
+            "reason": str(item.get("reason") or "Signal reasoning unavailable.").strip(),
+            "plain_english_takeaway": newsletter_plain_english_takeaway(signal, ticker),
+            "data_confidence": newsletter_data_confidence(item),
+        })
+
+    return highlights
+
+
+def build_newsletter_watchlist(recommendations):
+    recommendation_lookup = {
+        str(item.get("ticker") or "").strip().upper(): item
+        for item in recommendations
+        if item.get("ticker")
+    }
+    universe_rows = get_stock_universe()
+    universe_lookup = {
+        str(item.get("ticker") or "").strip().upper(): item
+        for item in universe_rows
+        if item.get("ticker")
+    }
+
+    requested_names = [
+        ("GOOGL", "Alphabet"),
+        ("NVDA", "NVIDIA"),
+        ("V", "Visa"),
+        ("BAE Systems", "BAE Systems"),
+        ("QinetiQ", "QinetiQ"),
+        ("VUSA", "Vanguard S&P 500 UCITS ETF"),
+        ("SPCX", "SpaceX"),
+    ]
+    watchlist = []
+    seen = set()
+
+    for query, fallback_name in requested_names:
+        exact_ticker = query.upper()
+        universe_item = universe_lookup.get(exact_ticker)
+
+        if universe_item is None and exact_ticker not in recommendation_lookup:
+            matches = search_stock_universe(query, limit=1)
+            universe_item = matches[0] if matches else None
+
+        ticker = str(
+            (universe_item or {}).get("ticker")
+            or (exact_ticker if exact_ticker in recommendation_lookup else "")
+        ).strip().upper()
+
+        if not ticker or ticker in seen:
+            watchlist.append({
+                "ticker": query if query.isupper() else fallback_name,
+                "name": fallback_name,
+                "badge": "WATCH",
+                "status": "Caution",
+                "reason": "Signal pending — this name is not currently available in the StockRadar feed.",
+                "data_confidence": "Low",
+            })
+            continue
+
+        seen.add(ticker)
+        recommendation = recommendation_lookup.get(ticker)
+
+        if ticker == "SPCX":
+            watchlist.append({
+                "ticker": ticker,
+                "name": stock_display_label(ticker),
+                "badge": "WATCH",
+                "status": "High Risk",
+                "reason": (
+                    "High-growth, high-volatility satellite exposure. Price and chart data "
+                    "may be unavailable because public trading history is limited."
+                ),
+                "data_confidence": "Low",
+            })
+        elif recommendation:
+            signal = clean_signal(
+                recommendation.get("signal"),
+                recommendation.get("confidence"),
+            )
+            watchlist.append({
+                "ticker": ticker,
+                "name": stock_display_label(ticker),
+                "badge": f"{signal} pattern",
+                "status": newsletter_status(signal, ticker),
+                "reason": str(
+                    recommendation.get("reason")
+                    or "Signal reasoning unavailable."
+                ).strip(),
+                "data_confidence": newsletter_data_confidence(recommendation),
+            })
+        else:
+            watchlist.append({
+                "ticker": ticker,
+                "name": stock_display_label(ticker),
+                "badge": "WATCH",
+                "status": "Steady",
+                "reason": "Signal pending — the stock is available in the universe but not in the current recommendation feed.",
+                "data_confidence": "Low",
+            })
+
+    return watchlist
+
+
+def build_free_weekly_newsletter():
+    recommendations = get_recommendations() or []
+    buy_count, hold_count, sell_count, _ = calculate_counts(recommendations)
+    total_count = len(recommendations)
+    highlights = build_newsletter_signal_highlights(recommendations)
+
+    sector_strength = {}
+    sector_risk = {}
+    for item in recommendations:
+        sector = str(item.get("sector") or "Other").strip()
+        signal = clean_signal(item.get("signal"), item.get("confidence"))
+        if signal == "BUY":
+            sector_strength[sector] = sector_strength.get(sector, 0) + 1
+        elif signal == "SELL":
+            sector_risk[sector] = sector_risk.get(sector, 0) + 1
+
+    best_area = (
+        max(sector_strength, key=sector_strength.get)
+        if sector_strength
+        else "Signal pending"
+    )
+    risk_area = (
+        max(sector_risk, key=sector_risk.get)
+        if sector_risk
+        else "No concentrated risk signal"
+    )
+
+    if not total_count:
+        market_mood = "Data unavailable"
+        market_pulse = "Recommendation data is currently unavailable. No market direction is inferred."
+    elif buy_count > sell_count * 1.5:
+        market_mood = "Constructive, with selectivity"
+        market_pulse = (
+            f"{buy_count} constructive patterns, {hold_count} steady patterns and "
+            f"{sell_count} caution patterns appear in the current StockRadar feed."
+        )
+    elif sell_count > buy_count:
+        market_mood = "Cautious"
+        market_pulse = (
+            f"Caution patterns ({sell_count}) outnumber constructive patterns ({buy_count}). "
+            f"{hold_count} names remain steady or unresolved."
+        )
+    else:
+        market_mood = "Mixed"
+        market_pulse = (
+            f"The feed is balanced: {buy_count} constructive, {hold_count} steady and "
+            f"{sell_count} caution patterns."
+        )
+
+    try:
+        live_articles = fetch_live_market_news(limit=6)
+    except Exception:
+        live_articles = []
+
+    trending = [
+        {
+            "headline": str(article.get("title") or "Headline unavailable").strip(),
+            "source": str(article.get("source") or "Market News").strip(),
+        }
+        for article in live_articles[:3]
+        if article.get("title")
+    ]
+
+    if not trending:
+        trending = [{
+            "headline": "Live headline data unavailable",
+            "source": "StockRadar feed check",
+        }]
+
+    forecasting = []
+    if best_area != "Signal pending":
+        forecasting.append(
+            f"{best_area} has the largest cluster of constructive patterns, so confirmation or fading strength may matter next."
+        )
+    else:
+        forecasting.append("Sector-strength forecasting is pending because recommendation data is unavailable.")
+
+    if risk_area != "No concentrated risk signal":
+        forecasting.append(
+            f"{risk_area} has the largest cluster of caution patterns, making it an area to review for weakening sentiment."
+        )
+    else:
+        forecasting.append("No single sector currently dominates the caution signals.")
+
+    if live_articles:
+        forecasting.append(
+            "Repeated headlines can change sentiment quickly; watch whether the current news themes begin to alter signal strength."
+        )
+    else:
+        forecasting.append(
+            "Live news is unavailable, so the forecast view is limited to existing StockRadar signal data."
+        )
+
+    risk_notes = []
+    if sell_count:
+        risk_notes.append(
+            f"{sell_count} caution patterns are present. They are research prompts to examine downside risk, not instructions to sell."
+        )
+    else:
+        risk_notes.append("No SELL-pattern concentration is visible in the current feed.")
+    if not live_articles:
+        risk_notes.append("Live news data is unavailable, so headline-driven risks may be missing.")
+    risk_notes.append(
+        "SPCX/SpaceX remains speculative watch exposure with limited price, chart and public-market history."
+    )
+
+    draft = {
+        "title": "StockRadar Weekly Brief",
+        "generated_at": datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC"),
+        "market_mood": market_mood,
+        "main_theme": (
+            trending[0]["headline"]
+            if live_articles
+            else "Signals first while live headlines are unavailable"
+        ),
+        "best_looking_area": best_area,
+        "risk_area": risk_area,
+        "market_pulse": market_pulse,
+        "signal_highlights": highlights,
+        "trending_vs_forecasting": {
+            "trending": trending,
+            "forecasting": forecasting,
+        },
+        "watchlist": build_newsletter_watchlist(recommendations),
+        "risk_check": risk_notes,
+        "disclaimer": (
+            "StockRadar provides educational market information and research tools only. "
+            "It is not personal financial advice. BUY, HOLD, and SELL signals are research "
+            "prompts, not instructions or guarantees."
+        ),
+    }
+    draft["plain_text"] = build_newsletter_plain_text(draft)
+    return draft
+
+
+def build_newsletter_plain_text(draft):
+    lines = [
+        draft["title"],
+        f"Generated: {draft['generated_at']}",
+        "",
+        "MARKET PULSE",
+        f"Mood: {draft['market_mood']}",
+        draft["market_pulse"],
+        f"Main theme: {draft['main_theme']}",
+        f"Best-looking area: {draft['best_looking_area']}",
+        f"Risk area: {draft['risk_area']}",
+        "",
+        "SIGNAL HIGHLIGHTS",
+    ]
+
+    if draft["signal_highlights"]:
+        for item in draft["signal_highlights"]:
+            lines.extend([
+                f"- {item['name']} — {item['badge']} | {item['status']} | confidence: {item['data_confidence']}",
+                f"  Why: {item['reason']}",
+                f"  Plain English: {item['plain_english_takeaway']}",
+            ])
+    else:
+        lines.append("- Signal data unavailable.")
+
+    lines.extend(["", "TRENDING NOW"])
+    for item in draft["trending_vs_forecasting"]["trending"]:
+        lines.append(f"- {item['headline']} ({item['source']})")
+
+    lines.extend(["", "WHAT MAY MATTER NEXT"])
+    for item in draft["trending_vs_forecasting"]["forecasting"]:
+        lines.append(f"- {item}")
+
+    lines.extend(["", "WATCHLIST"])
+    for item in draft["watchlist"]:
+        lines.append(
+            f"- {item['name']} — {item['badge']} | {item['status']}: {item['reason']}"
+        )
+
+    lines.extend(["", "RISK CHECK"])
+    for item in draft["risk_check"]:
+        lines.append(f"- {item}")
+
+    lines.extend(["", draft["disclaimer"]])
+    return "\n".join(lines)
+
+
+newsletter_landing_html = """
+<!doctype html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StockRadar Weekly Brief</title>
+<style>
+*{box-sizing:border-box;}body{margin:0;min-height:100vh;padding:42px 22px;background:radial-gradient(circle at 18% 8%,rgba(0,255,170,.15),transparent 30%),linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;}
+.wrap{max-width:900px;margin:0 auto;}.back{color:#38bdf8;text-decoration:none;font-weight:900;}.hero{margin-top:24px;padding:46px;border-radius:30px;background:linear-gradient(180deg,rgba(23,23,23,.96),rgba(14,14,14,.96));border:1px solid rgba(255,255,255,.11);box-shadow:0 28px 82px rgba(0,0,0,.4);}
+.eyebrow{color:#00ffaa;font-size:12px;font-weight:950;letter-spacing:.13em;text-transform:uppercase;}h1{font-size:clamp(38px,7vw,66px);line-height:1.02;margin:14px 0 18px;}p{color:#cbd5e1;line-height:1.7;font-size:18px;}.signup{margin-top:28px;padding:24px;border-radius:22px;background:rgba(15,23,42,.88);border:1px solid rgba(0,255,170,.2);}.fallback{color:#fde68a;font-weight:900;margin:0;}.notes{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:24px;}.note{padding:18px;border-radius:18px;background:rgba(255,255,255,.05);color:#cbd5e1;line-height:1.55;}@media(max-width:700px){.hero{padding:28px}.notes{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<a class="back" href="/">← Back to StockRadar</a>
+<main class="hero">
+<div class="eyebrow">Free Sunday market briefing</div>
+<h1>Join the free StockRadar Weekly Brief</h1>
+<p>Get the 5-minute market signal every Sunday — what’s strengthening, what’s weakening, and what may matter next.</p>
+<section class="signup" aria-label="Newsletter signup">
+{% if newsletter_embed_html %}
+{{ newsletter_embed_html | safe }}
+{% else %}
+<p class="fallback">Newsletter signup coming soon.</p>
+{% endif %}
+</section>
+<div class="notes">
+<div class="note"><strong>Short.</strong><br>Designed to be read in about five minutes.</div>
+<div class="note"><strong>Plain English.</strong><br>Signals explain why they appear.</div>
+<div class="note"><strong>Research-first.</strong><br>No trade instructions or guarantees.</div>
+</div>
+</main>
+{{ disclaimer_footer() | safe }}
+</div>
+</body>
+</html>
+"""
+
+
+newsletter_preview_html = """
+<!doctype html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Newsletter Draft Preview — StockRadar</title>
+<style>
+*{box-sizing:border-box;}body{margin:0;padding:34px 20px;background:#020617;color:#e5e7eb;font-family:Arial,sans-serif;}.wrap{max-width:980px;margin:0 auto;}a{color:#38bdf8;font-weight:900;text-decoration:none;}.toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:20px;}.button{border:0;border-radius:14px;padding:12px 16px;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#020617;font-weight:950;cursor:pointer;}.card{background:rgba(15,23,42,.94);border:1px solid rgba(255,255,255,.1);border-radius:24px;padding:26px;margin-bottom:18px;}.kicker{color:#00ffaa;font-size:12px;font-weight:950;letter-spacing:.12em;text-transform:uppercase;}h1{font-size:42px;margin:10px 0;}h2{margin:0 0 16px;}p,li{color:#cbd5e1;line-height:1.65;}.meta{color:#94a3b8;}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;}.signal{padding:18px;border-radius:18px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.08);}.badge{display:inline-block;padding:6px 10px;border-radius:999px;background:rgba(0,255,170,.12);color:#bbf7d0;font-size:12px;font-weight:950;text-transform:uppercase;}.status{margin-left:7px;color:#fde68a;font-weight:900;font-size:12px;}.confidence{color:#94a3b8;font-size:12px;font-weight:900;}.copy-panel{display:none;}pre{white-space:pre-wrap;word-wrap:break-word;background:#000;border-radius:18px;padding:22px;color:#e5e7eb;line-height:1.55;}@media(max-width:700px){.grid{grid-template-columns:1fr;}h1{font-size:34px;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="toolbar">
+<a href="/owner">← Owner area</a>
+<button class="button" type="button" onclick="copyNewsletter()">Copy newsletter</button>
+</div>
+<main id="newsletter-preview">
+<section class="card">
+<div class="kicker">Owner draft preview · not sent</div>
+<h1>{{ draft.title }}</h1>
+<p class="meta">Generated {{ draft.generated_at }}</p>
+<p><strong>Market mood:</strong> {{ draft.market_mood }}</p>
+<p>{{ draft.market_pulse }}</p>
+<p><strong>Main theme:</strong> {{ draft.main_theme }}</p>
+<p><strong>Best-looking area:</strong> {{ draft.best_looking_area }} · <strong>Risk area:</strong> {{ draft.risk_area }}</p>
+</section>
+<section class="card">
+<h2>Signal highlights</h2>
+{% if draft.signal_highlights %}
+<div class="grid">
+{% for item in draft.signal_highlights %}
+<article class="signal">
+<h3>{{ item.name }}</h3>
+<span class="badge">{{ item.badge }}</span><span class="status">{{ item.status }}</span>
+<p><strong>Why it appears:</strong> {{ item.reason }}</p>
+<p>{{ item.plain_english_takeaway }}</p>
+<div class="confidence">Data confidence: {{ item.data_confidence }}</div>
+</article>
+{% endfor %}
+</div>
+{% else %}
+<p>Signal data unavailable.</p>
+{% endif %}
+</section>
+<section class="card">
+<h2>Trending vs forecasting</h2>
+<h3>Trending now</h3>
+<ul>{% for item in draft.trending_vs_forecasting.trending %}<li>{{ item.headline }} — {{ item.source }}</li>{% endfor %}</ul>
+<h3>What may matter next</h3>
+<ul>{% for item in draft.trending_vs_forecasting.forecasting %}<li>{{ item }}</li>{% endfor %}</ul>
+</section>
+<section class="card">
+<h2>Watchlist</h2>
+<div class="grid">
+{% for item in draft.watchlist %}
+<article class="signal"><h3>{{ item.name }}</h3><span class="badge">{{ item.badge }}</span><span class="status">{{ item.status }}</span><p>{{ item.reason }}</p><div class="confidence">Data confidence: {{ item.data_confidence }}</div></article>
+{% endfor %}
+</div>
+</section>
+<section class="card">
+<h2>Risk check</h2>
+<ul>{% for item in draft.risk_check %}<li>{{ item }}</li>{% endfor %}</ul>
+<p>{{ draft.disclaimer }}</p>
+</section>
+</main>
+<section class="card">
+<h2>Plain text version</h2>
+<pre id="newsletter-copy">{{ draft.plain_text }}</pre>
+</section>
+</div>
+<script>
+function copyNewsletter(){
+    var text=document.getElementById('newsletter-copy').innerText;
+    navigator.clipboard.writeText(text).then(function(){
+        var button=document.querySelector('.button');
+        button.textContent='Copied';
+        setTimeout(function(){button.textContent='Copy newsletter';},1600);
+    }).catch(function(){
+        window.getSelection().selectAllChildren(document.getElementById('newsletter-copy'));
+    });
+}
+</script>
+</body>
+</html>
+"""
+
+
 def prepare_dashboard_data():
     recommendations = get_recommendations()
     buy_rows, hold_rows, sell_rows, conviction_rows = split_rows(recommendations)
@@ -3324,7 +3826,7 @@ p{color:#cbd5e1;line-height:1.7;font-size:16px;}
 
 owner_html = """
 <!DOCTYPE html>
-<html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Owner Area</title><style>body{background:#020617;color:white;font-family:Arial;margin:0;padding:60px;}.card{background:#0f172a;padding:40px;border-radius:24px;max-width:820px;margin:auto;border:1px solid rgba(255,255,255,0.08);}a{color:#38bdf8;font-weight:bold;}</style></head><body><div class="card"><h1>👑 Owner Area</h1><p>You are logged in as the owner with premium access.</p><p>This confirms login and premium unlocking are working.</p><p><a href="/">Return to Dashboard</a></p><p><a href="/stock/AAPL">Open Premium {{ stock_display_label('AAPL') }} Page</a></p>{{ disclaimer_footer() | safe }}</div></body></html>
+<html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Owner Area</title><style>body{background:#020617;color:white;font-family:Arial;margin:0;padding:60px;}.card{background:#0f172a;padding:40px;border-radius:24px;max-width:820px;margin:auto;border:1px solid rgba(255,255,255,0.08);}a{color:#38bdf8;font-weight:bold;}</style></head><body><div class="card"><h1>👑 Owner Area</h1><p>You are logged in as the owner with premium access.</p><p>This confirms login and premium unlocking are working.</p><p><a href="/">Return to Dashboard</a></p><p><a href="/admin/newsletter-preview">Generate Newsletter Draft</a></p><p><a href="/stock/AAPL">Open Premium {{ stock_display_label('AAPL') }} Page</a></p>{{ disclaimer_footer() | safe }}</div></body></html>
 """
 
 
@@ -3365,6 +3867,24 @@ if(labels.length>0){
 </body>
 </html>
 """
+
+
+@app.route("/newsletter")
+def newsletter():
+    return render_template_string(
+        newsletter_landing_html,
+        newsletter_embed_html=NEWSLETTER_EMBED_HTML,
+    )
+
+
+@app.route("/admin/newsletter-preview")
+def admin_newsletter_preview():
+    if not owner_has_access():
+        return redirect(url_for("login", next=request.path))
+
+    draft = build_free_weekly_newsletter()
+    return render_template_string(newsletter_preview_html, draft=draft)
+
 
 # --- Health and diagnostics routes ---
 @app.route("/health")
@@ -3426,6 +3946,7 @@ def robots_txt():
 def sitemap_xml():
     public_paths = [
         "/",
+        "/newsletter",
         "/universe",
         "/upgrade",
         "/privacy",
