@@ -3189,8 +3189,8 @@ a:hover{text-decoration:underline;}
 .menu-divider{height:1px;background:rgba(255,255,255,0.08);margin:18px 0;}
 .menu-help{color:#94a3b8;font-size:12px;line-height:1.55;margin:10px 0 14px 0;}
 .owner-box{margin-top:20px;color:#94a3b8;font-size:13px;line-height:1.6;}
-.main{flex:1;padding:44px;overflow-y:auto;max-width:1500px;margin:0 auto;display:flex;flex-direction:column;} .top-intel-layout{display:grid;grid-template-columns:minmax(0,1.8fr) minmax(320px,0.8fr);gap:18px;align-items:start;margin-bottom:22px;order:5;}
-.main>#investment-compass-card{order:1}.main>.trust-strip{order:2}.main>.signal-snapshot-grid{order:3}.main>#newsletter-cta{order:4}.main>.dashboard-section{order:6}.main>footer{order:7}
+.main{flex:1;padding:44px;overflow-y:auto;max-width:1500px;margin:0 auto;display:flex;flex-direction:column;} .top-intel-layout{display:grid;grid-template-columns:1fr;gap:14px;align-items:start;margin-bottom:22px;order:1;}
+.main>#investment-compass-card{order:2}.main>.trust-strip{order:3}.main>.signal-snapshot-grid{order:4}.main>#newsletter-cta{order:5}.main>.dashboard-section{order:6}.main>footer{order:7}
 .top-intel-layout .live-alert-strip{margin-bottom:0;}
 .top-intel-layout.single-intel{grid-template-columns:1fr;}
 .top-intel-layout.single-intel .top-bar{max-width:620px;width:100%;}
@@ -3206,12 +3206,13 @@ a:hover{text-decoration:underline;}
 .smart-search button{background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border:none;border-radius:14px;padding:10px 15px;font-weight:950;cursor:pointer;}
 .search-hint{color:#94a3b8;font-size:12px;margin-top:8px;line-height:1.45;}
 .search-message{display:none;margin-top:8px;color:#ffce4a;font-size:13px;font-weight:800;}
-.live-alert-strip{position:sticky;top:0;z-index:60;margin-bottom:22px;background:linear-gradient(90deg,rgba(0,255,170,0.12),rgba(56,189,248,0.10),rgba(255,184,107,0.10));border:1px solid rgba(255,255,255,0.12);border-radius:22px;overflow:hidden;box-shadow:0 22px 60px rgba(0,0,0,0.28);backdrop-filter:blur(18px);}
-.live-alert-header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.08);font-weight:950;color:white;text-transform:uppercase;letter-spacing:0.08em;font-size:12px;}
+.live-alert-strip{position:relative;top:auto;z-index:1;width:100%;margin-bottom:0;background:linear-gradient(90deg,rgba(0,255,170,0.12),rgba(56,189,248,0.10),rgba(255,184,107,0.10));border:1px solid rgba(255,255,255,0.12);border-radius:18px;overflow:hidden;box-shadow:0 18px 48px rgba(0,0,0,0.24);backdrop-filter:blur(18px);}
+.live-alert-header{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,0.08);font-weight:950;color:white;text-transform:uppercase;letter-spacing:0.08em;font-size:12px;}
 .live-dot{width:9px;height:9px;border-radius:999px;background:#22c55e;box-shadow:0 0 18px rgba(34,197,94,0.8);}
-.live-alert-track{display:flex;gap:24px;white-space:nowrap;padding:13px 16px;animation:tickerMove 52s linear infinite;align-items:stretch;}
+.live-alert-track{display:flex;gap:14px;white-space:nowrap;padding:10px 12px;animation:tickerMove 52s linear infinite;align-items:stretch;}
 .live-alert-strip:hover .live-alert-track{animation-play-state:paused;}
-.live-headline{display:inline-flex;flex-direction:column;align-items:flex-start;gap:9px;min-width:520px;max-width:620px;color:#e5e7eb;text-decoration:none;font-weight:800;background:rgba(2,6,23,0.35);border:1px solid rgba(255,255,255,0.08);border-radius:18px;padding:14px 16px;white-space:normal;}
+.live-headline{display:inline-flex;flex-direction:column;align-items:flex-start;gap:7px;min-width:430px;max-width:540px;color:#e5e7eb;text-decoration:none;font-weight:800;background:rgba(2,6,23,0.35);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:11px 13px;white-space:normal;}
+.live-news-empty{color:#a9b7c5;font-size:13px;line-height:1.5;padding:13px 14px;}
 .live-headline-main{display:flex;align-items:center;gap:10px;line-height:1.35;}
 .live-headline-main a:last-child{color:#e5e7eb;text-decoration:none;}
 .live-headline-details{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-left:2px;}
@@ -3311,7 +3312,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 .filter-button.active-filter{background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-color:transparent;}
 .filter-status{margin-top:12px;color:#94a3b8;font-size:13px;font-weight:800;}
 .hidden-signal-row{display:none;}
-@media(max-width:900px){body{flex-direction:column;}.sidebar{width:100%;min-height:auto;position:relative;top:auto;padding:18px 16px;overflow-x:auto;white-space:nowrap;border-right:0;border-bottom:1px solid rgba(148,163,184,0.12);}.sidebar .logo{margin-bottom:14px;}.sidebar .nav-section-label,.sidebar .menu-help,.sidebar .menu-divider,.sidebar .owner-box{display:none;}.sidebar .nav-link{display:inline-block;width:auto;padding:10px 12px;margin:0 6px 0 0;font-size:13px;}.main{padding:20px 16px;width:100%;}.top-bar{position:relative;justify-content:stretch;}.smart-search{width:100%;}.live-alert-track{animation-duration:58s;}.summary-grid,.market-grid,.feature-grid,.impact-grid,.radar-summary,.signal-guide-grid,.filter-grid,.trust-strip,.signal-snapshot-grid{grid-template-columns:1fr;}.newsletter-cta-card{align-items:flex-start;flex-direction:column;}.hero-card{padding:28px 22px}.hero-card h1{font-size:clamp(36px,11vw,52px);}.hero-card .hero-subtitle{font-size:16px;}.hero-actions a{width:100%;text-align:center;}}
+@media(max-width:900px){body{flex-direction:column;}.sidebar{width:100%;min-height:auto;position:relative;top:auto;padding:18px 16px;overflow-x:auto;white-space:nowrap;border-right:0;border-bottom:1px solid rgba(148,163,184,0.12);}.sidebar .logo{margin-bottom:14px;}.sidebar .nav-section-label,.sidebar .menu-help,.sidebar .menu-divider,.sidebar .owner-box{display:none;}.sidebar .nav-link{display:inline-block;width:auto;padding:10px 12px;margin:0 6px 0 0;font-size:13px;}.main{padding:20px 16px;width:100%;}.top-bar{position:relative;justify-content:stretch;}.smart-search{width:100%;}.live-alert-track{display:grid;grid-template-columns:1fr;animation:none;gap:9px;padding:10px;white-space:normal;}.live-headline{min-width:0;max-width:none;width:100%;padding:11px 12px;}.live-alert-track .live-headline:nth-of-type(n+4){display:none;}.summary-grid,.market-grid,.feature-grid,.impact-grid,.radar-summary,.signal-guide-grid,.filter-grid,.trust-strip,.signal-snapshot-grid{grid-template-columns:1fr;}.newsletter-cta-card{align-items:flex-start;flex-direction:column;}.hero-card{padding:28px 22px}.hero-card h1{font-size:clamp(36px,11vw,52px);}.hero-card .hero-subtitle{font-size:16px;}.hero-actions a{width:100%;text-align:center;}}
 </style>
 </head>
 <body>
@@ -3344,13 +3345,13 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 
 <div class="main" id="main-content" tabindex="-1">
     <div class="top-intel-layout {% if not live_headlines %}single-intel{% endif %}">
-        {% if live_headlines %}
         <div class="live-alert-strip" aria-label="Live market headlines">
             <div class="live-alert-header">
                 <span class="live-dot"></span>
-                Market News Impact Feed
-Updated {{ ticker_updated }}{% if live_news_active %} • Live headlines{% else %} • Theme mode{% endif %}
+                Market News
+Updated {{ ticker_updated }}{% if live_news_active %} • Live headlines{% else %} • Feed reconnecting{% endif %}
             </div>
+            {% if live_headlines %}
             <div class="live-alert-track">
                 {% for headline in live_headlines %}
                 <span class="live-headline">
@@ -3385,8 +3386,10 @@ Updated {{ ticker_updated }}{% if live_news_active %} • Live headlines{% else 
                 </span>
                 {% endfor %}
             </div>
+            {% else %}
+            <div class="live-news-empty">Live market headlines are temporarily unavailable. The feed will update automatically when the news service reconnects.</div>
+            {% endif %}
         </div>
-        {% endif %}
 
         <div class="top-bar" aria-label="Quick search and navigation">
             <form class="smart-search" onsubmit="return runSmartSearch(event)">
