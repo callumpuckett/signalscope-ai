@@ -170,12 +170,12 @@ legal_page_html = """
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{{ title }} — StockRadar</title>
 <style>
-body{margin:0;background:linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
+body{margin:0;background:radial-gradient(circle at 15% 0%,rgba(0,255,170,0.10),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
 .wrap{max-width:900px;margin:0 auto;}
-.card{background:rgba(15,23,42,0.94);border:1px solid rgba(255,255,255,0.11);border-radius:26px;padding:32px;box-shadow:0 24px 70px rgba(0,0,0,0.35);}
+.card{background:rgba(17,27,39,0.94);border:1px solid rgba(148,163,184,0.16);border-radius:26px;padding:32px;box-shadow:0 24px 70px rgba(0,0,0,0.28);}
 h1{font-size:42px;margin:0 0 18px;}
 h2{font-size:22px;margin:26px 0 8px;}
-p,li{color:#cbd5e1;line-height:1.75;}
+p,li{color:#b9c5d2;line-height:1.78;}
 a{color:#38bdf8;}
 .back{display:inline-block;margin-bottom:22px;font-weight:900;text-decoration:none;}
 @media(max-width:700px){body{padding:24px;}h1{font-size:34px;}}
@@ -1024,15 +1024,15 @@ def stock_universe_page():
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stock Universe — StockRadar</title>
     <style>
-    body{margin:0;background:linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:42px;}
+    body{margin:0;background:radial-gradient(circle at 12% 0%,rgba(0,255,170,0.10),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;min-height:100vh;padding:42px;}
     .wrap{max-width:1180px;margin:0 auto;}
-    .card{background:linear-gradient(180deg,rgba(23,23,23,0.96),rgba(14,14,14,0.96));border:1px solid rgba(255,255,255,0.11);border-radius:28px;padding:30px;box-shadow:0 30px 85px rgba(0,0,0,0.42);margin-bottom:22px;}
+    .card{background:linear-gradient(180deg,rgba(18,29,42,0.97),rgba(12,22,33,0.97));border:1px solid rgba(148,163,184,0.16);border-radius:28px;padding:30px;box-shadow:0 24px 70px rgba(0,0,0,0.30);margin-bottom:22px;}
     .kicker{color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;}
     h1{font-size:44px;line-height:1.04;margin:0 0 14px 0;letter-spacing:-0.04em;}
-    p{color:#cbd5e1;line-height:1.7;}
+    p{color:#b9c5d2;line-height:1.75;}
     a{color:#38bdf8;font-weight:900;text-decoration:none;}
     form{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap;}
-    input{flex:1;min-width:260px;border:1px solid rgba(255,255,255,0.16);background:rgba(255,255,255,0.07);color:white;border-radius:15px;padding:14px 15px;font-size:15px;}
+    input{flex:1;min-width:260px;border:1px solid rgba(148,163,184,0.20);background:#0b1521;color:#e6edf4;border-radius:15px;padding:14px 15px;font-size:15px;}
     button{border:0;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-radius:15px;padding:14px 18px;font-weight:950;cursor:pointer;}
     .newsletter-button{display:inline-block;margin-top:8px;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;padding:13px 17px;border-radius:15px;font-weight:950;text-decoration:none;}
     table{width:100%;border-collapse:collapse;margin-top:16px;}
@@ -1048,7 +1048,7 @@ def stock_universe_page():
         <div class="card">
             <p class="kicker">Stock Universe</p>
             <h1>Search the full StockRadar universe.</h1>
-            <p>{{ total_count }} tickers are loaded from <strong>stock_universe.csv</strong>. The homepage stays fast by only using a small preview; this page handles the full universe.</p>
+            <p>Search {{ total_count }} supported tickers by company name or symbol, then open a stock page for signal context, chart availability and research prompts.</p>
             <form method="get" action="/universe">
                 <input name="q" value="{{ query }}" placeholder="Search ticker or company name, e.g. AAPL or Apple">
                 <button type="submit">Search</button>
@@ -2889,9 +2889,9 @@ newsletter_landing_html = """
 <title>StockRadar Weekly Brief</title>
 <link rel="alternate" type="application/rss+xml" title="StockRadar Weekly RSS" href="/newsletter/rss">
 <style>
-*{box-sizing:border-box;}body{margin:0;min-height:100vh;padding:42px 22px;background:radial-gradient(circle at 18% 8%,rgba(0,255,170,.15),transparent 30%),linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;}
-.wrap{max-width:900px;margin:0 auto;}.back{color:#38bdf8;text-decoration:none;font-weight:900;}.hero{margin-top:24px;padding:46px;border-radius:30px;background:linear-gradient(180deg,rgba(23,23,23,.96),rgba(14,14,14,.96));border:1px solid rgba(255,255,255,.11);box-shadow:0 28px 82px rgba(0,0,0,.4);}
-.eyebrow{color:#00ffaa;font-size:12px;font-weight:950;letter-spacing:.13em;text-transform:uppercase;}h1{font-size:clamp(38px,7vw,66px);line-height:1.02;margin:14px 0 18px;}p{color:#cbd5e1;line-height:1.7;font-size:18px;}.signup{margin-top:28px;padding:24px;border-radius:22px;background:rgba(15,23,42,.88);border:1px solid rgba(0,255,170,.2);}.fallback{color:#fde68a;font-weight:900;margin:0;}.notes{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:24px;}.note{padding:18px;border-radius:18px;background:rgba(255,255,255,.05);color:#cbd5e1;line-height:1.55;}.feed-link{display:inline-block;margin-top:22px;color:#38bdf8;font-size:14px;font-weight:900;text-decoration:none;}@media(max-width:700px){.hero{padding:28px}.notes{grid-template-columns:1fr;}}
+*{box-sizing:border-box;}body{margin:0;min-height:100vh;padding:42px 22px;background:radial-gradient(circle at 18% 8%,rgba(0,255,170,.11),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;}
+.wrap{max-width:900px;margin:0 auto;}.back{color:#69c9f2;text-decoration:none;font-weight:900;}.hero{margin-top:24px;padding:46px;border-radius:30px;background:linear-gradient(180deg,rgba(18,29,42,.97),rgba(12,22,33,.97));border:1px solid rgba(148,163,184,.16);box-shadow:0 24px 70px rgba(0,0,0,.30);}
+.eyebrow{color:#4adea3;font-size:12px;font-weight:950;letter-spacing:.13em;text-transform:uppercase;}h1{color:#f2f5f8;font-size:clamp(38px,7vw,62px);line-height:1.04;margin:14px 0 18px;}p{color:#b9c5d2;line-height:1.75;font-size:18px;}.signup{margin-top:28px;padding:24px;border-radius:22px;background:#0d1826;border:1px solid rgba(74,222,163,.22);}.fallback{color:#f4cf79;font-weight:900;margin:0;}.notes{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:24px;}.note{padding:18px;border-radius:18px;background:rgba(148,163,184,.07);color:#c6d0da;line-height:1.6;}.feed-link{display:inline-block;margin-top:22px;color:#69c9f2;font-size:14px;font-weight:900;text-decoration:none;}@media(max-width:700px){body{padding:24px 16px}.hero{padding:28px}.notes{grid-template-columns:1fr;}}
 </style>
 </head>
 <body>
@@ -2932,7 +2932,7 @@ newsletter_latest_html = """
 <title>{{ issue.title }} — StockRadar</title>
 <link rel="alternate" type="application/rss+xml" title="StockRadar Weekly RSS" href="/newsletter/rss">
 <style>
-*{box-sizing:border-box;}body{margin:0;padding:34px 20px;background:radial-gradient(circle at 18% 8%,rgba(0,255,170,.12),transparent 30%),#020617;color:#e5e7eb;font-family:Arial,sans-serif;}.wrap{max-width:860px;margin:0 auto;}a{color:#38bdf8;font-weight:900;text-decoration:none;}.header,.section{background:rgba(15,23,42,.94);border:1px solid rgba(255,255,255,.1);border-radius:24px;padding:26px;margin-bottom:18px;}.kicker{color:#00ffaa;font-size:12px;font-weight:950;letter-spacing:.12em;text-transform:uppercase;}h1{font-size:clamp(36px,7vw,54px);line-height:1.04;margin:12px 0;}h2{margin:0 0 14px;}h3{margin:20px 0 8px;}p,li{color:#cbd5e1;line-height:1.65;}.meta{color:#94a3b8;}.badge{display:inline-block;padding:6px 10px;border-radius:999px;background:rgba(0,255,170,.12);color:#bbf7d0;font-size:12px;font-weight:950;text-transform:uppercase;}.status{margin-left:7px;color:#fde68a;font-size:12px;font-weight:900;}.signal{padding:18px 0;border-bottom:1px solid rgba(255,255,255,.08);}.signal:last-child{border-bottom:0;padding-bottom:0;}.confidence{color:#94a3b8;font-size:12px;font-weight:900;}.top-links{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:18px;}@media(max-width:700px){.header,.section{padding:22px;}}
+*{box-sizing:border-box;}body{margin:0;padding:34px 20px;background:radial-gradient(circle at 18% 8%,rgba(0,255,170,.10),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;}.wrap{max-width:860px;margin:0 auto;}a{color:#69c9f2;font-weight:900;text-decoration:none;}.header,.section{background:linear-gradient(180deg,rgba(18,29,42,.97),rgba(12,22,33,.97));border:1px solid rgba(148,163,184,.16);border-radius:24px;padding:26px;margin-bottom:18px;}.kicker{color:#4adea3;font-size:12px;font-weight:950;letter-spacing:.12em;text-transform:uppercase;}h1{color:#f2f5f8;font-size:clamp(36px,7vw,54px);line-height:1.04;margin:12px 0;}h2,h3{color:#eef2f6;}h2{margin:0 0 14px;}h3{margin:20px 0 8px;}p,li{color:#b9c5d2;line-height:1.72;}.meta{color:#91a3b4;}.badge{display:inline-block;padding:6px 10px;border-radius:999px;background:rgba(74,222,163,.10);color:#b8f5d5;font-size:12px;font-weight:950;text-transform:uppercase;}.status{margin-left:7px;color:#f4cf79;font-size:12px;font-weight:900;}.signal{padding:18px 0;border-bottom:1px solid rgba(148,163,184,.12);}.signal:last-child{border-bottom:0;padding-bottom:0;}.confidence{color:#91a3b4;font-size:12px;font-weight:900;}.top-links{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:18px;}@media(max-width:700px){body{padding:24px 16px}.header,.section{padding:22px;}}
 </style>
 </head>
 <body>
@@ -3166,12 +3166,12 @@ html = """
 <style>
 *{box-sizing:border-box;}
 html{scroll-behavior:smooth;}
-body{margin:0;background:radial-gradient(circle at 20% 10%,rgba(0,255,170,0.15),transparent 28%),radial-gradient(circle at 90% 10%,rgba(255,184,107,0.12),transparent 28%),linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;display:flex;min-height:100vh;}
+body{margin:0;background:radial-gradient(circle at 18% 8%,rgba(0,255,170,0.11),transparent 30%),radial-gradient(circle at 90% 12%,rgba(245,185,79,0.08),transparent 28%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;display:flex;min-height:100vh;}
 a{color:#38bdf8;text-decoration:none;font-weight:800;}
 a:hover{text-decoration:underline;}
-.sidebar{width:280px;min-height:100vh;padding:28px;background:rgba(5,5,5,0.82);border-right:1px solid rgba(255,255,255,0.08);position:sticky;top:0;}
+.sidebar{width:280px;min-height:100vh;padding:28px;background:rgba(7,17,24,0.92);border-right:1px solid rgba(148,163,184,0.12);position:sticky;top:0;}
 .logo{font-size:25px;font-weight:950;margin-bottom:22px;background:linear-gradient(135deg,#fff,#00ffaa,#ffb86b);-webkit-background-clip:text;color:transparent;}
-.nav-link{display:block;padding:14px 14px;border-radius:16px;color:#dbeafe;margin:8px 0;background:rgba(255,255,255,0.04);text-decoration:none;font-weight:900;line-height:1.25;}
+.nav-link{display:block;padding:13px 14px;border-radius:16px;color:#cbd7e3;margin:8px 0;background:rgba(148,163,184,0.055);text-decoration:none;font-weight:850;line-height:1.25;}
 .nav-link:hover{background:rgba(0,255,170,0.10);text-decoration:none;}
 .nav-section-label{color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.13em;font-weight:950;margin:18px 0 8px 0;}
 .tab-button{display:block;border:1px solid transparent;width:100%;text-align:left;cursor:pointer;font-family:inherit;text-decoration:none;appearance:none;-webkit-appearance:none;}
@@ -3180,8 +3180,11 @@ a:hover{text-decoration:underline;}
 .menu-divider{height:1px;background:rgba(255,255,255,0.08);margin:18px 0;}
 .menu-help{color:#94a3b8;font-size:12px;line-height:1.55;margin:10px 0 14px 0;}
 .owner-box{margin-top:20px;color:#94a3b8;font-size:13px;line-height:1.6;}
-.main{flex:1;padding:48px;overflow-y:auto;max-width:1500px;margin:0 auto;} .top-intel-layout{display:grid;grid-template-columns:minmax(0,1.8fr) minmax(320px,0.8fr);gap:18px;align-items:start;margin-bottom:22px;}
+.main{flex:1;padding:44px;overflow-y:auto;max-width:1500px;margin:0 auto;display:flex;flex-direction:column;} .top-intel-layout{display:grid;grid-template-columns:minmax(0,1.8fr) minmax(320px,0.8fr);gap:18px;align-items:start;margin-bottom:22px;order:5;}
+.main>#investment-compass-card{order:1}.main>.trust-strip{order:2}.main>.signal-snapshot-grid{order:3}.main>#newsletter-cta{order:4}.main>.dashboard-section{order:6}.main>footer{order:7}
 .top-intel-layout .live-alert-strip{margin-bottom:0;}
+.top-intel-layout.single-intel{grid-template-columns:1fr;}
+.top-intel-layout.single-intel .top-bar{max-width:620px;width:100%;}
 .top-intel-layout .top-bar{position:relative;top:auto;z-index:1;margin:0;padding:0;justify-content:stretch;backdrop-filter:none;}
 .top-intel-layout .smart-search{width:100%;}
 @media(max-width:1100px){.top-intel-layout{grid-template-columns:1fr;}.top-intel-layout .top-bar{margin-top:0;}}
@@ -3221,7 +3224,23 @@ a:hover{text-decoration:underline;}
 .live-stock-link:hover{filter:brightness(1.12);color:white;text-decoration:none;}
 .live-stock-link:hover{background:rgba(0,255,170,0.12);color:white;text-decoration:none;}
 @keyframes tickerMove{0%{transform:translateX(0);}100%{transform:translateX(-50%);}}
-.card,.market-card{background:linear-gradient(180deg,rgba(23,23,23,0.94),rgba(14,14,14,0.94));padding:28px;border-radius:28px;margin-bottom:22px;border:1px solid rgba(255,255,255,0.10);box-shadow:0 28px 82px rgba(0,0,0,0.35),inset 0 1px 0 rgba(255,255,255,0.07);}
+.card,.market-card{background:linear-gradient(180deg,rgba(18,29,42,0.96),rgba(12,22,33,0.96));padding:28px;border-radius:26px;margin-bottom:22px;border:1px solid rgba(148,163,184,0.15);box-shadow:0 22px 65px rgba(0,0,0,0.28),inset 0 1px 0 rgba(255,255,255,0.035);}
+.hero-card{padding:clamp(28px,4vw,48px);background:linear-gradient(145deg,rgba(18,35,45,0.98),rgba(14,23,36,0.98));border-color:rgba(74,222,163,0.20);}
+.hero-card h1{color:#f2f5f8;max-width:980px;margin:0 0 18px;font-size:clamp(42px,5.5vw,72px);line-height:0.98;letter-spacing:-0.055em;}
+.hero-card .hero-subtitle{color:#bdc9d5;line-height:1.72;max-width:900px;font-size:18px;margin:0;}
+.hero-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:24px;}
+.cta-primary,.cta-secondary{display:inline-block;padding:14px 18px;border-radius:15px;text-decoration:none;font-weight:950;}
+.cta-primary{background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;box-shadow:0 14px 34px rgba(0,255,170,0.12);}
+.cta-secondary{background:rgba(148,163,184,0.09);border:1px solid rgba(148,163,184,0.20);color:#e2e8f0;}
+.trust-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:0 0 22px;}
+.trust-item{padding:15px 17px;border-radius:17px;background:rgba(14,25,37,0.90);border:1px solid rgba(148,163,184,0.13);color:#aebdca;line-height:1.5;font-size:13px;}
+.trust-item strong{display:block;color:#dce6ef;margin-bottom:3px;}
+.signal-snapshot-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px;}
+.signal-snapshot{display:block;padding:20px;border-radius:20px;background:rgba(14,25,37,0.92);border:1px solid rgba(148,163,184,0.14);text-decoration:none;}
+.signal-snapshot strong{display:block;font-size:30px;color:#f1f5f9;margin:5px 0;}
+.signal-snapshot span{color:#9eafbe;font-size:13px;}
+.newsletter-cta-card{display:flex;align-items:center;justify-content:space-between;gap:24px;background:linear-gradient(135deg,rgba(12,44,43,0.90),rgba(39,31,24,0.82));border-color:rgba(74,222,163,0.18);}
+.newsletter-cta-card p{color:#bdc9d5;line-height:1.7;margin-bottom:0;}
 .summary-grid,.market-grid,.feature-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:18px;margin-bottom:22px;}
 .feature-grid{grid-template-columns:repeat(3,1fr);}
 .summary-card{cursor:pointer;transition:transform 0.18s ease,box-shadow 0.18s ease,border-color 0.18s ease;position:relative;overflow:hidden;border:none;text-align:left;color:white;font-family:inherit;width:100%;}
@@ -3229,7 +3248,7 @@ a:hover{text-decoration:underline;}
 .summary-card h2{font-size:42px;margin:0 0 4px 0;}
 .summary-card p{color:#94a3b8;margin:0;font-weight:800;}
 .market-card small{color:#94a3b8;text-transform:uppercase;letter-spacing:0.10em;font-weight:900;font-size:11px;}
-.market-card h3{font-size:20px;margin:10px 0;}
+.market-card h3{font-size:20px;margin:10px 0;color:#eef2f6;}
 .status-pill{padding:7px 11px;border-radius:999px;font-weight:950;font-size:12px;}
 .status-open{background:rgba(34,197,94,0.14);color:#86efac;}
 .status-closed{background:rgba(239,68,68,0.14);color:#fca5a5;}
@@ -3246,7 +3265,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 @keyframes fadeIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
 .notice{margin-top:18px;padding:18px;border-radius:18px;background:rgba(0,255,170,0.08);border:1px solid rgba(0,255,170,0.16);}
 .notice h3{margin:0 0 8px 0;}
-.notice p{color:#cbd5e1;line-height:1.6;}
+.notice p{color:#b9c5d2;line-height:1.68;}
 .upgrade-cta{display:inline-block;margin-top:8px;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;padding:12px 16px;border-radius:14px;font-weight:950;}
 .empty-state{color:#94a3b8;padding:18px;background:rgba(255,255,255,0.04);border-radius:16px;margin-top:12px;}
 .signal-guide-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:22px;}
@@ -3283,7 +3302,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 .filter-button.active-filter{background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-color:transparent;}
 .filter-status{margin-top:12px;color:#94a3b8;font-size:13px;font-weight:800;}
 .hidden-signal-row{display:none;}
-@media(max-width:900px){body{flex-direction:column;}.sidebar{width:100%;min-height:auto;position:relative;top:auto;}.main{padding:24px;width:100%;}.top-bar{position:relative;justify-content:stretch;}.smart-search{width:100%;}.live-alert-track{animation-duration:58s;}.summary-grid,.market-grid,.feature-grid,.impact-grid,.radar-summary,.signal-guide-grid,.filter-grid{grid-template-columns:1fr;}}
+@media(max-width:900px){body{flex-direction:column;}.sidebar{width:100%;min-height:auto;position:relative;top:auto;padding:18px 16px;overflow-x:auto;white-space:nowrap;border-right:0;border-bottom:1px solid rgba(148,163,184,0.12);}.sidebar .logo{margin-bottom:14px;}.sidebar .nav-section-label,.sidebar .menu-help,.sidebar .menu-divider,.sidebar .owner-box{display:none;}.sidebar .nav-link{display:inline-block;width:auto;padding:10px 12px;margin:0 6px 0 0;font-size:13px;}.main{padding:20px 16px;width:100%;}.top-bar{position:relative;justify-content:stretch;}.smart-search{width:100%;}.live-alert-track{animation-duration:58s;}.summary-grid,.market-grid,.feature-grid,.impact-grid,.radar-summary,.signal-guide-grid,.filter-grid,.trust-strip,.signal-snapshot-grid{grid-template-columns:1fr;}.newsletter-cta-card{align-items:flex-start;flex-direction:column;}.hero-card{padding:28px 22px}.hero-card h1{font-size:clamp(36px,11vw,52px);}.hero-card .hero-subtitle{font-size:16px;}.hero-actions a{width:100%;text-align:center;}}
 </style>
 </head>
 <body>
@@ -3296,7 +3315,8 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
     <a class="nav-link tab-button {% if active_tab == 'signals' %}active-tab{% endif %}" href="/?tab=signals">📊 AI Signals</a>
     <a class="nav-link tab-button {% if active_tab == 'radar' %}active-tab{% endif %}" href="/?tab=radar">🌍 Impact Radar</a>
     <a class="nav-link tab-button {% if active_tab == 'watchlist' %}active-tab{% endif %}" href="/?tab=watchlist">📋 AI Watchlist</a>
-    <a class="nav-link" href="/premium-watchlist">🧠 Premium Watchlist</a><h2>Risk and concentration check</h2>
+    <a class="nav-link" href="/premium-watchlist">🧠 Premium Watchlist</a>
+    <div class="nav-section-label">Risk Check</div>
         <a class="nav-link" href="/portfolio-fit">🧩 Portfolio Fit</a>
         <a class="nav-link" href="/universe">🌍 Stock Universe</a>
     <div class="menu-divider"></div>
@@ -3314,7 +3334,8 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 
 
 <div class="main" id="main-content" tabindex="-1">
-    <div class="top-intel-layout">
+    <div class="top-intel-layout {% if not live_headlines %}single-intel{% endif %}">
+        {% if live_headlines %}
         <div class="live-alert-strip" aria-label="Live market headlines">
             <div class="live-alert-header">
                 <span class="live-dot"></span>
@@ -3356,6 +3377,7 @@ Updated {{ ticker_updated }}{% if live_news_active %} • Live headlines{% else 
                 {% endfor %}
             </div>
         </div>
+        {% endif %}
 
         <div class="top-bar" aria-label="Quick search and navigation">
             <form class="smart-search" onsubmit="return runSmartSearch(event)">
@@ -3370,44 +3392,40 @@ Updated {{ ticker_updated }}{% if live_news_active %} • Live headlines{% else 
         </div>
     </div>
 
-    <div class="card" id="investment-compass-card">
-        <p style="color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;">AI-powered market research</p>
-        <h1 style="margin:0 0 12px 0;font-size:clamp(38px,5vw,64px);line-height:0.98;letter-spacing:-0.05em;">Research stocks with clearer signals, context and risk awareness.</h1>
-        <p style="color:#cbd5e1;line-height:1.7;max-width:920px;font-size:17px;">StockRadar is an AI-powered stock market research dashboard. Explore stock signals, risk summaries, chart context and portfolio-fit tools in one place—built to help you research more clearly, not tell you what to buy or sell.</p>
-        <div style="display:inline-block;margin-top:2px;padding:9px 12px;border-radius:14px;background:rgba(56,189,248,0.08);border:1px solid rgba(56,189,248,0.16);color:#bae6fd;font-size:13px;line-height:1.5;"><strong>Early Access:</strong> StockRadar is currently in early access. Premium features and support processes are still being improved.</div>
-        <p style="color:#94a3b8;line-height:1.6;max-width:920px;margin-bottom:0;"><strong style="color:#cbd5e1;">Educational and informational only.</strong> StockRadar is not financial advice, and you remain responsible for your own investment decisions.</p>
-        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;">
-            <a class="upgrade-cta" href="/universe">Explore Stocks</a>
-            <a class="nav-link pro-button" style="display:inline-block;width:auto;margin:0;" href="/upgrade">Unlock Premium</a>
-            <a class="nav-link" style="display:inline-block;width:auto;margin:0;background:rgba(255,255,255,0.06);" href="/beginner">New to investing? Start here</a>
-            <a class="nav-link" style="display:inline-block;width:auto;margin:0;background:transparent;color:#94a3b8;" href="/feedback">Send Feedback</a>
+    <div class="card hero-card" id="investment-compass-card">
+        <p style="color:#4adea3;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 12px;">AI-assisted market research</p>
+        <h1>AI-assisted market signals for clearer investing research.</h1>
+        <p class="hero-subtitle">StockRadar turns market data, watchlists and signal patterns into plain-English research prompts — so investors can see what’s strengthening, what’s weakening and what deserves attention.</p>
+        <div class="hero-actions">
+            <a class="cta-primary" href="/?tab=signals">Explore Signals</a>
+            <a class="cta-secondary" href="/newsletter">Join StockRadar Weekly</a>
         </div>
+        <p style="color:#91a3b4;font-size:13px;line-height:1.6;margin:18px 0 0;">Signals are research prompts, not financial advice.</p>
     </div>
-    <div class="card" id="newsletter-cta">
-        <p style="color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;">Free Sunday briefing</p>
-        <h2 style="margin:0 0 10px 0;">StockRadar Weekly</h2>
-        <p style="color:#cbd5e1;line-height:1.7;max-width:850px;">Get the 5-minute market signal every Sunday — what’s strengthening, what’s weakening, and what may matter next.</p>
-        <a class="upgrade-cta" href="/newsletter">Join Free</a>
+
+    <div class="trust-strip" aria-label="How to use StockRadar">
+        <div class="trust-item"><strong>Educational research tool</strong>Plain-English market context for independent research.</div>
+        <div class="trust-item"><strong>Prompts, not instructions</strong>BUY, HOLD and SELL patterns are starting points to investigate.</div>
+        <div class="trust-item"><strong>Risk still matters</strong>Check concentration, time horizon and portfolio fit before acting.</div>
+    </div>
+
+    <div class="signal-snapshot-grid" aria-label="Current signal overview">
+        <a class="signal-snapshot" href="/?tab=signals&open=buy-panel"><span>Constructive patterns</span><strong class="buy">{{ buy_count }}</strong><span>Explore BUY research prompts</span></a>
+        <a class="signal-snapshot" href="/?tab=signals&open=hold-panel"><span>Steady patterns</span><strong class="hold">{{ hold_count }}</strong><span>Review HOLD and watch signals</span></a>
+        <a class="signal-snapshot" href="/?tab=signals&open=sell-panel"><span>Caution patterns</span><strong class="sell">{{ sell_count }}</strong><span>Check weakening signals and risk</span></a>
+    </div>
+
+    <div class="card newsletter-cta-card" id="newsletter-cta">
+        <div>
+            <p style="color:#4adea3;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 8px;">Free Sunday briefing</p>
+            <h2 style="color:#eef2f6;margin:0 0 8px;">StockRadar Weekly</h2>
+            <p>Get the 5-minute market signal every Sunday — what’s strengthening, what’s weakening, and what may matter next.</p>
+        </div>
+        <a class="cta-primary" href="/newsletter">Join Free</a>
     </div>
     <div id="overview-section" class="dashboard-section {% if active_tab == 'overview' %}active-section{% endif %}">
-<div class="card">
-    <h2>Current UK & US Market Status</h2>
-    <div class="market-grid">
-        <div class="market-card">
-            <small>UK Market</small>
-            <h3>{{ market_status.uk_status }}</h3>
-            <p>London time: {{ market_status.uk_time }}</p>
-        </div>
-
-        <div class="market-card">
-            <small>US Market</small>
-            <h3>{{ market_status.us_status }}</h3>
-            <p>New York time: {{ market_status.us_time }}</p>
-        </div>
-    </div>
-</div>
     <div class="card">
-        <h2>Current UK & US Market Status</h2>
+        <h2>Market status</h2>
         <p style="color:#94a3b8;line-height:1.7;">
             UK market status: <span class="status-pill {% if market_status.uk_status == 'OPEN' %}status-open{% else %}status-closed{% endif %}">{{ market_status.uk_status }}</span>
             &nbsp; London time: {{ market_status.uk_time }}<br><br>
@@ -4074,7 +4092,7 @@ stock_detail_html = """
 <title>{{ stock_display_label(symbol) }} Stock Detail</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-*{box-sizing:border-box;}body{background:radial-gradient(circle at 12% 6%,rgba(0,255,170,0.18),transparent 28%),linear-gradient(135deg,#050505,#121212,#1f2933);color:white;font-family:Arial,sans-serif;margin:0;min-height:100vh;padding:48px;}.card{background:linear-gradient(180deg,rgba(23,23,23,0.94),rgba(14,14,14,0.94));padding:32px;border-radius:30px;margin-bottom:24px;border:1px solid rgba(255,255,255,0.10);box-shadow:0 28px 82px rgba(0,0,0,0.44);}a{color:#38bdf8;text-decoration:none;font-weight:bold;}.range-row{display:flex;gap:12px;flex-wrap:wrap;margin:22px 0;}.range-button{display:inline-block;padding:13px 17px;border-radius:16px;background:rgba(30,41,59,0.78);color:white;text-decoration:none;border:1px solid rgba(255,255,255,0.07);font-weight:800;}.range-button.active{background:linear-gradient(90deg,#38bdf8,#8b5cf6);}.metric-grid,.ai-grid,.example-report-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-bottom:22px;}.metric-grid{grid-template-columns:repeat(4,1fr);}.ai-card,.metric,.example-report-card{background:rgba(15,23,42,0.86);border:1px solid rgba(255,255,255,0.11);border-radius:24px;padding:24px;}.ai-card.warning{background:linear-gradient(145deg,rgba(251,191,36,0.13),rgba(17,24,39,0.92));}.ai-card.risk{background:linear-gradient(145deg,rgba(56,189,248,0.12),rgba(17,24,39,0.92));}.premium-banner,.example-report{background:linear-gradient(135deg,rgba(0,255,170,0.18),rgba(255,184,107,0.12),rgba(56,189,248,0.10));border:1px solid rgba(0,255,170,0.22);border-radius:30px;padding:30px;margin-bottom:24px;}.premium-banner{display:grid;grid-template-columns:1.45fr 0.75fr;gap:24px;align-items:center;}.premium-cta-box{background:rgba(5,5,5,0.58);border:1px solid rgba(255,255,255,0.15);border-radius:24px;padding:22px;text-align:center;}.payment-button{display:inline-block;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-radius:20px;padding:16px 24px;font-size:16px;font-weight:950;text-decoration:none;}.payment-note{color:#94a3b8;font-size:13px;margin-top:12px;}.signal-badge,.free-strength,.strength-pill{display:inline-block;margin-top:10px;padding:8px 12px;border-radius:999px;background:rgba(255,255,255,0.08);font-weight:900;font-size:12px;text-transform:uppercase;}.confidence-large,.confidence-score{font-size:40px;font-weight:950;}.free-meter,.confidence-meter{font-size:26px;letter-spacing:2px;color:#00ffaa;font-weight:950;margin:8px 0;}.buy{color:#22c55e;font-weight:bold;}.sell{color:#ef4444;font-weight:bold;}.hold{color:#f59e0b;font-weight:bold;}canvas{background:#020617;border-radius:18px;padding:18px;}@media(max-width:900px){body{padding:24px;}.metric-grid,.ai-grid,.premium-banner,.example-report-grid{grid-template-columns:1fr;}}
+*{box-sizing:border-box;}body{background:radial-gradient(circle at 12% 6%,rgba(0,255,170,0.11),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;margin:0;min-height:100vh;padding:48px;}.card{background:linear-gradient(180deg,rgba(18,29,42,0.97),rgba(12,22,33,0.97));padding:30px;border-radius:28px;margin-bottom:22px;border:1px solid rgba(148,163,184,0.16);box-shadow:0 22px 65px rgba(0,0,0,0.30);}h1,h2{color:#f1f5f9;}p{color:#b9c5d2;line-height:1.7;}a{color:#69c9f2;text-decoration:none;font-weight:bold;}.range-row{display:flex;gap:12px;flex-wrap:wrap;margin:22px 0;}.range-button{display:inline-block;padding:12px 16px;border-radius:15px;background:#111d2b;color:#dbe4ee;text-decoration:none;border:1px solid rgba(148,163,184,0.14);font-weight:800;}.range-button.active{background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;}.metric-grid,.ai-grid,.example-report-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-bottom:22px;}.metric-grid{grid-template-columns:repeat(4,1fr);}.ai-card,.metric,.example-report-card{background:rgba(14,25,38,0.90);border:1px solid rgba(148,163,184,0.15);border-radius:22px;padding:23px;}.ai-card.warning{background:linear-gradient(145deg,rgba(89,70,28,0.35),rgba(14,25,38,0.94));}.ai-card.risk{background:linear-gradient(145deg,rgba(24,60,78,0.32),rgba(14,25,38,0.94));}.premium-banner,.example-report{background:linear-gradient(135deg,rgba(15,55,50,0.74),rgba(55,42,26,0.60),rgba(20,45,61,0.62));border:1px solid rgba(74,222,163,0.20);border-radius:28px;padding:30px;margin-bottom:22px;}.premium-banner{display:grid;grid-template-columns:1.45fr 0.75fr;gap:24px;align-items:center;}.premium-cta-box{background:rgba(9,18,28,0.80);border:1px solid rgba(148,163,184,0.16);border-radius:22px;padding:22px;text-align:center;}.payment-button{display:inline-block;background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;border-radius:16px;padding:14px 20px;font-size:15px;font-weight:950;text-decoration:none;}.payment-note{color:#91a3b4;font-size:13px;margin-top:12px;line-height:1.55;}.signal-badge,.free-strength,.strength-pill{display:inline-block;margin-top:10px;padding:8px 12px;border-radius:999px;background:rgba(148,163,184,0.09);font-weight:900;font-size:12px;text-transform:uppercase;}.confidence-large,.confidence-score{font-size:40px;font-weight:950;}.free-meter,.confidence-meter{font-size:26px;letter-spacing:2px;color:#4adea3;font-weight:950;margin:8px 0;}.buy{color:#4ade80;font-weight:bold;}.sell{color:#fb7185;font-weight:bold;}.hold{color:#f4c95d;font-weight:bold;}canvas{background:#0a1420;border-radius:18px;padding:18px;}@media(max-width:900px){body{padding:24px 16px;}.metric-grid,.ai-grid,.premium-banner,.example-report-grid{grid-template-columns:1fr;}}
 </style>
 </head>
 <body>
