@@ -2368,8 +2368,8 @@ def newsletter_status(signal, ticker=""):
 def newsletter_plain_english_takeaway(signal, ticker=""):
     if ticker == "SPCX":
         return (
-            "Treat SpaceX as speculative satellite exposure only. Public-market history, "
-            "liquidity, valuation and chart data may be limited or unavailable."
+            "SPCX remains high-growth, high-volatility satellite exposure with limited "
+            "public-market history. It is a watch item, not a strong-buy signal."
         )
     if signal == "BUY":
         return (
@@ -2385,6 +2385,49 @@ def newsletter_plain_english_takeaway(signal, ticker=""):
         "The evidence is mixed or stable, so waiting for a clearer change may be sensible. "
         "This is not an instruction to hold."
     )
+
+
+def newsletter_reader_safe_reason(item, ticker=""):
+    reason = str(item.get("reason") or "").strip()
+
+    if ticker == "SPCX":
+        return (
+            "SPCX remains high-growth, high-volatility satellite exposure with limited "
+            "public-market history."
+        )
+    if (
+        not reason
+        or "included in the 100-stock stockradar universe" in reason.lower()
+        or "full scanner csv/api feed" in reason.lower()
+    ):
+        return "Signal is steady in the current StockRadar universe and remains on the watchlist."
+    return reason
+
+
+def newsletter_headline_is_relevant(article):
+    headline = str(article.get("title") or "").strip().lower()
+    if not headline:
+        return False
+
+    priority_terms = (
+        "stock market", "stocks", "equities", "shares", "earnings",
+        "interest rate", "interest rates", "rate cut", "rate hike",
+        "federal reserve", "the fed", "bank of england", "inflation",
+        "artificial intelligence", " ai ", "semiconductor", "chipmaker",
+        "defence", "defense", "technology", "tech stocks", "wall street",
+        "ftse", "s&p 500", "nasdaq", "dow jones", "bond yields",
+    )
+    padded_headline = f" {headline} "
+    if any(term in padded_headline for term in priority_terms):
+        return True
+
+    company_terms = {
+        keyword
+        for keywords in NEWS_STOCK_KEYWORDS.values()
+        for keyword in keywords
+        if len(keyword) >= 4
+    }
+    return any(term in headline for term in company_terms)
 
 
 def build_newsletter_signal_highlights(recommendations, limit=5):
@@ -2433,7 +2476,7 @@ def build_newsletter_signal_highlights(recommendations, limit=5):
             "name": stock_display_label(ticker),
             "badge": "WATCH" if ticker == "SPCX" else f"{signal} pattern",
             "status": newsletter_status(signal, ticker),
-            "reason": str(item.get("reason") or "Signal reasoning unavailable.").strip(),
+            "reason": newsletter_reader_safe_reason(item, ticker),
             "plain_english_takeaway": newsletter_plain_english_takeaway(signal, ticker),
             "data_confidence": newsletter_data_confidence(item),
         })
@@ -2468,6 +2511,19 @@ def build_newsletter_watchlist(recommendations):
 
     for query, fallback_name in requested_names:
         exact_ticker = query.upper()
+
+        if exact_ticker == "VUSA":
+            watchlist.append({
+                "ticker": "VUSA",
+                "name": "Vanguard S&P 500 UCITS ETF (VUSA) — Core Market Watch",
+                "badge": "WATCH",
+                "status": "Core",
+                "reason": "Core Market Watch for broad S&P 500 exposure.",
+                "data_confidence": "Medium",
+            })
+            seen.add("VUSA")
+            continue
+
         universe_item = universe_lookup.get(exact_ticker)
 
         if universe_item is None and exact_ticker not in recommendation_lookup:
@@ -2499,10 +2555,7 @@ def build_newsletter_watchlist(recommendations):
                 "name": stock_display_label(ticker),
                 "badge": "WATCH",
                 "status": "High Risk",
-                "reason": (
-                    "High-growth, high-volatility satellite exposure. Price and chart data "
-                    "may be unavailable because public trading history is limited."
-                ),
+                "reason": newsletter_reader_safe_reason({}, ticker),
                 "data_confidence": "Low",
             })
         elif recommendation:
@@ -2515,10 +2568,7 @@ def build_newsletter_watchlist(recommendations):
                 "name": stock_display_label(ticker),
                 "badge": f"{signal} pattern",
                 "status": newsletter_status(signal, ticker),
-                "reason": str(
-                    recommendation.get("reason")
-                    or "Signal reasoning unavailable."
-                ).strip(),
+                "reason": newsletter_reader_safe_reason(recommendation, ticker),
                 "data_confidence": newsletter_data_confidence(recommendation),
             })
         else:
@@ -2584,22 +2634,26 @@ def build_free_weekly_newsletter():
         )
 
     try:
-        live_articles = fetch_live_market_news(limit=6)
+        live_articles = fetch_live_market_news(limit=12)
     except Exception:
         live_articles = []
 
+    relevant_articles = [
+        article for article in live_articles
+        if newsletter_headline_is_relevant(article)
+    ]
     trending = [
         {
             "headline": str(article.get("title") or "Headline unavailable").strip(),
             "source": str(article.get("source") or "Market News").strip(),
         }
-        for article in live_articles[:3]
+        for article in relevant_articles[:3]
         if article.get("title")
     ]
 
     if not trending:
         trending = [{
-            "headline": "Live headline data unavailable",
+            "headline": "No relevant market headlines are available",
             "source": "StockRadar feed check",
         }]
 
@@ -2618,7 +2672,7 @@ def build_free_weekly_newsletter():
     else:
         forecasting.append("No single sector currently dominates the caution signals.")
 
-    if live_articles:
+    if relevant_articles:
         forecasting.append(
             "Repeated headlines can change sentiment quickly; watch whether the current news themes begin to alter signal strength."
         )
@@ -2634,10 +2688,10 @@ def build_free_weekly_newsletter():
         )
     else:
         risk_notes.append("No SELL-pattern concentration is visible in the current feed.")
-    if not live_articles:
-        risk_notes.append("Live news data is unavailable, so headline-driven risks may be missing.")
+    if not relevant_articles:
+        risk_notes.append("No relevant market headlines passed the current filter, so headline-driven risks may be incomplete.")
     risk_notes.append(
-        "SPCX/SpaceX remains speculative watch exposure with limited price, chart and public-market history."
+        "SPCX remains high-growth, high-volatility satellite exposure with limited public-market history."
     )
 
     draft = {
@@ -2646,8 +2700,8 @@ def build_free_weekly_newsletter():
         "market_mood": market_mood,
         "main_theme": (
             trending[0]["headline"]
-            if live_articles
-            else "Signals first while live headlines are unavailable"
+            if relevant_articles
+            else "Signals first while relevant market headlines are unavailable"
         ),
         "best_looking_area": best_area,
         "risk_area": risk_area,
@@ -2687,7 +2741,7 @@ def build_newsletter_plain_text(draft):
     if draft["signal_highlights"]:
         for item in draft["signal_highlights"]:
             lines.extend([
-                f"- {item['name']} — {item['badge']} | {item['status']} | confidence: {item['data_confidence']}",
+                f"- {item['name']} — {item['badge']} · {item['status']} · confidence: {item['data_confidence']}",
                 f"  Why: {item['reason']}",
                 f"  Plain English: {item['plain_english_takeaway']}",
             ])
@@ -2705,7 +2759,7 @@ def build_newsletter_plain_text(draft):
     lines.extend(["", "WATCHLIST"])
     for item in draft["watchlist"]:
         lines.append(
-            f"- {item['name']} — {item['badge']} | {item['status']}: {item['reason']}"
+            f"- {item['name']} — {item['badge']} · {item['status']}: {item['reason']}"
         )
 
     lines.extend(["", "RISK CHECK"])
@@ -2856,7 +2910,7 @@ newsletter_latest_html = """
 {% for item in draft.signal_highlights[:5] %}
 <article class="signal">
 <h3>{{ item.name }}</h3>
-<span class="badge">{{ item.badge }}</span><span class="status">{{ item.status }}</span>
+<p><strong>{{ item.badge }} · {{ item.status }}</strong></p>
 <p><strong>Why it appears:</strong> {{ item.reason }}</p>
 <p>{{ item.plain_english_takeaway }}</p>
 <div class="confidence">Data confidence: {{ item.data_confidence }}</div>
@@ -4031,7 +4085,7 @@ def newsletter_rss():
     item_url = f"{PRODUCTION_BASE_URL}/newsletter/latest"
     issue_body = render_newsletter_issue_body(draft).replace("]]>", "]]&gt;")
     rss_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:dc="http://purl.org/dc/elements/1.1/">
 <channel>
 <title>StockRadar Weekly</title>
 <link>{xml_escape(feed_url)}</link>
@@ -4043,6 +4097,7 @@ def newsletter_rss():
 <link>{xml_escape(item_url)}</link>
 <guid isPermaLink="false">{xml_escape(issue["guid"])}</guid>
 <pubDate>{format_datetime(issue["published_at"])}</pubDate>
+<dc:creator>StockRadar Team</dc:creator>
 <description>{xml_escape(draft.get("market_pulse") or "Market pulse data unavailable.")}</description>
 <content:encoded><![CDATA[{issue_body}]]></content:encoded>
 </item>
