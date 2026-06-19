@@ -91,6 +91,8 @@ LAST_NEWS_FETCH_STATUS = {
     "errors": [],
 }
 DASHBOARD_CACHE_TTL_SECONDS = int(os.environ.get("DASHBOARD_CACHE_TTL_SECONDS", "300"))
+MARKET_NEWS_REFRESH_INTERVAL_MS = 300000
+MARKET_NEWS_TICKER_LIMIT = 6
 DASHBOARD_CACHE = {
     "timestamp": 0,
     "data": None,
@@ -3166,6 +3168,47 @@ def get_cached_dashboard_data(force_refresh=False):
     DASHBOARD_CACHE["data"] = fresh_data.copy()
     DASHBOARD_CACHE["timestamp"] = now
     return fresh_data.copy()
+
+
+def is_public_live_market_headline(item):
+    return (
+        isinstance(item, dict)
+        and str(item.get("label", "")).upper() == "LIVE NEWS"
+        and str(item.get("article_url", "")).startswith("http")
+    )
+
+
+def serialize_market_news_items(headlines, limit=MARKET_NEWS_TICKER_LIMIT):
+    items = []
+
+    for headline in headlines[:limit]:
+        if not is_public_live_market_headline(headline):
+            continue
+
+        stock_links = []
+        for stock in headline.get("stock_links", [])[:4]:
+            if not isinstance(stock, dict):
+                continue
+            ticker = str(stock.get("ticker") or "").strip().upper()
+            stock_links.append({
+                "ticker": ticker,
+                "url": str(stock.get("url") or (f"/stock/{ticker}" if ticker else "/")).strip(),
+                "display_label": str(stock.get("display_label") or stock_display_label(ticker or "SPY")).strip(),
+                "signal_class": str(stock.get("signal_class") or "hold").strip().lower(),
+                "action_text": str(stock.get("action_text") or stock.get("signal") or "HOLD").strip(),
+            })
+
+        items.append({
+            "source": str(headline.get("source") or "StockRadar Market Impact Feed").strip(),
+            "published_label": str(headline.get("published_label") or "Theme watch").strip(),
+            "headline": str(headline.get("headline") or "Market headlines are reconnecting").strip(),
+            "article_url": str(headline.get("article_url") or "/").strip(),
+            "impact_score": str(headline.get("impact_score") or "Pending").strip(),
+            "direction": str(headline.get("direction") or "Theme watch").strip(),
+            "stock_links": stock_links,
+        })
+
+    return items
 html = """
 <!DOCTYPE html>
 <html>
@@ -3206,18 +3249,21 @@ a:hover{text-decoration:underline;}
 .smart-search button{background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border:none;border-radius:14px;padding:10px 15px;font-weight:950;cursor:pointer;}
 .search-hint{color:#94a3b8;font-size:12px;margin-top:8px;line-height:1.45;}
 .search-message{display:none;margin-top:8px;color:#ffce4a;font-size:13px;font-weight:800;}
-.live-alert-strip{position:relative;top:auto;z-index:1;width:100%;margin-bottom:0;background:linear-gradient(90deg,rgba(0,255,170,0.12),rgba(56,189,248,0.10),rgba(255,184,107,0.10));border:1px solid rgba(255,255,255,0.12);border-radius:18px;overflow:hidden;box-shadow:0 18px 48px rgba(0,0,0,0.24);backdrop-filter:blur(18px);}
-.live-alert-header{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,0.08);font-weight:950;color:white;text-transform:uppercase;letter-spacing:0.08em;font-size:12px;}
+.live-alert-strip{position:relative;top:auto;z-index:1;width:100%;max-width:100%;margin-bottom:0;background:linear-gradient(90deg,rgba(0,255,170,0.12),rgba(56,189,248,0.10),rgba(255,184,107,0.10));border:1px solid rgba(255,255,255,0.12);border-radius:18px;overflow:hidden;box-shadow:0 18px 48px rgba(0,0,0,0.24);backdrop-filter:blur(18px);}
+.live-alert-header{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid rgba(255,255,255,0.08);font-weight:950;color:white;text-transform:uppercase;letter-spacing:0.08em;font-size:12px;}
 .live-dot{width:9px;height:9px;border-radius:999px;background:#22c55e;box-shadow:0 0 18px rgba(34,197,94,0.8);}
-.live-alert-track{display:flex;gap:14px;white-space:nowrap;padding:10px 12px;animation:tickerMove 52s linear infinite;align-items:stretch;}
-.live-alert-strip:hover .live-alert-track{animation-play-state:paused;}
-.live-headline{display:inline-flex;flex-direction:column;align-items:flex-start;gap:7px;min-width:430px;max-width:540px;color:#e5e7eb;text-decoration:none;font-weight:800;background:rgba(2,6,23,0.35);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:11px 13px;white-space:normal;}
+.live-alert-track{overflow:hidden;white-space:normal;padding:8px 0;mask-image:linear-gradient(90deg,transparent,#000 3%,#000 97%,transparent);}
+.live-alert-loop{display:flex;gap:10px;width:max-content;align-items:stretch;animation:tickerMove 58s linear infinite;will-change:transform;}
+.live-alert-track:hover .live-alert-loop,.live-alert-track:focus-within .live-alert-loop{animation-play-state:paused;}
+.live-headline{display:flex;flex:0 0 520px;scroll-snap-align:start;flex-direction:row;align-items:center;gap:10px;min-width:0;max-width:none;color:#e5e7eb;text-decoration:none;font-weight:800;background:rgba(2,6,23,0.35);border:1px solid rgba(255,255,255,0.08);border-radius:13px;padding:8px 12px;white-space:normal;}
+.live-headline:first-child{margin-left:10px;}
 .live-news-empty{color:#a9b7c5;font-size:13px;line-height:1.5;padding:13px 14px;}
 .live-headline-main{display:flex;align-items:center;gap:10px;line-height:1.35;}
 .live-headline-main a:last-child{color:#e5e7eb;text-decoration:none;}
-.live-headline-details{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-left:2px;}
-.live-news-meta{color:#94a3b8;font-size:12px;font-weight:950;text-transform:none;letter-spacing:0.02em;}
-.live-news-title{display:block;color:white;font-size:15px;font-weight:950;line-height:1.35;text-decoration:none;}
+.live-headline-details{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;padding-left:2px;}
+.live-news-meta{color:#94a3b8;font-size:11px;font-weight:950;text-transform:none;letter-spacing:0.02em;white-space:nowrap;flex:0 0 auto;}
+.live-news-title{display:block;color:white;font-size:14px;font-weight:950;line-height:1.3;text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 auto;}
+.market-news-stocks,.market-news-impact .live-meta{display:none;}
 .live-news-title:hover{color:#ccfbf1;text-decoration:none;}
 .live-affected-label{color:#94a3b8;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:0.09em;margin-right:2px;}
 .live-headline:hover{text-decoration:none;color:white;}
@@ -3234,6 +3280,7 @@ a:hover{text-decoration:underline;}
 .live-stock-link:hover{filter:brightness(1.12);color:white;text-decoration:none;}
 .live-stock-link:hover{background:rgba(0,255,170,0.12);color:white;text-decoration:none;}
 @keyframes tickerMove{0%{transform:translateX(0);}100%{transform:translateX(-50%);}}
+@media(prefers-reduced-motion:reduce){.live-alert-track{overflow-x:auto;mask-image:none;scrollbar-width:thin;}.live-alert-loop{animation:none;width:auto;padding-right:10px;}.ticker-duplicate{display:none;}}
 .card,.market-card{background:linear-gradient(180deg,rgba(18,29,42,0.96),rgba(12,22,33,0.96));padding:28px;border-radius:26px;margin-bottom:22px;border:1px solid rgba(148,163,184,0.15);box-shadow:0 22px 65px rgba(0,0,0,0.28),inset 0 1px 0 rgba(255,255,255,0.035);}
 .hero-card{padding:clamp(28px,4vw,48px);background:linear-gradient(145deg,rgba(18,35,45,0.98),rgba(14,23,36,0.98));border-color:rgba(74,222,163,0.20);}
 .hero-card h1{color:#f2f5f8;max-width:980px;margin:0 0 18px;font-size:clamp(42px,5.5vw,72px);line-height:0.98;letter-spacing:-0.055em;}
@@ -3312,7 +3359,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 .filter-button.active-filter{background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-color:transparent;}
 .filter-status{margin-top:12px;color:#94a3b8;font-size:13px;font-weight:800;}
 .hidden-signal-row{display:none;}
-@media(max-width:900px){body{flex-direction:column;}.sidebar{width:100%;min-height:auto;position:relative;top:auto;padding:18px 16px;overflow-x:auto;white-space:nowrap;border-right:0;border-bottom:1px solid rgba(148,163,184,0.12);}.sidebar .logo{margin-bottom:14px;}.sidebar .nav-section-label,.sidebar .menu-help,.sidebar .menu-divider,.sidebar .owner-box{display:none;}.sidebar .nav-link{display:inline-block;width:auto;padding:10px 12px;margin:0 6px 0 0;font-size:13px;}.main{padding:20px 16px;width:100%;}.top-bar{position:relative;justify-content:stretch;}.smart-search{width:100%;}.live-alert-track{display:grid;grid-template-columns:1fr;animation:none;gap:9px;padding:10px;white-space:normal;}.live-headline{min-width:0;max-width:none;width:100%;padding:11px 12px;}.live-alert-track .live-headline:nth-of-type(n+4){display:none;}.summary-grid,.market-grid,.feature-grid,.impact-grid,.radar-summary,.signal-guide-grid,.filter-grid,.trust-strip,.signal-snapshot-grid{grid-template-columns:1fr;}.newsletter-cta-card{align-items:flex-start;flex-direction:column;}.hero-card{padding:28px 22px}.hero-card h1{font-size:clamp(36px,11vw,52px);}.hero-card .hero-subtitle{font-size:16px;}.hero-actions a{width:100%;text-align:center;}}
+@media(max-width:900px){body{flex-direction:column;}.sidebar{width:100%;min-height:auto;position:relative;top:auto;padding:18px 16px;overflow-x:auto;white-space:nowrap;border-right:0;border-bottom:1px solid rgba(148,163,184,0.12);}.sidebar .logo{margin-bottom:14px;}.sidebar .nav-section-label,.sidebar .menu-help,.sidebar .menu-divider,.sidebar .owner-box{display:none;}.sidebar .nav-link{display:inline-block;width:auto;padding:10px 12px;margin:0 6px 0 0;font-size:13px;}.main{padding:20px 16px;width:100%;}.top-bar{position:relative;justify-content:stretch;}.smart-search{width:100%;}.live-alert-strip{width:100%;}.live-alert-header{padding:8px 11px;font-size:11px;}.live-alert-track{padding:7px 0;}.live-alert-loop{gap:8px;animation-duration:48s;}.live-headline{flex-basis:300px;padding:8px 10px;}.live-news-meta{display:none;}.live-news-title{font-size:13px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}.market-news-stocks,.market-news-impact .live-meta{display:none;}.live-score{padding:4px 7px;font-size:10px;}.summary-grid,.market-grid,.feature-grid,.impact-grid,.radar-summary,.signal-guide-grid,.filter-grid,.trust-strip,.signal-snapshot-grid{grid-template-columns:1fr;}.newsletter-cta-card{align-items:flex-start;flex-direction:column;}.hero-card{padding:28px 22px}.hero-card h1{font-size:clamp(36px,11vw,52px);}.hero-card .hero-subtitle{font-size:16px;}.hero-actions a{width:100%;text-align:center;}}
 </style>
 </head>
 <body>
@@ -3349,45 +3396,35 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
             <div class="live-alert-header">
                 <span class="live-dot"></span>
                 Market News
-Updated {{ ticker_updated }}{% if live_news_active %} • Live headlines{% else %} • Feed reconnecting{% endif %}
+<span id="marketNewsStatus">Updated {{ ticker_updated }}{% if live_news_active %} • Live headlines{% else %} • Feed reconnecting{% endif %}</span>
             </div>
             {% if live_headlines %}
-            <div class="live-alert-track">
-                {% for headline in live_headlines %}
-                <span class="live-headline">
+            <div class="live-alert-track" id="marketNewsTrack" aria-live="polite" data-refresh-interval="{{ market_news_refresh_interval_ms }}">
+                <div class="live-alert-loop" id="marketNewsLoop">
+                {% for repeat in range(2) %}
+                {% for headline in live_headlines[:market_news_ticker_limit] %}
+                <span class="live-headline {% if repeat %}ticker-duplicate{% endif %}" {% if repeat %}aria-hidden="true"{% endif %}>
                     <span class="live-news-meta">{{ headline.get('source', 'StockRadar Market Impact Feed') }} • {{ headline.get('published_label', 'Theme watch') }}</span>
-                    <a class="live-news-title" href="{{ headline.get('article_url', '/') }}" {% if headline.get('article_url', '').startswith('http') %}target="_blank" rel="noopener noreferrer"{% endif %}>{{ headline.get('headline', 'Market headlines are reconnecting') }}</a>
-                    <span class="live-headline-details">
+                    <a class="live-news-title" href="{{ headline.get('article_url', '/') }}" {% if repeat %}tabindex="-1"{% endif %} {% if headline.get('article_url', '').startswith('http') %}target="_blank" rel="noopener noreferrer"{% endif %}>{{ headline.get('headline', 'Market headlines are reconnecting') }}</a>
+                    <span class="live-headline-details market-news-stocks">
                         <span class="live-affected-label">Affected stocks:</span>
                         {% for stock in headline.get('stock_links', []) %}
-                        <a class="live-stock-link {{ stock.get('signal_class', 'hold') }}" href="{{ stock.get('url', '/') }}">{{ stock.get('display_label') or stock_display_label(stock.get('ticker', 'SPY')) }} <span class="live-stock-action">{{ stock.get('action_text', stock.get('signal', 'HOLD')) }}</span></a>
+                        <a class="live-stock-link {{ stock.get('signal_class', 'hold') }}" href="{{ stock.get('url', '/') }}" {% if repeat %}tabindex="-1"{% endif %}>{{ stock.get('display_label') or stock_display_label(stock.get('ticker', 'SPY')) }} <span class="live-stock-action">{{ stock.get('action_text', stock.get('signal', 'HOLD')) }}</span></a>
                         {% endfor %}
                     </span>
-                    <span class="live-headline-details">
+                    <span class="live-headline-details market-news-impact">
                         <span class="live-score">Impact: {{ headline.get('impact_score', 'Pending') }}</span>
                         <span class="live-meta">{{ headline.get('direction', 'Theme watch') }}</span>
                     </span>
                 </span>
                 {% endfor %}
-                {% for headline in live_headlines %}
-                <span class="live-headline">
-                    <span class="live-news-meta">{{ headline.get('source', 'StockRadar Market Impact Feed') }} • {{ headline.get('published_label', 'Theme watch') }}</span>
-                    <a class="live-news-title" href="{{ headline.get('article_url', '/') }}" {% if headline.get('article_url', '').startswith('http') %}target="_blank" rel="noopener noreferrer"{% endif %}>{{ headline.get('headline', 'Market headlines are reconnecting') }}</a>
-                    <span class="live-headline-details">
-                        <span class="live-affected-label">Affected stocks:</span>
-                        {% for stock in headline.get('stock_links', []) %}
-                        <a class="live-stock-link {{ stock.get('signal_class', 'hold') }}" href="{{ stock.get('url', '/') }}">{{ stock.get('display_label') or stock_display_label(stock.get('ticker', 'SPY')) }} <span class="live-stock-action">{{ stock.get('action_text', stock.get('signal', 'HOLD')) }}</span></a>
-                        {% endfor %}
-                    </span>
-                    <span class="live-headline-details">
-                        <span class="live-score">Impact: {{ headline.get('impact_score', 'Pending') }}</span>
-                        <span class="live-meta">{{ headline.get('direction', 'Theme watch') }}</span>
-                    </span>
-                </span>
                 {% endfor %}
+                </div>
             </div>
             {% else %}
-            <div class="live-news-empty">Live market headlines are temporarily unavailable. The feed will update automatically when the news service reconnects.</div>
+            <div class="live-alert-track" id="marketNewsTrack" aria-live="polite" data-refresh-interval="{{ market_news_refresh_interval_ms }}">
+                <div class="live-news-empty" id="marketNewsEmpty">Market headlines temporarily unavailable. StockRadar will refresh when the feed reconnects.</div>
+            </div>
             {% endif %}
         </div>
 
@@ -3705,7 +3742,11 @@ if(['PRO','UPGRADE','PAYMENT','SUBSCRIPTION'].includes(query)){window.location.h
 function setSignalFilter(signal){var select=document.getElementById('signalFilterValue');if(select){select.value=signal;}document.querySelectorAll('[data-signal-filter]').forEach(function(button){button.classList.toggle('active-filter',button.getAttribute('data-signal-filter')===signal);});applySignalFilters();}
 function resetSignalFilters(){var tickerInput=document.getElementById('tickerFilterInput');var sectorSelect=document.getElementById('sectorFilterSelect');if(tickerInput){tickerInput.value='';}if(sectorSelect){sectorSelect.value='ALL';}setSignalFilter('ALL');}
 function applySignalFilters(){var tickerInput=document.getElementById('tickerFilterInput');var sectorSelect=document.getElementById('sectorFilterSelect');var signalSelect=document.getElementById('signalFilterValue');var tickerQuery=tickerInput ? tickerInput.value.trim().toUpperCase() : '';var selectedSector=sectorSelect ? sectorSelect.value : 'ALL';var selectedSignal=signalSelect ? signalSelect.value : 'ALL';var rows=document.querySelectorAll('.signal-row');var visibleCount=0;rows.forEach(function(row){var rowTicker=(row.getAttribute('data-ticker')||'').toUpperCase();var rowSignal=row.getAttribute('data-signal')||'';var rowSector=row.getAttribute('data-sector')||'AI Watchlist';var tickerMatch=!tickerQuery || rowTicker.includes(tickerQuery);var signalMatch=selectedSignal==='ALL' || rowSignal===selectedSignal;var sectorMatch=selectedSector==='ALL' || rowSector===selectedSector;var shouldShow=tickerMatch && signalMatch && sectorMatch;row.classList.toggle('hidden-signal-row',!shouldShow);if(shouldShow){visibleCount+=1;}});var status=document.getElementById('signalFilterStatus');if(status){var signalText=selectedSignal==='ALL'?'all signals':selectedSignal+' signals';var sectorText=selectedSector==='ALL'?'all sectors':selectedSector;var tickerText=tickerQuery?(' matching '+tickerQuery):'';status.textContent='Showing '+visibleCount+' stocks for '+signalText+', '+sectorText+tickerText+'.';}}
-window.addEventListener('load',function(){var params=new URLSearchParams(window.location.search);var openPanel=params.get('open');if(openPanel){openPanelAndJump(openPanel);}if(window.location.pathname==='/ai-recommendations'){window.location.href='/?tab=watchlist';}applySignalFilters();});
+function makeMarketNewsItem(item,duplicate){var card=document.createElement('span');card.className='live-headline'+(duplicate?' ticker-duplicate':'');if(duplicate){card.setAttribute('aria-hidden','true');}var meta=document.createElement('span');meta.className='live-news-meta';meta.textContent=(item.source||'StockRadar Market Impact Feed')+' • '+(item.published_label||'Theme watch');card.appendChild(meta);var title=document.createElement('a');title.className='live-news-title';title.href=item.article_url||'/';title.textContent=item.headline||'Market headlines are reconnecting';if((item.article_url||'').indexOf('http')===0){title.target='_blank';title.rel='noopener noreferrer';}if(duplicate){title.tabIndex=-1;}card.appendChild(title);var stocks=document.createElement('span');stocks.className='live-headline-details market-news-stocks';var affected=document.createElement('span');affected.className='live-affected-label';affected.textContent='Affected stocks:';stocks.appendChild(affected);(item.stock_links||[]).slice(0,4).forEach(function(stock){var link=document.createElement('a');link.className='live-stock-link '+(stock.signal_class||'hold');link.href=stock.url||'/';if(duplicate){link.tabIndex=-1;}link.appendChild(document.createTextNode(stock.display_label||stock.ticker||'SPY'));var action=document.createElement('span');action.className='live-stock-action';action.textContent=stock.action_text||'HOLD';link.appendChild(action);stocks.appendChild(link);});card.appendChild(stocks);var impact=document.createElement('span');impact.className='live-headline-details market-news-impact';var score=document.createElement('span');score.className='live-score';score.textContent='Impact: '+(item.impact_score||'Pending');var direction=document.createElement('span');direction.className='live-meta';direction.textContent=item.direction||'Theme watch';impact.appendChild(score);impact.appendChild(direction);card.appendChild(impact);return card;}
+function renderMarketNews(items){var track=document.getElementById('marketNewsTrack');if(!track){return;}track.innerHTML='';if(!items||!items.length){var empty=document.createElement('div');empty.className='live-news-empty';empty.textContent='Market headlines temporarily unavailable. StockRadar will refresh when the feed reconnects.';track.appendChild(empty);return;}var loop=document.createElement('div');loop.className='live-alert-loop';for(var repeat=0;repeat<2;repeat+=1){items.forEach(function(item){loop.appendChild(makeMarketNewsItem(item,repeat===1));});}track.appendChild(loop);}
+function refreshMarketNews(){var track=document.getElementById('marketNewsTrack');if(!track){return;}fetch('/api/market-news',{headers:{'Accept':'application/json'},cache:'no-store'}).then(function(response){if(!response.ok){throw new Error('market news refresh failed');}return response.json();}).then(function(payload){if(payload&&Array.isArray(payload.items)&&payload.items.length){renderMarketNews(payload.items);var status=document.getElementById('marketNewsStatus');if(status){status.textContent='Updated '+(payload.ticker_updated||'now')+(payload.live_news_active?' • Live headlines':' • Feed reconnecting');}}else if(!track.querySelector('.live-headline')){renderMarketNews([]);}}).catch(function(){/* Keep existing headlines visible if refresh fails. */});}
+function scheduleMarketNewsRefresh(){var track=document.getElementById('marketNewsTrack');if(!track){return;}var interval=parseInt(track.getAttribute('data-refresh-interval')||'300000',10);if(!interval||interval<60000){interval=300000;}window.setInterval(refreshMarketNews,interval);}
+window.addEventListener('load',function(){var params=new URLSearchParams(window.location.search);var openPanel=params.get('open');if(openPanel){openPanelAndJump(openPanel);}if(window.location.pathname==='/ai-recommendations'){window.location.href='/?tab=watchlist';}applySignalFilters();scheduleMarketNewsRefresh();});
 </script>
 </body>
 </html>
@@ -4457,22 +4498,45 @@ def dashboard():
 
     data["live_headlines"] = [
         item for item in data.get("live_headlines", [])
-        if str(item.get("label", "")).upper() == "LIVE NEWS"
-        and str(item.get("article_url", "")).startswith("http")
+        if is_public_live_market_headline(item)
     ]
 
     data.setdefault("newsapi_configured", bool(NEWSAPI_KEY))
     data["live_news_active"] = any(
-        str(item.get("label", "")).upper() == "LIVE NEWS"
-        and str(item.get("article_url", "")).startswith("http")
+        is_public_live_market_headline(item)
         for item in data.get("live_headlines", [])
     )
+    data["market_news_refresh_interval_ms"] = MARKET_NEWS_REFRESH_INTERVAL_MS
+    data["market_news_ticker_limit"] = MARKET_NEWS_TICKER_LIMIT
     data["active_tab"] = active_tab
     data["quick_search_query"] = quick_search_query
     data["quick_search_results"] = quick_search_results
     data["universe_preview"] = get_stock_universe()[:12]
 
     return render_template_string(html, **data)
+
+
+@app.route("/api/market-news")
+def api_market_news():
+    data = get_cached_dashboard_data(force_refresh=request.args.get("refresh") == "1") or {}
+
+    if not isinstance(data, dict) or not data.get("market_status"):
+        data = prepare_dashboard_data() or {}
+
+    if not isinstance(data, dict):
+        data = {}
+
+    live_headlines = [
+        item for item in data.get("live_headlines", [])
+        if is_public_live_market_headline(item)
+    ]
+
+    return jsonify({
+        "items": serialize_market_news_items(live_headlines, limit=MARKET_NEWS_TICKER_LIMIT),
+        "ticker_updated": data.get("ticker_updated") or datetime.now().strftime("%H:%M"),
+        "live_news_active": any(is_public_live_market_headline(item) for item in live_headlines),
+        "refresh_interval_ms": MARKET_NEWS_REFRESH_INTERVAL_MS,
+    })
 
 @app.route("/ai-recommendations")
 def ai_recommendations():
