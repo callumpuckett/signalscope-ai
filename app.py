@@ -2417,17 +2417,34 @@ def newsletter_headline_is_relevant(article):
         "defence", "defense", "technology", "tech stocks", "wall street",
         "ftse", "s&p 500", "nasdaq", "dow jones", "bond yields",
     )
+    market_context_terms = (
+        "stock", "stocks", "shares", "equity", "equities", "market",
+        "earnings", "revenue", "profit", "forecast", "guidance",
+        "investor", "listed", "sector", "index", "fund",
+    )
+    general_health_terms = (
+        "health", "healthcare", "medicine", "medical", "drug", "drugs",
+        "disease", "patient", "patients", "clinical", "trial", "research",
+        "science", "scientist", "hospital", "vaccine",
+    )
     padded_headline = f" {headline} "
     if any(term in padded_headline for term in priority_terms):
         return True
 
-    company_terms = {
-        keyword
-        for keywords in NEWS_STOCK_KEYWORDS.values()
-        for keyword in keywords
-        if len(keyword) >= 4
-    }
-    return any(term in headline for term in company_terms)
+    listed_company_terms = (
+        "apple", "microsoft", "nvidia", "tesla", "amazon", "alphabet",
+        "google", "meta", "jpmorgan", "goldman", "exxon", "shell", "visa",
+        "mastercard", "pfizer", "merck", "abbvie", "unitedhealth",
+        "eli lilly", "novo nordisk", "astrazeneca", "gsk", "boeing",
+        "lockheed", "raytheon", "intel", "amd", "broadcom",
+    )
+    if any(term in headline for term in listed_company_terms):
+        return True
+
+    if any(term in headline for term in general_health_terms):
+        return any(term in headline for term in market_context_terms)
+
+    return False
 
 
 def build_newsletter_signal_highlights(recommendations, limit=5):
@@ -2515,10 +2532,10 @@ def build_newsletter_watchlist(recommendations):
         if exact_ticker == "VUSA":
             watchlist.append({
                 "ticker": "VUSA",
-                "name": "Vanguard S&P 500 UCITS ETF (VUSA) — Core Market Watch",
+                "name": "Vanguard S&P 500 UCITS ETF (VUSA)",
                 "badge": "WATCH",
                 "status": "Core",
-                "reason": "Core Market Watch for broad S&P 500 exposure.",
+                "reason": "Broad S&P 500 exposure and core market benchmark.",
                 "data_confidence": "Medium",
             })
             seen.add("VUSA")
@@ -2783,8 +2800,8 @@ def newsletter_issue_metadata(now=None):
 newsletter_issue_body_html = """
 <section>
 <h2>Market pulse</h2>
-<p><strong>Market mood:</strong> {{ draft.market_mood }}</p>
-<p>{{ draft.market_pulse }}</p>
+<p style="margin-bottom:16px;"><strong>Market mood:</strong> {{ draft.market_mood }}.</p>
+<p style="margin-top:0;">{{ draft.market_pulse }}</p>
 </section>
 <section>
 <h2>Signal highlights</h2>
@@ -2901,8 +2918,8 @@ newsletter_latest_html = """
 <div class="kicker">The 5-minute market signal</div>
 <h1>{{ issue.title }}</h1>
 <p class="meta">Generated {{ draft.generated_at }}</p>
-<p><strong>Market mood:</strong> {{ draft.market_mood }}</p>
-<p>{{ draft.market_pulse }}</p>
+<p style="margin-bottom:16px;"><strong>Market mood:</strong> {{ draft.market_mood }}.</p>
+<p style="margin-top:0;">{{ draft.market_pulse }}</p>
 </header>
 <section class="section">
 <h2>Signal highlights</h2>
