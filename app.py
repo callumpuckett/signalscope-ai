@@ -175,7 +175,17 @@ legal_page_html = """
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{{ title }} — StockRadar</title>
+<title>{{ meta_title }}</title>
+<meta name="description" content="{{ meta_description }}">
+<link rel="canonical" href="{{ canonical_url }}">
+<meta property="og:title" content="{{ meta_title }}">
+<meta property="og:description" content="{{ meta_description }}">
+<meta property="og:type" content="website">
+<meta property="og:url" content="{{ canonical_url }}">
+<meta property="og:site_name" content="StockRadar">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="{{ meta_title }}">
+<meta name="twitter:description" content="{{ meta_description }}">
 <style>
 body{margin:0;background:radial-gradient(circle at 15% 0%,rgba(0,255,170,0.10),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
 .wrap{max-width:900px;margin:0 auto;}
@@ -206,8 +216,52 @@ a{color:#38bdf8;}
 """
 
 
+PUBLIC_PAGE_METADATA = {
+    "Privacy Policy": (
+        "/privacy",
+        "How StockRadar handles account, support, technical and payment-related information.",
+    ),
+    "Terms of Use": (
+        "/terms",
+        "Terms for using StockRadar educational market research tools and public services.",
+    ),
+    "Refund Policy": (
+        "/refund-policy",
+        "StockRadar cancellation, billing-period access and refund review policy.",
+    ),
+    "Risk Disclaimer": (
+        "/risk-disclaimer",
+        "Important investment risk information for users of StockRadar educational market research tools.",
+    ),
+    "Contact": (
+        "/contact",
+        "Contact the StockRadar team for account, subscription, cancellation, refund or general support.",
+    ),
+    "Manage Subscription": (
+        "/manage-subscription",
+        "Information about managing or cancelling a StockRadar subscription.",
+    ),
+    "StockRadar Feedback": (
+        "/feedback",
+        "Share feedback about StockRadar clarity, usefulness, trust and mobile usability.",
+    ),
+}
+
+
 def render_legal_page(title, content):
-    return render_template_string(legal_page_html, title=title, content=content)
+    page_path, meta_description = PUBLIC_PAGE_METADATA.get(
+        title,
+        (request.path, f"{title} information for StockRadar users."),
+    )
+    meta_title = title if title.startswith("StockRadar") else f"{title} — StockRadar"
+    return render_template_string(
+        legal_page_html,
+        title=title,
+        content=content,
+        meta_title=meta_title,
+        meta_description=meta_description,
+        canonical_url=f"{PRODUCTION_BASE_URL}{page_path}",
+    )
 
 
 error_page_html = """
@@ -275,7 +329,7 @@ def internal_server_error(error):
             support_email=SUPPORT_EMAIL,
         )
     else:
-        support_html = "Support contact coming soon."
+        support_html = 'Please use the <a class="secondary" href="/contact">StockRadar contact page</a>.'
 
     return render_error_page(
         "500",
@@ -1034,6 +1088,16 @@ def stock_universe_page():
     <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stock Universe — StockRadar</title>
+    <meta name="description" content="Search the StockRadar stock universe by ticker or company and open plain-English signal research pages.">
+    <link rel="canonical" href="https://signalscope-ai-1-0v3g.onrender.com/universe">
+    <meta property="og:title" content="Stock Universe — StockRadar">
+    <meta property="og:description" content="Search supported stocks, funds and market names in the StockRadar research universe.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://signalscope-ai-1-0v3g.onrender.com/universe">
+    <meta property="og:site_name" content="StockRadar">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Stock Universe — StockRadar">
+    <meta name="twitter:description" content="Search supported stocks, funds and market names in the StockRadar research universe.">
     <style>
     body{margin:0;background:radial-gradient(circle at 12% 0%,rgba(0,255,170,0.10),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;min-height:100vh;padding:42px;}
     .wrap{max-width:1180px;margin:0 auto;}
@@ -2897,7 +2961,17 @@ newsletter_landing_html = """
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>StockRadar Weekly Brief</title>
+<title>StockRadar Weekly — Free Market Newsletter</title>
+<meta name="description" content="Join StockRadar Weekly for a concise Sunday market brief covering market pulse, signal highlights, watchlist moves and risk checks.">
+<link rel="canonical" href="https://signalscope-ai-1-0v3g.onrender.com/newsletter">
+<meta property="og:title" content="StockRadar Weekly — Free Market Newsletter">
+<meta property="og:description" content="The 5-minute market signal: what is strengthening, what is weakening and what may matter next.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://signalscope-ai-1-0v3g.onrender.com/newsletter">
+<meta property="og:site_name" content="StockRadar">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="StockRadar Weekly — Free Market Newsletter">
+<meta name="twitter:description" content="The 5-minute market signal: what is strengthening, what is weakening and what may matter next.">
 <link rel="alternate" type="application/rss+xml" title="StockRadar Weekly RSS" href="/newsletter/rss">
 <style>
 *{box-sizing:border-box;}body{margin:0;min-height:100vh;padding:42px 22px;background:radial-gradient(circle at 18% 8%,rgba(0,255,170,.11),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;}
@@ -2916,7 +2990,7 @@ newsletter_landing_html = """
 {% if newsletter_embed_html %}
 {{ newsletter_embed_html | safe }}
 {% else %}
-<p class="fallback">Newsletter signup coming soon.</p>
+<p class="fallback">Newsletter registration is temporarily unavailable. You can still read the latest issue or follow the RSS feed below.</p>
 {% endif %}
 </section>
 <div class="notes">
@@ -3217,7 +3291,17 @@ html = """
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>StockRadar</title>
+<title>StockRadar — AI-Assisted Market Signals</title>
+<meta name="description" content="AI-assisted market signals, live market news, affected stocks, watchlists and educational research prompts for clearer investing decisions.">
+<link rel="canonical" href="https://signalscope-ai-1-0v3g.onrender.com/">
+<meta property="og:title" content="StockRadar — AI-Assisted Market Signals">
+<meta property="og:description" content="AI-assisted market signals, live market news, affected stocks, watchlists and educational research prompts for clearer investing decisions.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://signalscope-ai-1-0v3g.onrender.com/">
+<meta property="og:site_name" content="StockRadar">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="StockRadar — AI-Assisted Market Signals">
+<meta name="twitter:description" content="AI-assisted market signals, live market news, affected stocks, watchlists and educational research prompts for clearer investing decisions.">
 <style>
 *{box-sizing:border-box;}
 html{scroll-behavior:smooth;}
@@ -4069,7 +4153,17 @@ upgrade_html = """
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>StockRadar Pro Upgrade</title>
+<title>StockRadar Pro — Premium Research Preview</title>
+<meta name="description" content="Preview StockRadar Pro research tools for deeper signal context, watchlist intelligence and portfolio-fit checks.">
+<link rel="canonical" href="https://signalscope-ai-1-0v3g.onrender.com/upgrade">
+<meta property="og:title" content="StockRadar Pro — Premium Research Preview">
+<meta property="og:description" content="Preview deeper StockRadar signal context, watchlist intelligence and portfolio-fit research tools.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://signalscope-ai-1-0v3g.onrender.com/upgrade">
+<meta property="og:site_name" content="StockRadar">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="StockRadar Pro — Premium Research Preview">
+<meta name="twitter:description" content="Preview deeper StockRadar signal context, watchlist intelligence and portfolio-fit research tools.">
 <style>
 *{box-sizing:border-box;}
 body{background:radial-gradient(circle at 18% 8%,rgba(0,255,170,0.18),transparent 30%),radial-gradient(circle at 86% 12%,rgba(255,184,107,0.14),transparent 28%),linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;margin:0;min-height:100vh;padding:54px;}
@@ -4392,7 +4486,7 @@ def refund_policy():
             support_email=SUPPORT_EMAIL,
         )
     else:
-        support_contact = "support contact coming soon"
+        support_contact = '<a href="/contact">the StockRadar contact page</a>'
 
     return render_legal_page(
         "Refund Policy",
@@ -4430,7 +4524,7 @@ def contact():
         """
     else:
         support_content = """
-        <p>Support contact coming soon.</p>
+        <p>For support, email <a href="mailto:stock.radar.support@gmail.com">stock.radar.support@gmail.com</a>.</p>
         """
 
     content = render_template_string(support_content, support_email=SUPPORT_EMAIL)
