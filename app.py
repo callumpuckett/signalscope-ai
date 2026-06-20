@@ -4397,10 +4397,15 @@ def refund_policy():
     return render_legal_page(
         "Refund Policy",
         f"""
-        <p>Subscriptions can be cancelled through support while self-service cancellation is being built.</p>
-        <p>Refund requests can be sent to: {support_contact}</p>
-        <p>Refunds are reviewed case by case.</p>
-        <p>This does not affect statutory rights.</p>
+        <p>StockRadar premium payments are not currently open unless clearly stated on the upgrade page. This policy applies if and when a paid subscription is activated.</p>
+        <h2>Cancellation</h2>
+        <p>You may cancel a paid subscription at any time. Cancellation stops future billing, and no further subscription payment will be taken after the cancellation becomes effective.</p>
+        <p>After cancelling, you will continue to have access to the paid features until the end of your current billing period. Your access will not normally end immediately.</p>
+        <h2>Refund requests</h2>
+        <p>Subscription payments are generally non-refundable once a billing period has started, because access remains available for the rest of that period. However, refund requests may be reviewed case by case where there has been an accidental duplicate charge, a technical billing error, or another exceptional circumstance.</p>
+        <p>To request a cancellation or refund review, contact {support_contact} with the email address associated with your account and relevant payment details. Do not send full payment-card information.</p>
+        <h2>Statutory rights</h2>
+        <p>Nothing in this policy limits any refund, cancellation, or consumer rights that apply under relevant law.</p>
         """,
     )
 
