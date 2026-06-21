@@ -79,6 +79,59 @@ def test_maersk_stock_page_returns_200_without_fabricated_chart_data():
     assert b"Chart unavailable" in response.data
 
 
+def test_expanded_universe_stocks_receive_generated_research_prompts():
+    symbols = {"MAERSK-B.CO", "MAERSK-A.CO", "RR.L", "BA.L", "HLMA.L"}
+
+    with patch.object(app, "get_recommendations", return_value=[]):
+        contexts = {symbol: app.get_stock_ai_context(symbol) for symbol in symbols}
+
+    for symbol, context in contexts.items():
+        assert context["ticker"] == symbol
+        assert context["signal"] in {"BUY", "HOLD", "SELL"}
+        assert context["signal"] != "WATCH"
+        assert context["confidence"] != "50%"
+        assert "StockRadar expanded universe" in context["reason"]
+        assert "not currently inside the AI recommendation table" not in context["reason"]
+        assert context["momentum_view"] != "Watchlist setup"
+
+
+def test_maersk_share_classes_use_same_generated_signal_and_confidence():
+    with patch.object(app, "get_recommendations", return_value=[]):
+        class_b = app.get_stock_ai_context("MAERSK-B.CO")
+        class_a = app.get_stock_ai_context("MAERSK-A.CO")
+
+    assert class_b["ticker"] == "MAERSK-B.CO"
+    assert class_a["ticker"] == "MAERSK-A.CO"
+    assert class_b["signal"] != "WATCH"
+    assert class_a["signal"] != "WATCH"
+    assert class_a["signal"] == class_b["signal"]
+    assert class_a["confidence"] == class_b["confidence"]
+    assert "Class B" in class_b["reason"]
+    assert "Class A" in class_a["reason"]
+
+
+def test_unknown_ticker_keeps_generic_watch_fallback():
+    with patch.object(app, "get_recommendations", return_value=[]):
+        context = app.get_stock_ai_context("NOTAREALTICKER")
+
+    assert context["signal"] == "WATCH"
+    assert context["confidence"] == "50%"
+    assert "not currently inside the AI recommendation table" in context["reason"]
+    assert context["momentum_view"] == "Watchlist setup"
+
+
+def test_requested_expanded_stock_pages_return_200():
+    client = app.app.test_client()
+
+    with patch.object(app, "safe_history", return_value=pd.DataFrame()):
+        responses = {
+            symbol: client.get(f"/stock/{symbol}")
+            for symbol in ("MAERSK-B.CO", "MAERSK-A.CO", "BA.L", "RR.L")
+        }
+
+    assert all(response.status_code == 200 for response in responses.values())
+
+
 def test_sitemap_includes_full_universe_and_www_domain():
     response = app.app.test_client().get("/sitemap.xml")
     page = response.get_data(as_text=True)

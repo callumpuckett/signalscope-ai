@@ -509,6 +509,16 @@ def generated_signal_for_ticker(ticker, index):
     return "HOLD", "58%"
 
 
+EQUIVALENT_SHARE_CLASS_PRIMARY = {
+    "MAERSK-A.CO": "MAERSK-B.CO",
+}
+
+
+def generated_signal_source_ticker(ticker):
+    cleaned_ticker = str(ticker or "").strip().upper()
+    return EQUIVALENT_SHARE_CLASS_PRIMARY.get(cleaned_ticker, cleaned_ticker)
+
+
 def expand_recommendations(rows):
     output = []
     seen = set()
@@ -905,6 +915,7 @@ def get_stock_ai_context(symbol):
     cleaned_symbol = canonical_stock_symbol(symbol)
 
     matching_item = None
+    generated_universe_prompt = False
 
     for item in recommendations:
         if item["ticker"].strip().upper() == cleaned_symbol:
@@ -912,17 +923,84 @@ def get_stock_ai_context(symbol):
             break
 
     if matching_item is None:
-        matching_item = {
-            "ticker": cleaned_symbol,
-            "signal": "WATCH",
-            "confidence": "50%",
-            "reason": "This ticker is not currently inside the AI recommendation table, so StockRadar marks it as WATCH and gives it a balanced preview score until stronger scanner data is available.",
-        }
+        universe_match = None
+        universe_index = 0
+        signal_source_symbol = generated_signal_source_ticker(cleaned_symbol)
+        signal_source_index = None
+        universe_rows = get_stock_universe()
+
+        for index, item in enumerate(universe_rows):
+            item_ticker = str(item.get("ticker", "")).strip().upper()
+            if item_ticker == cleaned_symbol:
+                universe_match = item
+                universe_index = index
+            if item_ticker == signal_source_symbol:
+                signal_source_index = index
+
+        if universe_match is not None:
+            generated_universe_prompt = True
+            generated_index = signal_source_index if signal_source_index is not None else universe_index
+            signal, confidence = generated_signal_for_ticker(signal_source_symbol, generated_index)
+            company_name = str(universe_match.get("name") or cleaned_symbol).strip()
+            sector = str(universe_match.get("sector") or "diversified market").strip()
+            exchange = str(universe_match.get("exchange") or "its listed market").strip()
+
+            if signal == "BUY":
+                reason = (
+                    f"{company_name} is included in the StockRadar expanded universe. "
+                    f"The current research prompt is positive for this {sector} name on {exchange}, "
+                    "supported by its sector exposure and deterministic watchlist screening pattern. "
+                    "Confirm with live price action, news and fundamentals before making any decision."
+                )
+            elif signal == "SELL":
+                reason = (
+                    f"{company_name} is included in the StockRadar expanded universe. "
+                    f"The current research prompt is cautious for this {sector} name on {exchange}, "
+                    "meaning downside risk or a weaker relative setup should be reviewed before further action. "
+                    "Confirm with live price action, news and fundamentals before making any decision."
+                )
+            else:
+                reason = (
+                    f"{company_name} is included in the StockRadar expanded universe. "
+                    f"The current research prompt is balanced for this {sector} name on {exchange}, "
+                    "meaning it is worth monitoring but does not show a strong directional prompt yet. "
+                    "Confirm with live price action, news and fundamentals before making any decision."
+                )
+
+            matching_item = {
+                "ticker": cleaned_symbol,
+                "signal": signal,
+                "confidence": confidence,
+                "reason": reason,
+            }
+        else:
+            matching_item = {
+                "ticker": cleaned_symbol,
+                "signal": "WATCH",
+                "confidence": "50%",
+                "reason": "This ticker is not currently inside the AI recommendation table, so StockRadar marks it as WATCH and gives it a balanced preview score until stronger scanner data is available.",
+            }
 
     confidence_value = confidence_number(matching_item["confidence"])
     signal = matching_item["signal"]
 
-    if signal == "BUY" and confidence_value >= 80:
+    if generated_universe_prompt and signal == "BUY" and confidence_value >= 80:
+        momentum_view = "Strong upside research setup"
+        risk_view = "Medium risk — the positive generated prompt still needs confirmation from live price action, news and fundamentals."
+        watch_next = "Watch for sustained price strength, supportive company news and fundamentals that confirm the research prompt."
+    elif generated_universe_prompt and signal == "BUY":
+        momentum_view = "Positive setup building"
+        risk_view = "Medium risk — the generated prompt is constructive, but it is not a high-conviction instruction."
+        watch_next = "Watch for improving price strength, supportive news and stronger fundamental confirmation."
+    elif generated_universe_prompt and signal == "SELL":
+        momentum_view = "Weak or defensive setup"
+        risk_view = "Higher risk — the generated prompt is cautious and should be checked against current price action, news and fundamentals."
+        watch_next = "Watch whether the stock stabilises, relative strength improves or new information changes the cautious setup."
+    elif generated_universe_prompt and signal == "HOLD":
+        momentum_view = "Neutral / balanced setup"
+        risk_view = "Balanced risk — the generated prompt does not currently show a strong positive or negative direction."
+        watch_next = "Watch for a clearer trend, meaningful company news or fundamental changes before drawing a stronger conclusion."
+    elif signal == "BUY" and confidence_value >= 80:
         momentum_view = "Strong upside setup"
         risk_view = "Medium risk — strong signals still need confirmation from price action."
         watch_next = "Watch whether the stock keeps holding momentum and whether confidence remains above 80%."
