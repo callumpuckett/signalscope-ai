@@ -155,6 +155,7 @@ def disclaimer_footer():
         </div>
         <nav aria-label="Legal and support links" style="display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;">
             <a href="/newsletter" style="color:#94a3b8;">Newsletter</a>
+            <a href="/how-it-works" style="color:#94a3b8;">How It Works</a>
             <a href="/privacy" style="color:#94a3b8;">Privacy</a>
             <a href="/terms" style="color:#94a3b8;">Terms</a>
             <a href="/refund-policy" style="color:#94a3b8;">Refund Policy</a>
@@ -199,7 +200,21 @@ a{color:#38bdf8;}
 .prompt-list li{padding:14px 16px;border-radius:16px;background:rgba(148,163,184,0.07);border:1px solid rgba(148,163,184,0.12);color:#c6d0da;}
 .feedback-cta{display:inline-block;margin-top:8px;padding:14px 18px;border-radius:15px;background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;text-decoration:none;font-weight:950;box-shadow:0 14px 34px rgba(0,255,170,0.12);}
 .feedback-email{color:#dce6ef;font-weight:900;}
-@media(max-width:700px){body{padding:24px;}h1{font-size:34px;}}
+.section-grid,.signal-guide{display:grid;gap:14px;margin:20px 0;}
+.section-grid{grid-template-columns:repeat(2,1fr);}.signal-guide{grid-template-columns:repeat(3,1fr);}
+.info-section,.signal-explainer{padding:19px;border-radius:18px;background:rgba(148,163,184,0.065);border:1px solid rgba(148,163,184,0.13);}
+.info-section h2,.signal-explainer h2{margin:0 0 8px;font-size:19px;}
+.info-section p,.signal-explainer p{margin:0;}
+.signal-explainer.buy{border-color:rgba(74,222,163,0.24);}.signal-explainer.buy h2{color:#86efac;}
+.signal-explainer.hold{border-color:rgba(245,185,79,0.26);}.signal-explainer.hold h2{color:#f4cf79;}
+.signal-explainer.sell{border-color:rgba(248,113,113,0.25);}.signal-explainer.sell h2{color:#fca5a5;}
+.research-flow{display:grid;gap:9px;counter-reset:flow;margin:18px 0;padding:0;list-style:none;}
+.research-flow li{counter-increment:flow;padding:12px 14px 12px 48px;position:relative;border-radius:14px;background:rgba(7,17,24,0.55);border:1px solid rgba(148,163,184,0.10);}
+.research-flow li::before{content:counter(flow);position:absolute;left:14px;top:12px;width:23px;height:23px;border-radius:999px;display:grid;place-items:center;background:rgba(74,222,163,0.14);color:#86efac;font-size:12px;font-weight:950;}
+.weekly-cta{display:flex;justify-content:space-between;align-items:center;gap:18px;margin-top:22px;padding:20px;border-radius:18px;background:linear-gradient(135deg,rgba(74,222,163,0.12),rgba(245,185,79,0.10));border:1px solid rgba(74,222,163,0.20);}
+.weekly-cta h2,.weekly-cta p{margin:0;}.weekly-cta p{margin-top:5px;}
+.weekly-cta a{flex:0 0 auto;padding:12px 16px;border-radius:14px;background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;text-decoration:none;font-weight:950;}
+@media(max-width:700px){body{padding:24px;}h1{font-size:34px;}.section-grid,.signal-guide{grid-template-columns:1fr;}.weekly-cta{align-items:flex-start;flex-direction:column;}}
 </style>
 </head>
 <body>
@@ -244,6 +259,10 @@ PUBLIC_PAGE_METADATA = {
     "StockRadar Feedback": (
         "/feedback",
         "Share feedback about StockRadar clarity, usefulness, trust and mobile usability.",
+    ),
+    "How StockRadar Works": (
+        "/how-it-works",
+        "Learn how to read StockRadar market news, affected stocks and BUY, HOLD and SELL research prompts.",
     ),
 }
 
@@ -3552,7 +3571,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
             <a class="cta-primary" href="/?tab=signals">Explore Signals</a>
             <a class="cta-secondary" href="/newsletter">Join StockRadar Weekly</a>
         </div>
-        <p style="color:#91a3b4;font-size:13px;line-height:1.6;margin:18px 0 0;">Signals are research prompts, not financial advice.</p>
+        <p style="color:#91a3b4;font-size:13px;line-height:1.6;margin:18px 0 0;">Signals are research prompts, not financial advice. <a href="/how-it-works">How it works</a></p>
     </div>
 
     <div class="trust-strip" aria-label="How to use StockRadar">
@@ -4423,6 +4442,7 @@ def sitemap_xml():
         "/",
         "/newsletter",
         "/newsletter/latest",
+        "/how-it-works",
         "/universe",
         "/upgrade",
         "/privacy",
@@ -4444,6 +4464,65 @@ def sitemap_xml():
         "</urlset>"
     )
     return Response(content, mimetype="application/xml")
+
+
+@app.route("/how-it-works")
+def how_it_works():
+    return render_legal_page(
+        "How StockRadar Works",
+        """
+        <p>StockRadar is designed to make market information easier to interpret without turning research prompts into trading instructions.</p>
+
+        <div class="section-grid">
+            <section class="info-section">
+                <h2>What StockRadar does</h2>
+                <p>StockRadar turns market data, live headlines, affected stocks, watchlists and signal patterns into plain-English research prompts.</p>
+            </section>
+            <section class="info-section">
+                <h2>How Market News works</h2>
+                <p>The Market News ticker shows current headlines and stocks or sectors that may be affected. Affected-stock chips provide context—they do not guarantee that a stock will move.</p>
+            </section>
+        </div>
+
+        <h2>What BUY, HOLD and SELL mean</h2>
+        <div class="signal-guide">
+            <section class="signal-explainer buy">
+                <h2>BUY</h2>
+                <p>A stronger research setup. It does not mean “you must buy”.</p>
+            </section>
+            <section class="signal-explainer hold">
+                <h2>HOLD</h2>
+                <p>A neutral or watchlist setup. It may be worth monitoring.</p>
+            </section>
+            <section class="signal-explainer sell">
+                <h2>SELL</h2>
+                <p>A caution or weakness signal. It does not mean “you must sell immediately”.</p>
+            </section>
+        </div>
+
+        <h2>How to use StockRadar</h2>
+        <ol class="research-flow">
+            <li>Read the Market News ticker.</li>
+            <li>Check which stocks may be affected.</li>
+            <li>Open the relevant stock page.</li>
+            <li>Review the signal, confidence, available chart and risk notes.</li>
+            <li>Decide whether the setup deserves further independent research.</li>
+        </ol>
+
+        <section class="info-section">
+            <h2>What StockRadar is not</h2>
+            <p>StockRadar is not personal financial advice. It does not know your full portfolio, income, goals, tax position or risk tolerance. Signals are educational research prompts, not personalised instructions or guarantees.</p>
+        </section>
+
+        <section class="weekly-cta">
+            <div>
+                <h2>Want the weekly version?</h2>
+                <p>Get the concise market pulse, signal highlights, watchlist moves and risk checks.</p>
+            </div>
+            <a href="/newsletter">Join StockRadar Weekly</a>
+        </section>
+        """,
+    )
 
 
 @app.route("/privacy")
