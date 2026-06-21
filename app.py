@@ -4431,6 +4431,7 @@ def robots_txt():
     content = (
         "User-agent: *\n"
         "Allow: /\n"
+        "\n"
         f"Sitemap: {PRODUCTION_BASE_URL}/sitemap.xml\n"
     )
     return Response(content, mimetype="text/plain")
@@ -4452,16 +4453,28 @@ def sitemap_xml():
         "/contact",
         "/manage-subscription",
         "/feedback",
+        "/stock/SPCX",
+        "/stock/AAPL",
+        "/stock/MSFT",
+        "/stock/NVDA",
+        "/stock/GOOGL",
+        "/stock/AMZN",
     ]
-    urls = "".join(
-        f"<url><loc>{PRODUCTION_BASE_URL}{path}</loc></url>"
+    last_modified = datetime.now(timezone.utc).date().isoformat()
+    urls = "\n".join(
+        (
+            "  <url>\n"
+            f"    <loc>{PRODUCTION_BASE_URL}{path}</loc>\n"
+            f"    <lastmod>{last_modified}</lastmod>\n"
+            "  </url>"
+        )
         for path in public_paths
     )
     content = (
-        '<?xml version="1.0" encoding="UTF-8"?>'
-        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
-        f"{urls}"
-        "</urlset>"
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        f"{urls}\n"
+        "</urlset>\n"
     )
     return Response(content, mimetype="application/xml")
 
