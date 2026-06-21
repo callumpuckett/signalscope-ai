@@ -71,11 +71,12 @@ SUPPORT_EMAIL = os.environ.get("SUPPORT_EMAIL", "").strip()
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_PRICE_ID = os.environ.get("STRIPE_PRICE_ID", "")
 PREMIUM_PAYMENTS_ENABLED = os.environ.get("PREMIUM_PAYMENTS_ENABLED", "").strip().lower() == "true"
-PRODUCTION_BASE_URL = "https://signalscope-ai-1-0v3g.onrender.com"
+PRODUCTION_BASE_URL = "https://stockradarhq.com"
+RENDER_FALLBACK_BASE_URL = "https://signalscope-ai-1-0v3g.onrender.com"
 DEFAULT_STRIPE_SUCCESS_URL = (
-    f"{PRODUCTION_BASE_URL}/checkout-success?session_id={{CHECKOUT_SESSION_ID}}"
+    f"{RENDER_FALLBACK_BASE_URL}/checkout-success?session_id={{CHECKOUT_SESSION_ID}}"
 )
-DEFAULT_STRIPE_CANCEL_URL = f"{PRODUCTION_BASE_URL}/upgrade"
+DEFAULT_STRIPE_CANCEL_URL = f"{RENDER_FALLBACK_BASE_URL}/upgrade"
 
 
 def configured_url(environment_name, default):
@@ -1108,11 +1109,11 @@ def stock_universe_page():
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stock Universe — StockRadar</title>
     <meta name="description" content="Search the StockRadar stock universe by ticker or company and open plain-English signal research pages.">
-    <link rel="canonical" href="https://signalscope-ai-1-0v3g.onrender.com/universe">
+    <link rel="canonical" href="https://stockradarhq.com/universe">
     <meta property="og:title" content="Stock Universe — StockRadar">
     <meta property="og:description" content="Search supported stocks, funds and market names in the StockRadar research universe.">
     <meta property="og:type" content="website">
-    <meta property="og:url" content="https://signalscope-ai-1-0v3g.onrender.com/universe">
+    <meta property="og:url" content="https://stockradarhq.com/universe">
     <meta property="og:site_name" content="StockRadar">
     <meta name="twitter:card" content="summary">
     <meta name="twitter:title" content="Stock Universe — StockRadar">
@@ -2982,11 +2983,11 @@ newsletter_landing_html = """
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>StockRadar Weekly — Free Market Newsletter</title>
 <meta name="description" content="Join StockRadar Weekly for a concise Sunday market brief covering market pulse, signal highlights, watchlist moves and risk checks.">
-<link rel="canonical" href="https://signalscope-ai-1-0v3g.onrender.com/newsletter">
+<link rel="canonical" href="https://stockradarhq.com/newsletter">
 <meta property="og:title" content="StockRadar Weekly — Free Market Newsletter">
 <meta property="og:description" content="The 5-minute market signal: what is strengthening, what is weakening and what may matter next.">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://signalscope-ai-1-0v3g.onrender.com/newsletter">
+<meta property="og:url" content="https://stockradarhq.com/newsletter">
 <meta property="og:site_name" content="StockRadar">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="StockRadar Weekly — Free Market Newsletter">
@@ -3312,11 +3313,11 @@ html = """
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>StockRadar — AI-Assisted Market Signals</title>
 <meta name="description" content="AI-assisted market signals, live market news, affected stocks, watchlists and educational research prompts for clearer investing decisions.">
-<link rel="canonical" href="https://signalscope-ai-1-0v3g.onrender.com/">
+<link rel="canonical" href="https://stockradarhq.com/">
 <meta property="og:title" content="StockRadar — AI-Assisted Market Signals">
 <meta property="og:description" content="AI-assisted market signals, live market news, affected stocks, watchlists and educational research prompts for clearer investing decisions.">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://signalscope-ai-1-0v3g.onrender.com/">
+<meta property="og:url" content="https://stockradarhq.com/">
 <meta property="og:site_name" content="StockRadar">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="StockRadar — AI-Assisted Market Signals">
@@ -4174,11 +4175,11 @@ upgrade_html = """
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>StockRadar Pro — Premium Research Preview</title>
 <meta name="description" content="Preview StockRadar Pro research tools for deeper signal context, watchlist intelligence and portfolio-fit checks.">
-<link rel="canonical" href="https://signalscope-ai-1-0v3g.onrender.com/upgrade">
+<link rel="canonical" href="https://stockradarhq.com/upgrade">
 <meta property="og:title" content="StockRadar Pro — Premium Research Preview">
 <meta property="og:description" content="Preview deeper StockRadar signal context, watchlist intelligence and portfolio-fit research tools.">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://signalscope-ai-1-0v3g.onrender.com/upgrade">
+<meta property="og:url" content="https://stockradarhq.com/upgrade">
 <meta property="og:site_name" content="StockRadar">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="StockRadar Pro — Premium Research Preview">

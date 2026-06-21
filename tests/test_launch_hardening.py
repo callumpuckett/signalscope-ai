@@ -19,7 +19,7 @@ def test_robots_txt_allows_crawling_and_contains_sitemap():
     assert b"User-agent: *" in response.data
     assert b"Allow: /" in response.data
     assert (
-        b"Sitemap: https://signalscope-ai-1-0v3g.onrender.com/sitemap.xml"
+        b"Sitemap: https://stockradarhq.com/sitemap.xml"
         in response.data
     )
 
@@ -41,7 +41,7 @@ def test_sitemap_contains_key_public_routes():
         "/manage-subscription",
         "/feedback",
     ):
-        assert f"https://signalscope-ai-1-0v3g.onrender.com{path}" in page
+        assert f"https://stockradarhq.com{path}" in page
 
 
 def test_health_and_upgrade_remain_available():
