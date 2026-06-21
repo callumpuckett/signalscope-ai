@@ -74,9 +74,9 @@ PREMIUM_PAYMENTS_ENABLED = os.environ.get("PREMIUM_PAYMENTS_ENABLED", "").strip(
 PRODUCTION_BASE_URL = "https://www.stockradarhq.com"
 RENDER_FALLBACK_BASE_URL = "https://signalscope-ai-1-0v3g.onrender.com"
 DEFAULT_STRIPE_SUCCESS_URL = (
-    f"{RENDER_FALLBACK_BASE_URL}/checkout-success?session_id={{CHECKOUT_SESSION_ID}}"
+    f"{PRODUCTION_BASE_URL}/checkout-success?session_id={{CHECKOUT_SESSION_ID}}"
 )
-DEFAULT_STRIPE_CANCEL_URL = f"{RENDER_FALLBACK_BASE_URL}/upgrade"
+DEFAULT_STRIPE_CANCEL_URL = f"{PRODUCTION_BASE_URL}/upgrade"
 
 
 def configured_url(environment_name, default):
@@ -141,6 +141,10 @@ def stripe_checkout_configured():
 
 def owner_has_access():
     return session.get("owner_logged_in") is True
+
+
+def premium_has_access():
+    return owner_has_access() or session.get("premium_active") is True
 
 
 def owner_login_configured():
@@ -1278,7 +1282,7 @@ def premium_decision(symbol):
     ai_context = get_stock_ai_context(cleaned_symbol)
     report = get_premium_report(cleaned_symbol, ai_context)
 
-    if not owner_has_access():
+    if not premium_has_access():
         locked_html = """
         <!DOCTYPE html>
         <html>
@@ -1431,7 +1435,7 @@ def premium_watchlist():
         "Current SELL warnings": len(sell_rows),
     }
 
-    if not owner_has_access():
+    if not premium_has_access():
         locked_html = """
         <!DOCTYPE html>
         <html>
@@ -1661,7 +1665,7 @@ def portfolio_fit():
             "overall_read": overall_read,
         }
 
-    if not owner_has_access():
+    if not premium_has_access():
         locked_html = """
         <!DOCTYPE html>
         <html>
@@ -3583,6 +3587,9 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
     {% if owner_logged_in %}
         <a class="nav-link pro-button" href="/owner">✅ Premium Active</a>
         <a class="nav-link" href="/logout">🚪 Logout</a>
+    {% elif has_premium_access %}
+        <a class="nav-link pro-button" href="/manage-subscription">✅ Premium Active</a>
+        <a class="nav-link" href="/logout">🚪 End Premium Session</a>
     {% else %}
         <a class="nav-link pro-button" href="/upgrade">🚀 Upgrade to Pro — £5/month</a>
         <a class="nav-link" href="/login">🔐 Login</a>
@@ -3710,7 +3717,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
         <p style="color:#00ffaa;font-weight:900;text-transform:uppercase;letter-spacing:0.12em;margin:0 0 10px 0;">Signal Intelligence</p>
         <h2>AI Signal Intelligence Centre</h2>
         <p style="color:#94a3b8;line-height:1.7;">A cleaner view of opportunity, caution and risk. Free users see the signal preview; Premium users can open the full stock page for confidence, risk read and next-move intelligence.</p>
-        {% if owner_logged_in %}
+        {% if has_premium_access %}
         <div class="premium-signal-callout">✅ Premium active: use the linked tickers below to open full AI confidence, risk read and next-move analysis on each stock page.</div>
         {% else %}
         <div class="premium-signal-callout">🔒 Premium unlocks deeper reasoning behind each signal, including risk read, momentum interpretation and what to watch next.</div>
@@ -3776,7 +3783,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
         {% if buy_rows %}
         <table><tr><th>Stock</th><th>Confidence</th><th>AI Reason</th></tr>{% for item in buy_rows %}<tr><td class="buy"><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_display_label(item.ticker) }}</a></td><td>{{ item.confidence }}</td><td>{{ item.reason }}</td></tr>{% endfor %}</table>
         {% else %}<div class="empty-state">No BUY signals are currently active in your latest scanner output.</div>{% endif %}
-        {% if owner_logged_in %}<div class="notice"><h3>✅ Premium signal breakdown active</h3><p>You have full premium access. Use the linked tickers above to open the premium stock intelligence pages.</p></div>{% else %}<div class="notice"><h3>🔒 Unlock full AI signal breakdown</h3><p>Pro includes full conviction rankings, live alerts and deeper AI reasoning.</p><a class="upgrade-cta" href="/upgrade">Upgrade to Pro — £5/month</a></div>{% endif %}
+        {% if has_premium_access %}<div class="notice"><h3>✅ Premium signal breakdown active</h3><p>You have full premium access. Use the linked tickers above to open the premium stock intelligence pages.</p></div>{% else %}<div class="notice"><h3>🔒 Unlock full AI signal breakdown</h3><p>Pro includes full conviction rankings, live alerts and deeper AI reasoning.</p><a class="upgrade-cta" href="/upgrade">Upgrade to Pro — £5/month</a></div>{% endif %}
     </div>
 
     <div id="hold-panel" class="card panel">
@@ -3784,7 +3791,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
         {% if hold_rows %}
         <table><tr><th>Stock</th><th>Confidence</th><th>AI Reason</th></tr>{% for item in hold_rows %}<tr><td class="hold"><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_display_label(item.ticker) }}</a></td><td>{{ item.confidence }}</td><td>{{ item.reason }}</td></tr>{% endfor %}</table>
         {% else %}<div class="empty-state">No HOLD signals are currently active.</div>{% endif %}
-        {% if owner_logged_in %}<div class="notice"><h3>✅ Premium HOLD analysis active</h3><p>You have full premium access to deeper HOLD interpretation and premium stock pages.</p></div>{% else %}<div class="notice"><h3>🔒 Unlock deeper HOLD analysis</h3><p>Pro shows whether HOLD stocks are preparing to flip into BUY or SELL signals.</p><a class="upgrade-cta" href="/upgrade">Upgrade to Pro — £5/month</a></div>{% endif %}
+        {% if has_premium_access %}<div class="notice"><h3>✅ Premium HOLD analysis active</h3><p>You have full premium access to deeper HOLD interpretation and premium stock pages.</p></div>{% else %}<div class="notice"><h3>🔒 Unlock deeper HOLD analysis</h3><p>Pro shows whether HOLD stocks are preparing to flip into BUY or SELL signals.</p><a class="upgrade-cta" href="/upgrade">Upgrade to Pro — £5/month</a></div>{% endif %}
     </div>
 
     <div id="sell-panel" class="card panel">
@@ -3792,13 +3799,13 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
         {% if sell_rows %}
         <table><tr><th>Stock</th><th>Confidence</th><th>AI Reason</th></tr>{% for item in sell_rows %}<tr><td class="sell"><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_display_label(item.ticker) }}</a></td><td>{{ item.confidence }}</td><td>{{ item.reason }}</td></tr>{% endfor %}</table>
         {% else %}<div class="empty-state">No SELL signals are currently active.</div>{% endif %}
-        {% if owner_logged_in %}<div class="notice"><h3>✅ Premium downside warnings active</h3><p>You have full premium access to downside warnings and premium risk interpretation.</p></div>{% else %}<div class="notice"><h3>🔒 Unlock full downside warnings</h3><p>Pro includes live bearish alerts and AI-driven risk warnings.</p><a class="upgrade-cta" href="/upgrade">Upgrade to Pro — £5/month</a></div>{% endif %}
+        {% if has_premium_access %}<div class="notice"><h3>✅ Premium downside warnings active</h3><p>You have full premium access to downside warnings and premium risk interpretation.</p></div>{% else %}<div class="notice"><h3>🔒 Unlock full downside warnings</h3><p>Pro includes live bearish alerts and AI-driven risk warnings.</p><a class="upgrade-cta" href="/upgrade">Upgrade to Pro — £5/month</a></div>{% endif %}
     </div>
 
     <div id="conviction-panel" class="card panel">
         <h2>Premium Focus — Highest AI Conviction</h2>
         <table><tr><th>Stock</th><th>Conviction</th><th>AI Insight</th></tr>{% for item in conviction_rows %}<tr><td class="buy"><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_display_label(item.ticker) }}</a></td><td>{{ item.confidence }}</td><td>{{ item.reason }}</td></tr>{% endfor %}</table>
-        {% if owner_logged_in %}<div class="notice"><h3>✅ Premium AI-ranked opportunities active</h3><p>You have full premium access to the AI watchlist, conviction engine and premium market intelligence.</p></div>{% else %}<div class="notice"><h3>🔒 Unlock premium conviction intelligence</h3><p>Premium turns High Conviction into a research shortlist with deeper AI reasoning, risk read and what-to-watch-next context on each linked stock page.</p><a class="upgrade-cta" href="/upgrade">Upgrade to Pro — £5/month</a></div>{% endif %}
+        {% if has_premium_access %}<div class="notice"><h3>✅ Premium AI-ranked opportunities active</h3><p>You have full premium access to the AI watchlist, conviction engine and premium market intelligence.</p></div>{% else %}<div class="notice"><h3>🔒 Unlock premium conviction intelligence</h3><p>Premium turns High Conviction into a research shortlist with deeper AI reasoning, risk read and what-to-watch-next context on each linked stock page.</p><a class="upgrade-cta" href="/upgrade">Upgrade to Pro — £5/month</a></div>{% endif %}
     </div>
 
     <div id="full-universe-table" class="card">
@@ -3906,7 +3913,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
             <div class="impact-card">
                 <small>{{ item.title }}</small>
                 <span class="impact-pill">Impact: {{ item.impact }}</span>
-                {% if owner_logged_in %}
+                {% if has_premium_access %}
                     <div class="impact-score">{{ item.impact_score }}</div>
                     <div class="impact-direction">{{ item.direction }}</div>
                     <h3>{{ item.sectors }}</h3>
@@ -3920,7 +3927,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
                     <a class="impact-stock" href="/stock/{{ stock }}">{{ stock_display_label(stock) }}</a>
                     {% endfor %}
                 </div>
-                {% if owner_logged_in %}
+                {% if has_premium_access %}
                     <div class="premium-impact">✅ Premium AI impact: {{ item.premium_view }}</div>
                     <div class="watch-next"><strong>What to watch next:</strong> {{ item.watch_next }}</div>
                 {% else %}
@@ -3933,7 +3940,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 
     <div class="feature-grid">
         <div class="card"><h2>Free Access</h2><p>Market overview, limited signal previews and AI watchlist snapshots.</p></div>
-        {% if owner_logged_in %}<div class="card"><h2>Premium Active</h2><p>Your account has premium access. Upgrade prompts are hidden and premium intelligence is unlocked.</p></div>{% else %}<div class="card"><h2>Pro Preview</h2><p>Live BUY/SELL alerts, conviction scoring and deeper AI explanations.</p></div>{% endif %}
+        {% if has_premium_access %}<div class="card"><h2>Premium Active</h2><p>Your account has premium access. Upgrade prompts are hidden and premium intelligence is unlocked.</p></div>{% else %}<div class="card"><h2>Pro Preview</h2><p>Live BUY/SELL alerts, conviction scoring and deeper AI explanations.</p></div>{% endif %}
         <div class="card"><h2>Daily Value</h2><p>Use the dashboard to check what is strengthening, weakening and worth watching.</p></div>
     </div>
     </div>
@@ -4301,11 +4308,11 @@ p{color:#cbd5e1;line-height:1.7;font-size:16px;}
 <div class="wrap">
     <a class="back" href="/">← Back to Dashboard</a>
 
-    {% if owner_logged_in %}
+    {% if has_premium_access %}
     <div class="card active-card">
         <span class="badge">Premium active</span>
         <h1>✅ Premium is already active.</h1>
-        <p>You are logged in with premium/owner access. You do not need to purchase again. Premium stock intelligence, risk reads and next-move analysis are unlocked.</p>
+        <p>Premium access is active for this session. You do not need to purchase again. Premium stock intelligence, risk reads and next-move analysis are unlocked.</p>
         <a class="button" href="/stock/AAPL">Open Premium Stock Page</a>
         <a class="button secondary" href="/">Return to Dashboard</a>
     </div>
@@ -4327,6 +4334,7 @@ p{color:#cbd5e1;line-height:1.7;font-size:16px;}
         <div class="card">
             <span class="badge">{% if premium_payments_enabled %}Premium plan{% else %}Premium preview{% endif %}</span>
             <div class="price">£5 <span>/ month</span></div>
+            <p class="note"><strong style="color:#cbd5e1;">£5/month. Cancel anytime.</strong> Cancellation stops future billing, with access continuing until the end of the current billing period.</p>
             {% if premium_payments_enabled %}
             <p>One monthly subscription unlocks the full premium research toolkit.</p>
             <div class="note" style="padding:12px;border-radius:14px;background:rgba(56,189,248,0.08);border:1px solid rgba(56,189,248,0.16);color:#bae6fd;"><strong>Controlled early access:</strong> Checkout is explicitly enabled for the current environment.</div>
@@ -4723,10 +4731,11 @@ def manage_subscription():
     return render_legal_page(
         "Manage Subscription",
         f"""
-        <p>StockRadar Premium is currently in early access and paid subscriptions may not yet be open.</p>
-        <p>Self-service subscription management is being built. Until then, users can request cancellation through support.</p>
+        <p>StockRadar Premium is a £5/month educational research subscription. You may cancel anytime.</p>
+        <p>If a Stripe self-service billing portal is not available, subscription management and cancellation requests are handled through support.</p>
         <h2>How to cancel</h2>
         <p>Contact {support_contact} using the email address used at checkout and the subject line: <strong>Cancel StockRadar Premium</strong>.</p>
+        <p>Cancellation stops future billing. Premium access continues until the end of the current billing period.</p>
         <h2>Refund requests</h2>
         <p>Refund requests are reviewed case by case. This does not affect statutory rights.</p>
         <h2>Educational use</h2>
@@ -4805,6 +4814,8 @@ def dashboard():
     )
     data["market_news_refresh_interval_ms"] = MARKET_NEWS_REFRESH_INTERVAL_MS
     data["market_news_ticker_limit"] = MARKET_NEWS_TICKER_LIMIT
+    data["owner_logged_in"] = owner_has_access()
+    data["has_premium_access"] = premium_has_access()
     data["active_tab"] = active_tab
     data["quick_search_query"] = quick_search_query
     data["quick_search_results"] = quick_search_results
@@ -4867,7 +4878,7 @@ def stock_detail(symbol):
         lifetime=lifetime,
         ai_context=ai_context,
         example_report=example_report,
-        has_premium_access=owner_has_access(),
+        has_premium_access=premium_has_access(),
     )
 
 
@@ -4875,7 +4886,7 @@ def stock_detail(symbol):
 def upgrade():
     return render_template_string(
         upgrade_html,
-        owner_logged_in=owner_has_access(),
+        has_premium_access=premium_has_access(),
         premium_payments_enabled=stripe_checkout_configured(),
     )
 
@@ -4980,7 +4991,7 @@ def checkout_success():
             )
 
             if payment_verified:
-                session["owner_logged_in"] = True
+                session["premium_active"] = True
                 premium_activated = True
                 heading = "✅ Premium activated"
                 message = "Your verified premium dashboard session is now active."
@@ -5050,6 +5061,7 @@ def owner():
 @app.route("/logout")
 def logout():
     session.pop("owner_logged_in", None)
+    session.pop("premium_active", None)
     return redirect(url_for("dashboard"))
 
 
