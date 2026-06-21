@@ -117,7 +117,7 @@ def test_ai_recommendations_redirects_without_error():
 
 
 def test_production_url_defaults_and_environment_overrides(monkeypatch):
-    assert app.PRODUCTION_BASE_URL == "https://stockradarhq.com"
+    assert app.PRODUCTION_BASE_URL == "https://www.stockradarhq.com"
     assert app.RENDER_FALLBACK_BASE_URL == (
         "https://signalscope-ai-1-0v3g.onrender.com"
     )
