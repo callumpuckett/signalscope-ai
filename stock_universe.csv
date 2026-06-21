@@ -1,106 +1,1003 @@
-ticker,name,exchange,country,sector,market_cap_rank
-AAPL,Apple Inc,NASDAQ,USA,Technology,1
-MSFT,Microsoft Corp,NASDAQ,USA,Technology,2
-NVDA,NVIDIA Corp,NASDAQ,USA,Semiconductors,3
-AMZN,Amazon.com Inc,NASDAQ,USA,Consumer Discretionary,4
-GOOGL,Alphabet Inc Class A,NASDAQ,USA,Communication Services,5
-META,Meta Platforms Inc,NASDAQ,USA,Communication Services,6
-BRK-B,Berkshire Hathaway Inc,NYSE,USA,Financials,7
-LLY,Eli Lilly and Co,NYSE,USA,Healthcare,8
-AVGO,Broadcom Inc,NASDAQ,USA,Semiconductors,9
-JPM,JPMorgan Chase & Co,NYSE,USA,Financials,10
-TSLA,Tesla Inc,NASDAQ,USA,Consumer Discretionary,11
-V,Visa Inc,NYSE,USA,Financials,12
-UNH,UnitedHealth Group Inc,NYSE,USA,Healthcare,13
-XOM,Exxon Mobil Corp,NYSE,USA,Energy,14
-MA,Mastercard Inc,NYSE,USA,Financials,15
-COST,Costco Wholesale Corp,NASDAQ,USA,Consumer Staples,16
-PG,Procter & Gamble Co,NYSE,USA,Consumer Staples,17
-JNJ,Johnson & Johnson,NYSE,USA,Healthcare,18
-HD,Home Depot Inc,NYSE,USA,Consumer Discretionary,19
-ABBV,AbbVie Inc,NYSE,USA,Healthcare,20
-WMT,Walmart Inc,NYSE,USA,Consumer Staples,21
-NFLX,Netflix Inc,NASDAQ,USA,Communication Services,22
-BAC,Bank of America Corp,NYSE,USA,Financials,23
-KO,Coca-Cola Co,NYSE,USA,Consumer Staples,24
-PEP,PepsiCo Inc,NASDAQ,USA,Consumer Staples,25
-CRM,Salesforce Inc,NYSE,USA,Technology,26
-ORCL,Oracle Corp,NYSE,USA,Technology,27
-AMD,Advanced Micro Devices Inc,NASDAQ,USA,Semiconductors,28
-ADBE,Adobe Inc,NASDAQ,USA,Technology,29
-MCD,McDonald's Corp,NYSE,USA,Consumer Discretionary,30
-CSCO,Cisco Systems Inc,NASDAQ,USA,Technology,31
-WFC,Wells Fargo & Co,NYSE,USA,Financials,32
-ABT,Abbott Laboratories,NYSE,USA,Healthcare,33
-MRK,Merck & Co Inc,NYSE,USA,Healthcare,34
-TMO,Thermo Fisher Scientific Inc,NYSE,USA,Healthcare,35
-ACN,Accenture plc,NYSE,USA,Technology,36
-QCOM,Qualcomm Inc,NASDAQ,USA,Semiconductors,37
-TXN,Texas Instruments Inc,NASDAQ,USA,Semiconductors,38
-INTC,Intel Corp,NASDAQ,USA,Semiconductors,39
-IBM,International Business Machines Corp,NYSE,USA,Technology,40
-GE,GE Aerospace,NYSE,USA,Industrials,41
-CAT,Caterpillar Inc,NYSE,USA,Industrials,42
-GS,Goldman Sachs Group Inc,NYSE,USA,Financials,43
-MS,Morgan Stanley,NYSE,USA,Financials,44
-AXP,American Express Co,NYSE,USA,Financials,45
-DIS,Walt Disney Co,NYSE,USA,Communication Services,46
-NKE,Nike Inc,NYSE,USA,Consumer Discretionary,47
-SBUX,Starbucks Corp,NASDAQ,USA,Consumer Discretionary,48
-PYPL,PayPal Holdings Inc,NASDAQ,USA,Financials,49
-UBER,Uber Technologies Inc,NYSE,USA,Technology,50
-SHOP,Shopify Inc,NYSE,USA,Technology,51
-NOW,ServiceNow Inc,NYSE,USA,Technology,52
-LMT,Lockheed Martin Corp,NYSE,USA,Industrials,53
-RTX,RTX Corp,NYSE,USA,Industrials,54
-NOC,Northrop Grumman Corp,NYSE,USA,Industrials,55
-HON,Honeywell International Inc,NASDAQ,USA,Industrials,56
-BA,Boeing Co,NYSE,USA,Industrials,57
-UPS,United Parcel Service Inc,NYSE,USA,Industrials,58
-FDX,FedEx Corp,NYSE,USA,Industrials,59
-CVX,Chevron Corp,NYSE,USA,Energy,60
-COP,ConocoPhillips,NYSE,USA,Energy,61
-SLB,SLB,NYSE,USA,Energy,62
-OXY,Occidental Petroleum Corp,NYSE,USA,Energy,63
-SPY,SPDR S&P 500 ETF,NYSEARCA,USA,ETF,64
-QQQ,Invesco QQQ Trust,NASDAQ,USA,ETF,65
-DIA,SPDR Dow Jones Industrial Average ETF,NYSEARCA,USA,ETF,66
-IWM,iShares Russell 2000 ETF,NYSEARCA,USA,ETF,67
-SMH,VanEck Semiconductor ETF,NASDAQ,USA,ETF,68
-TLT,iShares 20+ Year Treasury Bond ETF,NASDAQ,USA,ETF,69
-GLD,SPDR Gold Shares,NYSEARCA,USA,Commodity ETF,70
-SLV,iShares Silver Trust,NYSEARCA,USA,Commodity ETF,71
-USO,United States Oil Fund,NYSEARCA,USA,Commodity ETF,72
-SHEL.L,Shell plc,LSE,UK,Energy,73
-AZN.L,AstraZeneca plc,LSE,UK,Healthcare,74
-HSBA.L,HSBC Holdings plc,LSE,UK,Financials,75
-ULVR.L,Unilever plc,LSE,UK,Consumer Staples,76
-BP.L,BP plc,LSE,UK,Energy,77
-GSK.L,GSK plc,LSE,UK,Healthcare,78
-RIO.L,Rio Tinto plc,LSE,UK,Materials,79
-BHP.L,BHP Group Ltd,LSE,UK,Materials,80
-DGE.L,Diageo plc,LSE,UK,Consumer Staples,81
-LLOY.L,Lloyds Banking Group plc,LSE,UK,Financials,82
-BARC.L,Barclays plc,LSE,UK,Financials,83
-VOD.L,Vodafone Group plc,LSE,UK,Communication Services,84
-BT-A.L,BT Group plc,LSE,UK,Communication Services,85
-TSCO.L,Tesco plc,LSE,UK,Consumer Staples,86
-SBRY.L,J Sainsbury plc,LSE,UK,Consumer Staples,87
-BA.L,BAE Systems plc,LSE,UK,Industrials,88
-QQ.L,QinetiQ Group plc,LSE,UK,Industrials,89
-REL.L,RELX plc,LSE,UK,Industrials,90
-LSEG.L,London Stock Exchange Group plc,LSE,UK,Financials,91
-III.L,3i Group plc,LSE,UK,Financials,92
-NG.L,National Grid plc,LSE,UK,Utilities,93
-SSE.L,SSE plc,LSE,UK,Utilities,94
-AV.L,Aviva plc,LSE,UK,Financials,95
-PRU.L,Prudential plc,LSE,UK,Financials,96
-HLMA.L,Halma plc,LSE,UK,Industrials,97
-SGE.L,Sage Group plc,LSE,UK,Technology,98
-EXPN.L,Experian plc,LSE,UK,Industrials,99
-RKT.L,Reckitt Benckiser Group plc,LSE,UK,Consumer Staples,100
-BTC-USD,Bitcoin,Crypto,Crypto,Crypto,101
-ETH-USD,Ethereum,Crypto,Crypto,Crypto,102
-SOL-USD,Solana,Crypto,Crypto,Crypto,103
-SPCX,Space Exploration Technologies (SpaceX),Private/Alternative,USA,Space / Aerospace / Growth,104
-PLTR,Palantir Technologies Inc.,NYSE,USA,Technology / Data Analytics,105
+ticker,name,exchange,country,sector,market_cap_rank,universe_group,market_cap,average_daily_volume_3m,source,source_as_of
+NVDA,NVIDIA Corporation,NasdaqGS,USA,Technology,1,US,5103122644992,162813875,Yahoo Finance Equity Screener,2026-06-21
+GOOGL,Alphabet Inc Class A,NasdaqGS,USA,Communication Services,2,US,4490912595968,29821472,Yahoo Finance Equity Screener,2026-06-21
+GOOG,Alphabet Inc Class C,NasdaqGS,USA,Communication Services,3,US,4483957391360,20614993,Yahoo Finance Equity Screener,2026-06-21
+AAPL,Apple Inc.,NasdaqGS,USA,Technology,4,US,4376979046400,47300354,Yahoo Finance Equity Screener,2026-06-21
+MSFT,Microsoft Corporation,NasdaqGS,USA,Technology,5,US,2818348154880,35850962,Yahoo Finance Equity Screener,2026-06-21
+AMZN,"Amazon.com, Inc.",NasdaqGS,USA,Consumer Cyclical,6,US,2628929978368,44954648,Yahoo Finance Equity Screener,2026-06-21
+SPCX,Space Exploration Technologies (SpaceX),NasdaqGS,USA,Industrials,7,US,2437224595456,288941860,Yahoo Finance Equity Screener,2026-06-21
+TSM,Taiwan Semiconductor Manufacturing Company Limited,NYSE,USA,Technology,8,US,2396773416960,13555148,Yahoo Finance Equity Screener,2026-06-21
+AVGO,Broadcom Inc.,NasdaqGS,USA,Technology,9,US,1957030658048,25691456,Yahoo Finance Equity Screener,2026-06-21
+TSLA,"Tesla, Inc.",NasdaqGS,USA,Consumer Cyclical,10,US,1504129843200,58082137,Yahoo Finance Equity Screener,2026-06-21
+META,"Meta Platforms, Inc.",NasdaqGS,USA,Communication Services,11,US,1465228591104,17483667,Yahoo Finance Equity Screener,2026-06-21
+MU,"Micron Technology, Inc.",NasdaqGS,USA,Technology,12,US,1278839095296,50692645,Yahoo Finance Equity Screener,2026-06-21
+BRK-B,Berkshire Hathaway Inc.,NYSE,USA,Financial Services,13,US,1055693602816,4966335,Yahoo Finance Equity Screener,2026-06-21
+LLY,Eli Lilly and Company,NYSE,USA,Healthcare,14,US,979640254464,3176633,Yahoo Finance Equity Screener,2026-06-21
+WMT,Walmart Inc.,NasdaqGS,USA,Consumer Defensive,15,US,932527669248,20324183,Yahoo Finance Equity Screener,2026-06-21
+AMD,"Advanced Micro Devices, Inc.",NasdaqGS,USA,Technology,16,US,876235849728,37960051,Yahoo Finance Equity Screener,2026-06-21
+JPM,JPMorgan Chase & Co.,NYSE,USA,Financial Services,17,US,871430684672,9008248,Yahoo Finance Equity Screener,2026-06-21
+ASML,ASML Holding N.V.,NasdaqGS,USA,Technology,18,US,743732805632,1855475,Yahoo Finance Equity Screener,2026-06-21
+INTC,Intel Corporation,NasdaqGS,USA,Technology,19,US,673433780224,132945327,Yahoo Finance Equity Screener,2026-06-21
+V,Visa Inc.,NYSE,USA,Financial Services,20,US,622326579200,7498995,Yahoo Finance Equity Screener,2026-06-21
+XOM,Exxon Mobil Corporation,NYSE,USA,Energy,21,US,571215183872,19527538,Yahoo Finance Equity Screener,2026-06-21
+JNJ,Johnson & Johnson,NYSE,USA,Healthcare,22,US,549784256512,7767832,Yahoo Finance Equity Screener,2026-06-21
+ORCL,Oracle Corporation,NYSE,USA,Technology,23,US,530026528768,26464450,Yahoo Finance Equity Screener,2026-06-21
+AMAT,"Applied Materials, Inc.",NasdaqGS,USA,Technology,24,US,489960275968,7537466,Yahoo Finance Equity Screener,2026-06-21
+LRCX,Lam Research Corporation,NasdaqGS,USA,Technology,25,US,486522159104,9926993,Yahoo Finance Equity Screener,2026-06-21
+CSCO,"Cisco Systems, Inc.",NasdaqGS,USA,Technology,26,US,471159111680,23434951,Yahoo Finance Equity Screener,2026-06-21
+ARM,Arm Holdings plc,NasdaqGS,USA,Technology,27,US,469377908736,11606303,Yahoo Finance Equity Screener,2026-06-21
+CAT,Caterpillar Inc.,NYSE,USA,Industrials,28,US,454060769280,2581106,Yahoo Finance Equity Screener,2026-06-21
+MA,Mastercard Incorporated,NYSE,USA,Financial Services,29,US,432770547712,3640501,Yahoo Finance Equity Screener,2026-06-21
+COST,Costco Wholesale Corporation,NasdaqGS,USA,Consumer Defensive,30,US,421947932672,2050075,Yahoo Finance Equity Screener,2026-06-21
+BAC,Bank of America Corporation,NYSE,USA,Financial Services,31,US,398828404736,36277153,Yahoo Finance Equity Screener,2026-06-21
+ABBV,AbbVie Inc.,NYSE,USA,Healthcare,32,US,382492999680,6115579,Yahoo Finance Equity Screener,2026-06-21
+GE,GE Aerospace,NYSE,USA,Industrials,33,US,373672869888,5771056,Yahoo Finance Equity Screener,2026-06-21
+UNH,UnitedHealth Group Incorporated,NYSE,USA,Healthcare,34,US,364129550336,7842764,Yahoo Finance Equity Screener,2026-06-21
+MS,Morgan Stanley,NYSE,USA,Financial Services,35,US,352002670592,6013667,Yahoo Finance Equity Screener,2026-06-21
+PG,The Procter & Gamble Company,NYSE,USA,Consumer Defensive,36,US,350174740480,8732556,Yahoo Finance Equity Screener,2026-06-21
+CVX,Chevron Corporation,NYSE,USA,Energy,37,US,345801129984,10627975,Yahoo Finance Equity Screener,2026-06-21
+KO,The Coca-Cola Company,NYSE,USA,Consumer Defensive,38,US,341574090752,15566679,Yahoo Finance Equity Screener,2026-06-21
+KLAC,KLA Corporation,NasdaqGS,USA,Technology,39,US,339056787456,10629422,Yahoo Finance Equity Screener,2026-06-21
+HD,"The Home Depot, Inc.",NYSE,USA,Consumer Cyclical,40,US,333316161536,4666170,Yahoo Finance Equity Screener,2026-06-21
+NFLX,"Netflix, Inc.",NasdaqGS,USA,Communication Services,41,US,325831589888,39290182,Yahoo Finance Equity Screener,2026-06-21
+HSBC,HSBC Holdings plc,NYSE,USA,Financial Services,42,US,325713100800,1860941,Yahoo Finance Equity Screener,2026-06-21
+SNDK,Sandisk Corporation,NasdaqGS,USA,Technology,43,US,323539107840,14591703,Yahoo Finance Equity Screener,2026-06-21
+GS,"The Goldman Sachs Group, Inc.",NYSE,USA,Financial Services,44,US,323493363712,2119162,Yahoo Finance Equity Screener,2026-06-21
+PLTR,Palantir Technologies Inc.,NasdaqGS,USA,Technology,45,US,307982663680,44418417,Yahoo Finance Equity Screener,2026-06-21
+GEV,GE Vernova Inc.,NYSE,USA,Industrials,46,US,298206625792,2670361,Yahoo Finance Equity Screener,2026-06-21
+TXN,Texas Instruments Incorporated,NasdaqGS,USA,Technology,47,US,293832556544,7920770,Yahoo Finance Equity Screener,2026-06-21
+MRK,"Merck & Co., Inc.",NYSE,USA,Healthcare,48,US,281238929408,9962700,Yahoo Finance Equity Screener,2026-06-21
+NVS,Novartis AG,NYSE,USA,Healthcare,49,US,280642158592,1540824,Yahoo Finance Equity Screener,2026-06-21
+RY,Royal Bank of Canada,NYSE,USA,Financial Services,50,US,280100339712,1544603,Yahoo Finance Equity Screener,2026-06-21
+PM,Philip Morris International Inc.,NYSE,USA,Consumer Defensive,51,US,278046900224,4841670,Yahoo Finance Equity Screener,2026-06-21
+MRVL,"Marvell Technology, Inc.",NasdaqGS,USA,Technology,52,US,271929278464,40881875,Yahoo Finance Equity Screener,2026-06-21
+AZN,AstraZeneca PLC,NYSE,USA,Healthcare,53,US,271292317696,1974229,Yahoo Finance Equity Screener,2026-06-21
+DELL,Dell Technologies Inc.,NYSE,USA,Technology,54,US,264595308544,9014559,Yahoo Finance Equity Screener,2026-06-21
+WDC,Western Digital Corporation,NasdaqGS,USA,Technology,55,US,257212153856,7860895,Yahoo Finance Equity Screener,2026-06-21
+BABA,Alibaba Group Holding Limited,NYSE,USA,Consumer Cyclical,56,US,256947240960,11107829,Yahoo Finance Equity Screener,2026-06-21
+WFC,Wells Fargo & Company,NYSE,USA,Financial Services,57,US,251547566080,16593882,Yahoo Finance Equity Screener,2026-06-21
+RTX,RTX Corporation,NYSE,USA,Industrials,58,US,249944440832,5408196,Yahoo Finance Equity Screener,2026-06-21
+C,Citigroup Inc.,NYSE,USA,Financial Services,59,US,243999834112,12312479,Yahoo Finance Equity Screener,2026-06-21
+STX,Seagate Technology Holdings plc,NasdaqGS,USA,Technology,60,US,239976595456,4035404,Yahoo Finance Equity Screener,2026-06-21
+QCOM,QUALCOMM Incorporated,NasdaqGS,USA,Technology,61,US,238319943680,20726606,Yahoo Finance Equity Screener,2026-06-21
+MUFG,"Mitsubishi UFJ Financial Group, Inc.",NYSE,USA,Financial Services,62,US,237716471808,3209670,Yahoo Finance Equity Screener,2026-06-21
+LIN,Linde plc,NasdaqGS,USA,Basic Materials,63,US,236791185408,2251169,Yahoo Finance Equity Screener,2026-06-21
+PANW,"Palo Alto Networks, Inc.",NasdaqGS,USA,Technology,64,US,234540695552,8347640,Yahoo Finance Equity Screener,2026-06-21
+IBM,International Business Machines Corporation,NYSE,USA,Technology,65,US,234125443072,8118825,Yahoo Finance Equity Screener,2026-06-21
+AXP,American Express Company,NYSE,USA,Financial Services,66,US,230626344960,3124153,Yahoo Finance Equity Screener,2026-06-21
+BHP,BHP Group Limited,NYSE,USA,Basic Materials,67,US,223220137984,2755912,Yahoo Finance Equity Screener,2026-06-21
+SHEL,Shell plc,NYSE,USA,Energy,68,US,218461814784,7797899,Yahoo Finance Equity Screener,2026-06-21
+ANET,"Arista Networks, Inc.",NYSE,USA,Technology,69,US,213643264000,9242258,Yahoo Finance Equity Screener,2026-06-21
+ADI,"Analog Devices, Inc.",NasdaqGS,USA,Technology,70,US,211619823616,4113954,Yahoo Finance Equity Screener,2026-06-21
+TM,Toyota Motor Corporation,NYSE,USA,Consumer Cyclical,71,US,205963264000,455761,Yahoo Finance Equity Screener,2026-06-21
+APH,Amphenol Corporation,NYSE,USA,Technology,72,US,201709256704,9743041,Yahoo Finance Equity Screener,2026-06-21
+MCD,McDonald's Corporation,NYSE,USA,Consumer Cyclical,73,US,197954027520,3876387,Yahoo Finance Equity Screener,2026-06-21
+TD,The Toronto-Dominion Bank,NYSE,USA,Financial Services,74,US,197073158144,2366282,Yahoo Finance Equity Screener,2026-06-21
+TMUS,"T-Mobile US, Inc.",NasdaqGS,USA,Communication Services,75,US,196604116992,5688262,Yahoo Finance Equity Screener,2026-06-21
+PEP,"PepsiCo, Inc.",NasdaqGS,USA,Consumer Defensive,76,US,194132951040,7206390,Yahoo Finance Equity Screener,2026-06-21
+SAN,"Banco Santander, S.A.",NYSE,USA,Financial Services,77,US,193718108160,9082162,Yahoo Finance Equity Screener,2026-06-21
+NVO,Novo Nordisk A/S,NYSE,USA,Healthcare,78,US,191242321920,15419600,Yahoo Finance Equity Screener,2026-06-21
+VZ,Verizon Communications Inc.,NYSE,USA,Communication Services,79,US,189445095424,24419169,Yahoo Finance Equity Screener,2026-06-21
+SAP,SAP SE,NYSE,USA,Technology,80,US,182993879040,3451048,Yahoo Finance Equity Screener,2026-06-21
+AMGN,Amgen Inc.,NasdaqGS,USA,Healthcare,81,US,182205513728,2751216,Yahoo Finance Equity Screener,2026-06-21
+TJX,"The TJX Companies, Inc.",NYSE,USA,Consumer Cyclical,82,US,180961624064,5300029,Yahoo Finance Equity Screener,2026-06-21
+NEE,"NextEra Energy, Inc.",NYSE,USA,Utilities,83,US,180926267392,10583082,Yahoo Finance Equity Screener,2026-06-21
+DIS,The Walt Disney Company,NYSE,USA,Communication Services,84,US,180406173696,8991570,Yahoo Finance Equity Screener,2026-06-21
+TTE,TotalEnergies SE,NYSE,USA,Energy,85,US,178806784000,1699741,Yahoo Finance Equity Screener,2026-06-21
+BA,The Boeing Company,NYSE,USA,Industrials,86,US,175570698240,6634946,Yahoo Finance Equity Screener,2026-06-21
+CRWD,"CrowdStrike Holdings, Inc.",NasdaqGS,USA,Technology,87,US,174341259264,3458200,Yahoo Finance Equity Screener,2026-06-21
+TMO,Thermo Fisher Scientific Inc.,NYSE,USA,Healthcare,88,US,172659048448,2231409,Yahoo Finance Equity Screener,2026-06-21
+BLK,"BlackRock, Inc.",NYSE,USA,Financial Services,89,US,171005591552,689935,Yahoo Finance Equity Screener,2026-06-21
+GLW,Corning Incorporated,NYSE,USA,Technology,90,US,167755530240,13014145,Yahoo Finance Equity Screener,2026-06-21
+UBS,UBS Group AG,NYSE,USA,Financial Services,91,US,166512492544,2499069,Yahoo Finance Equity Screener,2026-06-21
+ETN,Eaton Corporation plc,NYSE,USA,Industrials,92,US,163773284352,2551162,Yahoo Finance Equity Screener,2026-06-21
+IBKR,"Interactive Brokers Group, Inc.",NasdaqGS,USA,Financial Services,93,US,162837331968,4972390,Yahoo Finance Equity Screener,2026-06-21
+RIO,Rio Tinto Group,NYSE,USA,Basic Materials,94,US,162755313664,2645387,Yahoo Finance Equity Screener,2026-06-21
+SCCO,Southern Copper Corporation,NYSE,USA,Basic Materials,95,US,160967000064,1450471,Yahoo Finance Equity Screener,2026-06-21
+SMFG,"Sumitomo Mitsui Financial Group, Inc.",NYSE,USA,Financial Services,96,US,160294633472,2137740,Yahoo Finance Equity Screener,2026-06-21
+SCHW,The Charles Schwab Corporation,NYSE,USA,Financial Services,97,US,159478726656,11328058,Yahoo Finance Equity Screener,2026-06-21
+DE,Deere & Company,NYSE,USA,Industrials,98,US,159158026240,1272172,Yahoo Finance Equity Screener,2026-06-21
+APP,AppLovin Corporation,NasdaqGS,USA,Communication Services,99,US,157794156544,4794311,Yahoo Finance Equity Screener,2026-06-21
+BUD,Anheuser-Busch InBev SA/NV,NYSE,USA,Consumer Defensive,100,US,156169207808,1850579,Yahoo Finance Equity Screener,2026-06-21
+ABT,Abbott Laboratories,NYSE,USA,Healthcare,101,US,153993707520,12658185,Yahoo Finance Equity Screener,2026-06-21
+GILD,"Gilead Sciences, Inc.",NasdaqGS,USA,Healthcare,102,US,153656688640,6749953,Yahoo Finance Equity Screener,2026-06-21
+T,AT&T Inc.,NYSE,USA,Communication Services,103,US,152932941824,40989798,Yahoo Finance Equity Screener,2026-06-21
+UNP,Union Pacific Corporation,NYSE,USA,Industrials,104,US,152513052672,2947796,Yahoo Finance Equity Screener,2026-06-21
+BX,Blackstone Inc.,NYSE,USA,Financial Services,105,US,151303815168,5977683,Yahoo Finance Equity Screener,2026-06-21
+WELL,Welltower Inc.,NYSE,USA,Real Estate,106,US,145877204992,3262241,Yahoo Finance Equity Screener,2026-06-21
+UBER,"Uber Technologies, Inc.",NYSE,USA,Technology,107,US,145830313984,17511408,Yahoo Finance Equity Screener,2026-06-21
+HON,Honeywell International Inc.,NasdaqGS,USA,Industrials,108,US,145112891392,4331177,Yahoo Finance Equity Screener,2026-06-21
+ISRG,"Intuitive Surgical, Inc.",NasdaqGS,USA,Healthcare,109,US,144066363392,2259527,Yahoo Finance Equity Screener,2026-06-21
+PFE,Pfizer Inc.,NYSE,USA,Healthcare,110,US,143682977792,36630208,Yahoo Finance Equity Screener,2026-06-21
+SHOP,Shopify Inc.,NasdaqGS,USA,Technology,111,US,141249708032,10092333,Yahoo Finance Equity Screener,2026-06-21
+BBVA,"Banco Bilbao Vizcaya Argentaria, S.A.",NYSE,USA,Financial Services,112,US,135874568192,1809895,Yahoo Finance Equity Screener,2026-06-21
+BKNG,Booking Holdings Inc.,NasdaqGS,USA,Consumer Cyclical,113,US,133108621312,7705883,Yahoo Finance Equity Screener,2026-06-21
+PLD,"Prologis, Inc.",NYSE,USA,Real Estate,114,US,131692150784,3573232,Yahoo Finance Equity Screener,2026-06-21
+COP,ConocoPhillips,NYSE,USA,Energy,115,US,131258990592,8311985,Yahoo Finance Equity Screener,2026-06-21
+HDB,HDFC Bank Limited,NYSE,USA,Financial Services,116,US,128647200768,9629648,Yahoo Finance Equity Screener,2026-06-21
+VRT,Vertiv Holdings Co,NYSE,USA,Industrials,117,US,127927427072,5837075,Yahoo Finance Equity Screener,2026-06-21
+BTI,British American Tobacco p.l.c.,NYSE,USA,Consumer Defensive,118,US,127261483008,4094875,Yahoo Finance Equity Screener,2026-06-21
+UL,Unilever PLC,NYSE,USA,Consumer Defensive,119,US,126461673472,4627990,Yahoo Finance Equity Screener,2026-06-21
+MFG,"Mizuho Financial Group, Inc.",NYSE,USA,Financial Services,120,US,125476593664,4147625,Yahoo Finance Equity Screener,2026-06-21
+CVS,CVS Health Corporation,NYSE,USA,Healthcare,121,US,125449175040,8200709,Yahoo Finance Equity Screener,2026-06-21
+CB,Chubb Limited,NYSE,USA,Financial Services,122,US,125433954304,1609014,Yahoo Finance Equity Screener,2026-06-21
+COF,Capital One Financial Corporation,NYSE,USA,Financial Services,123,US,125410664448,4692824,Yahoo Finance Equity Screener,2026-06-21
+DHR,Danaher Corporation,NYSE,USA,Healthcare,124,US,125395722240,4542658,Yahoo Finance Equity Screener,2026-06-21
+LOW,"Lowe's Companies, Inc.",NYSE,USA,Consumer Cyclical,125,US,124654198784,2847858,Yahoo Finance Equity Screener,2026-06-21
+CRM,"Salesforce, Inc.",NYSE,USA,Technology,126,US,124307816448,14870562,Yahoo Finance Equity Screener,2026-06-21
+SPGI,S&P Global Inc.,NYSE,USA,Financial Services,127,US,121632325632,1979524,Yahoo Finance Equity Screener,2026-06-21
+PH,Parker-Hannifin Corporation,NYSE,USA,Industrials,128,US,120194375680,762117,Yahoo Finance Equity Screener,2026-06-21
+SONY,Sony Group Corporation,NYSE,USA,Technology,129,US,119740989440,6268625,Yahoo Finance Equity Screener,2026-06-21
+BMO,Bank of Montreal,NYSE,USA,Financial Services,130,US,119645175808,813243,Yahoo Finance Equity Screener,2026-06-21
+PGR,The Progressive Corporation,NYSE,USA,Financial Services,131,US,119275315200,2964869,Yahoo Finance Equity Screener,2026-06-21
+ENB,Enbridge Inc.,NYSE,USA,Energy,132,US,119120633856,4534983,Yahoo Finance Equity Screener,2026-06-21
+SYK,Stryker Corporation,NYSE,USA,Healthcare,133,US,117998436352,2500190,Yahoo Finance Equity Screener,2026-06-21
+LMT,Lockheed Martin Corporation,NYSE,USA,Industrials,134,US,117806481408,1358396,Yahoo Finance Equity Screener,2026-06-21
+MO,"Altria Group, Inc.",NYSE,USA,Consumer Defensive,135,US,115422887936,8915264,Yahoo Finance Equity Screener,2026-06-21
+SBUX,Starbucks Corporation,NasdaqGS,USA,Consumer Cyclical,136,US,114710806528,7635450,Yahoo Finance Equity Screener,2026-06-21
+VRTX,Vertex Pharmaceuticals Incorporated,NasdaqGS,USA,Healthcare,137,US,114626142208,1267943,Yahoo Finance Equity Screener,2026-06-21
+PDD,PDD Holdings Inc.,NasdaqGS,USA,Consumer Cyclical,138,US,113245421568,8957504,Yahoo Finance Equity Screener,2026-06-21
+HWM,Howmet Aerospace Inc.,NYSE,USA,Industrials,139,US,111093850112,2382724,Yahoo Finance Equity Screener,2026-06-21
+NEM,Newmont Corporation,NYSE,USA,Basic Materials,140,US,110801305600,8452396,Yahoo Finance Equity Screener,2026-06-21
+BMY,Bristol-Myers Squibb Company,NYSE,USA,Healthcare,141,US,110271848448,10923488,Yahoo Finance Equity Screener,2026-06-21
+PBR,Petróleo Brasileiro S.A. - Petrobras,NYSE,USA,Energy,142,US,107943133184,22120756,Yahoo Finance Equity Screener,2026-06-21
+EQIX,"Equinix, Inc.",NasdaqGS,USA,Real Estate,143,US,107716411392,545687,Yahoo Finance Equity Screener,2026-06-21
+TT,Trane Technologies plc,NYSE,USA,Industrials,144,US,106858217472,1341946,Yahoo Finance Equity Screener,2026-06-21
+CDNS,"Cadence Design Systems, Inc.",NasdaqGS,USA,Technology,145,US,106848362496,2468809,Yahoo Finance Equity Screener,2026-06-21
+BNS,The Bank of Nova Scotia,NYSE,USA,Financial Services,146,US,106705395712,2565232,Yahoo Finance Equity Screener,2026-06-21
+FTNT,"Fortinet, Inc.",NasdaqGS,USA,Technology,147,US,106036199424,6398746,Yahoo Finance Equity Screener,2026-06-21
+PWR,"Quanta Services, Inc.",NYSE,USA,Industrials,148,US,105379733504,1145685,Yahoo Finance Equity Screener,2026-06-21
+SO,The Southern Company,NYSE,USA,Utilities,149,US,104940453888,5503601,Yahoo Finance Equity Screener,2026-06-21
+MAR,"Marriott International, Inc.",NasdaqGS,USA,Consumer Cyclical,150,US,104473436160,1463601,Yahoo Finance Equity Screener,2026-06-21
+PBR-A,Petróleo Brasileiro S.A. - Petrobras,NYSE,USA,Energy,151,US,102629244928,10552722,Yahoo Finance Equity Screener,2026-06-21
+CM,Canadian Imperial Bank of Commerce,NYSE,USA,Financial Services,152,US,101950709760,1410593,Yahoo Finance Equity Screener,2026-06-21
+MDT,Medtronic plc,NYSE,USA,Healthcare,153,US,101558779904,10140617,Yahoo Finance Equity Screener,2026-06-21
+GSK,GSK plc,NYSE,USA,Healthcare,154,US,101535760384,4050477,Yahoo Finance Equity Screener,2026-06-21
+SNY,Sanofi,NasdaqGS,USA,Healthcare,155,US,101447933952,2738572,Yahoo Finance Equity Screener,2026-06-21
+BP,BP p.l.c.,NYSE,USA,Energy,156,US,100684980224,11703150,Yahoo Finance Equity Screener,2026-06-21
+IBN,ICICI Bank Limited,NYSE,USA,Financial Services,157,US,100194574336,7141145,Yahoo Finance Equity Screener,2026-06-21
+BN,Brookfield Corporation,NYSE,USA,Financial Services,158,US,99260989440,5271546,Yahoo Finance Equity Screener,2026-06-21
+CMI,Cummins Inc.,NYSE,USA,Industrials,159,US,98918842368,925698,Yahoo Finance Equity Screener,2026-06-21
+FCX,Freeport-McMoRan Inc.,NYSE,USA,Basic Materials,160,US,98731606016,15009761,Yahoo Finance Equity Screener,2026-06-21
+BNY,The Bank of New York Mellon Cor,NYSE,USA,Financial Services,161,US,98584633344,3712567,Yahoo Finance Equity Screener,2026-06-21
+NOW,"ServiceNow, Inc.",NYSE,USA,Technology,162,US,98015518720,28383420,Yahoo Finance Equity Screener,2026-06-21
+CEG,Constellation Energy Corporation,NasdaqGS,USA,Utilities,163,US,97867374592,3502412,Yahoo Finance Equity Screener,2026-06-21
+HOOD,"Robinhood Markets, Inc.",NasdaqGS,USA,Financial Services,164,US,97389625344,31177762,Yahoo Finance Equity Screener,2026-06-21
+DUK,Duke Energy Corporation,NYSE,USA,Utilities,165,US,96560791552,3380329,Yahoo Finance Equity Screener,2026-06-21
+SPOT,Spotify Technology S.A.,NYSE,USA,Communication Services,166,US,96246636544,2107837,Yahoo Finance Equity Screener,2026-06-21
+GD,General Dynamics Corporation,NYSE,USA,Industrials,167,US,94653267968,1357596,Yahoo Finance Equity Screener,2026-06-21
+BE,Bloom Energy Corporation,NYSE,USA,Industrials,168,US,93556432896,10602295,Yahoo Finance Equity Screener,2026-06-21
+PNC,"The PNC Financial Services Group, Inc.",NYSE,USA,Financial Services,169,US,93179060224,2078650,Yahoo Finance Equity Screener,2026-06-21
+USB,U.S. Bancorp,NYSE,USA,Financial Services,170,US,90566516736,9198185,Yahoo Finance Equity Screener,2026-06-21
+KKR,KKR & Co. Inc.,NYSE,USA,Financial Services,171,US,90456154112,4982116,Yahoo Finance Equity Screener,2026-06-21
+ING,ING Groep N.V.,NYSE,USA,Financial Services,172,US,89931988992,3188233,Yahoo Finance Equity Screener,2026-06-21
+WMB,"The Williams Companies, Inc.",NYSE,USA,Energy,173,US,89425633280,6334400,Yahoo Finance Equity Screener,2026-06-21
+MNST,Monster Beverage Corporation,NasdaqGS,USA,Consumer Defensive,174,US,89331261440,5280866,Yahoo Finance Equity Screener,2026-06-21
+UPS,"United Parcel Service, Inc.",NYSE,USA,Industrials,175,US,89131655168,5723337,Yahoo Finance Equity Screener,2026-06-21
+CME,CME Group Inc.,NasdaqGS,USA,Financial Services,176,US,89022701568,2878116,Yahoo Finance Equity Screener,2026-06-21
+ASX,"ASE Technology Holding Co., Ltd.",NYSE,USA,Technology,177,US,88986443776,8932758,Yahoo Finance Equity Screener,2026-06-21
+BCS,Barclays PLC,NYSE,USA,Financial Services,178,US,88844943360,6516348,Yahoo Finance Equity Screener,2026-06-21
+JCI,Johnson Controls International plc,NYSE,USA,Industrials,179,US,88356945920,3579369,Yahoo Finance Equity Screener,2026-06-21
+MCK,McKesson Corporation,NYSE,USA,Healthcare,180,US,87882063872,1041867,Yahoo Finance Equity Screener,2026-06-21
+ADP,"Automatic Data Processing, Inc.",NasdaqGS,USA,Technology,181,US,87305961472,2951664,Yahoo Finance Equity Screener,2026-06-21
+SNPS,"Synopsys, Inc.",NasdaqGS,USA,Technology,182,US,87220748288,1850817,Yahoo Finance Equity Screener,2026-06-21
+WM,"Waste Management, Inc.",NYSE,USA,Industrials,183,US,86178160640,2094525,Yahoo Finance Equity Screener,2026-06-21
+ITUB,Itaú Unibanco Holding S.A.,NYSE,USA,Financial Services,184,US,85860384768,23211980,Yahoo Finance Equity Screener,2026-06-21
+CNQ,Canadian Natural Resources Limited,NYSE,USA,Energy,185,US,85618393088,10089300,Yahoo Finance Equity Screener,2026-06-21
+CSX,CSX Corporation,NasdaqGS,USA,Industrials,186,US,84786880512,12742237,Yahoo Finance Equity Screener,2026-06-21
+ABNB,"Airbnb, Inc.",NasdaqGS,USA,Consumer Cyclical,187,US,84521033728,3705125,Yahoo Finance Equity Screener,2026-06-21
+EMR,Emerson Electric Co.,NYSE,USA,Industrials,188,US,84384661504,2914785,Yahoo Finance Equity Screener,2026-06-21
+ELV,"Elevance Health, Inc.",NYSE,USA,Healthcare,189,US,84367589376,1709243,Yahoo Finance Equity Screener,2026-06-21
+RCL,Royal Caribbean Cruises Ltd.,NYSE,USA,Consumer Cyclical,190,US,83813613568,2718682,Yahoo Finance Equity Screener,2026-06-21
+MMM,3M Company,NYSE,USA,Industrials,191,US,83763707904,3787577,Yahoo Finance Equity Screener,2026-06-21
+AEM,Agnico Eagle Mines Limited,NYSE,USA,Basic Materials,192,US,83336036352,2534974,Yahoo Finance Equity Screener,2026-06-21
+HCA,"HCA Healthcare, Inc.",NYSE,USA,Healthcare,193,US,83227639808,1384883,Yahoo Finance Equity Screener,2026-06-21
+MELI,"MercadoLibre, Inc.",NasdaqGS,USA,Consumer Cyclical,194,US,82897502208,542329,Yahoo Finance Equity Screener,2026-06-21
+AMT,American Tower Corporation,NYSE,USA,Real Estate,195,US,82020474880,3130290,Yahoo Finance Equity Screener,2026-06-21
+EQNR,Equinor ASA,NYSE,USA,Energy,196,US,80627277824,5513869,Yahoo Finance Equity Screener,2026-06-21
+LYG,Lloyds Banking Group plc,NYSE,USA,Financial Services,197,US,80622911488,23039206,Yahoo Finance Equity Screener,2026-06-21
+SNOW,Snowflake Inc.,NYSE,USA,Technology,198,US,80511713280,8586011,Yahoo Finance Equity Screener,2026-06-21
+SPG,"Simon Property Group, Inc.",NYSE,USA,Real Estate,199,US,80301096960,1674762,Yahoo Finance Equity Screener,2026-06-21
+CMCSA,Comcast Corporation,NasdaqGS,USA,Communication Services,200,US,80125091840,30768401,Yahoo Finance Equity Screener,2026-06-21
+NET,"Cloudflare, Inc.",NYSE,USA,Technology,201,US,79527755776,4440090,Yahoo Finance Equity Screener,2026-06-21
+AMX,"América Móvil, S.A.B. de C.V.",NYSE,USA,Communication Services,202,US,79467642880,1470350,Yahoo Finance Equity Screener,2026-06-21
+HLT,Hilton Worldwide Holdings Inc.,NYSE,USA,Consumer Cyclical,203,US,79412854784,1596003,Yahoo Finance Equity Screener,2026-06-21
+DDOG,"Datadog, Inc.",NasdaqGS,USA,Technology,204,US,79379120128,5790769,Yahoo Finance Equity Screener,2026-06-21
+APO,"Apollo Global Management, Inc.",NYSE,USA,Financial Services,205,US,79271157760,3961612,Yahoo Finance Equity Screener,2026-06-21
+EPD,Enterprise Products Partners L.P.,NYSE,USA,Energy,206,US,79184764928,4249554,Yahoo Finance Equity Screener,2026-06-21
+SHW,The Sherwin-Williams Company,NYSE,USA,Basic Materials,207,US,79118237696,2024095,Yahoo Finance Equity Screener,2026-06-21
+NXPI,NXP Semiconductors N.V.,NasdaqGS,USA,Technology,208,US,79091613696,3761277,Yahoo Finance Equity Screener,2026-06-21
+NGG,National Grid plc,NYSE,USA,Utilities,209,US,79054094336,1255333,Yahoo Finance Equity Screener,2026-06-21
+MCO,Moody's Corporation,NYSE,USA,Financial Services,210,US,78721433600,1049311,Yahoo Finance Equity Screener,2026-06-21
+ACN,Accenture plc,NYSE,USA,Technology,211,US,78316347392,5950766,Yahoo Finance Equity Screener,2026-06-21
+MRSH,"Marsh & McLennan Companies, Inc.",NYSE,USA,Financial Services,212,US,78248247296,2915161,Yahoo Finance Equity Screener,2026-06-21
+FDX,FedEx Corporation,NYSE,USA,Industrials,213,US,77833527296,2012019,Yahoo Finance Equity Screener,2026-06-21
+NTES,"NetEase, Inc.",NasdaqGS,USA,Communication Services,214,US,77738008576,891240,Yahoo Finance Equity Screener,2026-06-21
+ADBE,Adobe Inc.,NasdaqGS,USA,Technology,215,US,77576101888,5976254,Yahoo Finance Equity Screener,2026-06-21
+MDLZ,"Mondelez International, Inc.",NasdaqGS,USA,Consumer Defensive,216,US,77173022720,8359274,Yahoo Finance Equity Screener,2026-06-21
+MPWR,"Monolithic Power Systems, Inc.",NasdaqGS,USA,Technology,217,US,76824576000,684158,Yahoo Finance Equity Screener,2026-06-21
+CP,Canadian Pacific Kansas City Limited,NYSE,USA,Industrials,218,US,76371959808,2914232,Yahoo Finance Equity Screener,2026-06-21
+COHR,Coherent Corp.,NYSE,USA,Technology,219,US,76215214080,6240753,Yahoo Finance Equity Screener,2026-06-21
+ITW,Illinois Tool Works Inc.,NYSE,USA,Industrials,220,US,75978694656,1351461,Yahoo Finance Equity Screener,2026-06-21
+BAM,Brookfield Asset Management Ltd.,NYSE,USA,Financial Services,221,US,75751546880,3369227,Yahoo Finance Equity Screener,2026-06-21
+ECL,Ecolab Inc.,NYSE,USA,Basic Materials,222,US,75740463104,1644470,Yahoo Finance Equity Screener,2026-06-21
+ICE,"Intercontinental Exchange, Inc.",NYSE,USA,Financial Services,223,US,75710816256,3707033,Yahoo Finance Equity Screener,2026-06-21
+DASH,"DoorDash, Inc.",NasdaqGS,USA,Consumer Cyclical,224,US,75579768832,4716454,Yahoo Finance Equity Screener,2026-06-21
+NOK,Nokia Oyj,NYSE,USA,Technology,225,US,75308384256,108450183,Yahoo Finance Equity Screener,2026-06-21
+ROST,"Ross Stores, Inc.",NasdaqGS,USA,Consumer Cyclical,226,US,74677837824,2805148,Yahoo Finance Equity Screener,2026-06-21
+CRH,CRH plc,NYSE,USA,Basic Materials,227,US,74330587136,4892964,Yahoo Finance Equity Screener,2026-06-21
+TDG,TransDigm Group Incorporated,NYSE,USA,Industrials,228,US,74297139200,399406,Yahoo Finance Equity Screener,2026-06-21
+NOC,Northrop Grumman Corporation,NYSE,USA,Industrials,229,US,74070458368,871954,Yahoo Finance Equity Screener,2026-06-21
+CI,The Cigna Group,NYSE,USA,Healthcare,230,US,73875963904,1590450,Yahoo Finance Equity Screener,2026-06-21
+INTU,Intuit Inc.,NasdaqGS,USA,Technology,231,US,73034375168,4553287,Yahoo Finance Equity Screener,2026-06-21
+CVNA,Carvana Co.,NYSE,USA,Consumer Cyclical,232,US,73005383680,12387169,Yahoo Finance Equity Screener,2026-06-21
+NBIS,Nebius Group N.V.,NasdaqGS,USA,Communication Services,233,US,72790073344,17333948,Yahoo Finance Equity Screener,2026-06-21
+ORLY,"O'Reilly Automotive, Inc.",NasdaqGS,USA,Consumer Cyclical,234,US,71965614080,6159069,Yahoo Finance Equity Screener,2026-06-21
+SLB,SLB N.V.,NYSE,USA,Energy,235,US,71897325568,15006983,Yahoo Finance Equity Screener,2026-06-21
+E,Eni S.p.A.,NYSE,USA,Energy,236,US,71606730752,503861,Yahoo Finance Equity Screener,2026-06-21
+CL,Colgate-Palmolive Company,NYSE,USA,Consumer Defensive,237,US,71600939008,5572950,Yahoo Finance Equity Screener,2026-06-21
+GM,General Motors Company,NYSE,USA,Consumer Cyclical,238,US,71493033984,7442187,Yahoo Finance Equity Screener,2026-06-21
+ALAB,"Astera Labs, Inc.",NasdaqGS,USA,Technology,239,US,71489110016,5989785,Yahoo Finance Equity Screener,2026-06-21
+MPC,Marathon Petroleum Corporation,NYSE,USA,Energy,240,US,70914326528,2392980,Yahoo Finance Equity Screener,2026-06-21
+TRP,TC Energy Corporation,NYSE,USA,Energy,241,US,70527614976,2544532,Yahoo Finance Equity Screener,2026-06-21
+KMI,"Kinder Morgan, Inc.",NYSE,USA,Energy,242,US,70282248192,11478370,Yahoo Finance Equity Screener,2026-06-21
+VLO,Valero Energy Corporation,NYSE,USA,Energy,243,US,70165217280,3203354,Yahoo Finance Equity Screener,2026-06-21
+STM,STMicroelectronics N.V.,NYSE,USA,Technology,244,US,69672566784,12061567,Yahoo Finance Equity Screener,2026-06-21
+AEP,"American Electric Power Company, Inc.",NasdaqGS,USA,Utilities,245,US,69476769792,4019648,Yahoo Finance Equity Screener,2026-06-21
+EOG,"EOG Resources, Inc.",NYSE,USA,Energy,246,US,69231058944,3988730,Yahoo Finance Equity Screener,2026-06-21
+FIX,"Comfort Systems USA, Inc.",NYSE,USA,Industrials,247,US,69221294080,425153,Yahoo Finance Equity Screener,2026-06-21
+CNI,Canadian National Railway Company,NYSE,USA,Industrials,248,US,68806639616,1448970,Yahoo Finance Equity Screener,2026-06-21
+TER,"Teradyne, Inc.",NasdaqGS,USA,Technology,249,US,68552945664,3873469,Yahoo Finance Equity Screener,2026-06-21
+CTAS,Cintas Corporation,NasdaqGS,USA,Industrials,250,US,68363390976,2259232,Yahoo Finance Equity Screener,2026-06-21
+AON,Aon plc,NYSE,USA,Financial Services,251,US,67861934080,1435432,Yahoo Finance Equity Screener,2026-06-21
+B,Barrick Mining Corporation,NYSE,USA,Basic Materials,252,US,67752579072,12924183,Yahoo Finance Equity Screener,2026-06-21
+MFC,Manulife Financial Corporation,NYSE,USA,Financial Services,253,US,67643043840,2171562,Yahoo Finance Equity Screener,2026-06-21
+DB,Deutsche Bank Aktiengesellschaft,NYSE,USA,Financial Services,254,US,67477282816,3150253,Yahoo Finance Equity Screener,2026-06-21
+URI,"United Rentals, Inc.",NYSE,USA,Industrials,255,US,67458441216,545196,Yahoo Finance Equity Screener,2026-06-21
+NSC,Norfolk Southern Corporation,NYSE,USA,Industrials,256,US,67396165632,1253245,Yahoo Finance Equity Screener,2026-06-21
+BSX,Boston Scientific Corporation,NYSE,USA,Healthcare,257,US,67317026816,19723612,Yahoo Finance Equity Screener,2026-06-21
+DLR,"Digital Realty Trust, Inc.",NYSE,USA,Real Estate,258,US,67301076992,2156161,Yahoo Finance Equity Screener,2026-06-21
+RKLB,Rocket Lab Corporation,NasdaqGS,USA,Industrials,259,US,67005562880,27231929,Yahoo Finance Equity Screener,2026-06-21
+NKE,"NIKE, Inc.",NYSE,USA,Consumer Cyclical,260,US,66936094720,23372938,Yahoo Finance Equity Screener,2026-06-21
+NWG,NatWest Group plc,NYSE,USA,Financial Services,261,US,66739707904,4087411,Yahoo Finance Equity Screener,2026-06-21
+PSX,Phillips 66,NYSE,USA,Energy,262,US,66611343360,2730404,Yahoo Finance Equity Screener,2026-06-21
+LITE,Lumentum Holdings Inc.,NasdaqGS,USA,Technology,263,US,66130001920,6097490,Yahoo Finance Equity Screener,2026-06-21
+WBD,"Warner Bros. Discovery, Inc.",NasdaqGS,USA,Communication Services,264,US,65686986752,20965217,Yahoo Finance Equity Screener,2026-06-21
+VALE,Vale S.A.,NYSE,USA,Basic Materials,265,US,65649217536,24399358,Yahoo Finance Equity Screener,2026-06-21
+MSI,"Motorola Solutions, Inc.",NYSE,USA,Technology,266,US,65596477440,1091608,Yahoo Finance Equity Screener,2026-06-21
+TRV,"The Travelers Companies, Inc.",NYSE,USA,Financial Services,267,US,65454161920,1502154,Yahoo Finance Equity Screener,2026-06-21
+SU,Suncor Energy Inc.,NYSE,USA,Energy,268,US,65330634752,4342169,Yahoo Finance Equity Screener,2026-06-21
+ET,Energy Transfer LP,NYSE,USA,Energy,269,US,64521736192,14116277,Yahoo Finance Equity Screener,2026-06-21
+GWW,"W.W. Grainger, Inc.",NYSE,USA,Industrials,270,US,64465268736,266246,Yahoo Finance Equity Screener,2026-06-21
+CRWV,"CoreWeave, Inc.",NasdaqGS,USA,Technology,271,US,64350023680,30430322,Yahoo Finance Equity Screener,2026-06-21
+MDLN,Medline Inc.,NasdaqGS,USA,Healthcare,272,US,64036814848,9244125,Yahoo Finance Equity Screener,2026-06-21
+REGN,"Regeneron Pharmaceuticals, Inc.",NasdaqGS,USA,Healthcare,273,US,63945519104,929211,Yahoo Finance Equity Screener,2026-06-21
+RACE,Ferrari N.V.,NYSE,USA,Consumer Cyclical,274,US,63752998912,644664,Yahoo Finance Equity Screener,2026-06-21
+TEL,TE Connectivity plc,NYSE,USA,Technology,275,US,63528202240,2618074,Yahoo Finance Equity Screener,2026-06-21
+RSG,"Republic Services, Inc.",NYSE,USA,Industrials,276,US,63052681216,1760635,Yahoo Finance Equity Screener,2026-06-21
+HPE,Hewlett Packard Enterprise Company,NYSE,USA,Technology,277,US,62780489728,25369341,Yahoo Finance Equity Screener,2026-06-21
+PCAR,PACCAR Inc,NasdaqGS,USA,Industrials,278,US,62601748480,2905861,Yahoo Finance Equity Screener,2026-06-21
+APD,"Air Products and Chemicals, Inc.",NYSE,USA,Basic Materials,279,US,62397353984,1179019,Yahoo Finance Equity Screener,2026-06-21
+KEYS,"Keysight Technologies, Inc.",NYSE,USA,Technology,280,US,62149517312,1423667,Yahoo Finance Equity Screener,2026-06-21
+NU,Nu Holdings Ltd.,NYSE,USA,Financial Services,281,US,61792727040,53672229,Yahoo Finance Equity Screener,2026-06-21
+CIEN,Ciena Corporation,NYSE,USA,Technology,282,US,60615794688,2801366,Yahoo Finance Equity Screener,2026-06-21
+UMC,United Microelectronics Corporation,NYSE,USA,Technology,283,US,60423622656,14801941,Yahoo Finance Equity Screener,2026-06-21
+TFC,Truist Financial Corporation,NYSE,USA,Financial Services,284,US,60213350400,9134629,Yahoo Finance Equity Screener,2026-06-21
+D,"Dominion Energy, Inc.",NYSE,USA,Utilities,285,US,60167454720,6638150,Yahoo Finance Equity Screener,2026-06-21
+CARR,Carrier Global Corporation,NYSE,USA,Industrials,286,US,59643977728,6725117,Yahoo Finance Equity Screener,2026-06-21
+TGT,Target Corporation,NYSE,USA,Consumer Defensive,287,US,59380948992,5146766,Yahoo Finance Equity Screener,2026-06-21
+SRE,Sempra,NYSE,USA,Utilities,288,US,59284725760,3614929,Yahoo Finance Equity Screener,2026-06-21
+AFL,Aflac Incorporated,NYSE,USA,Financial Services,289,US,58772488192,2473487,Yahoo Finance Equity Screener,2026-06-21
+BKR,Baker Hughes Company,NasdaqGS,USA,Energy,290,US,57946730496,8173211,Yahoo Finance Equity Screener,2026-06-21
+MPLX,MPLX LP,NYSE,USA,Energy,291,US,57677463552,2037212,Yahoo Finance Equity Screener,2026-06-21
+ALL,The Allstate Corporation,NYSE,USA,Financial Services,292,US,56933785600,1553119,Yahoo Finance Equity Screener,2026-06-21
+O,Realty Income Corporation,NYSE,USA,Real Estate,293,US,56173350912,5848229,Yahoo Finance Equity Screener,2026-06-21
+F,Ford Motor Company,NYSE,USA,Consumer Cyclical,294,US,56024780800,56658206,Yahoo Finance Equity Screener,2026-06-21
+IMO,Imperial Oil Limited,NYSE American,USA,Energy,295,US,55964135424,626862,Yahoo Finance Equity Screener,2026-06-21
+SE,Sea Limited,NYSE,USA,Consumer Cyclical,296,US,55907590144,4016838,Yahoo Finance Equity Screener,2026-06-21
+PSA,Public Storage,NYSE,USA,Real Estate,297,US,55855394816,996732,Yahoo Finance Equity Screener,2026-06-21
+WPM,Wheaton Precious Metals Corp.,NYSE,USA,Basic Materials,298,US,55662112768,2224345,Yahoo Finance Equity Screener,2026-06-21
+NUE,Nucor Corporation,NYSE,USA,Basic Materials,299,US,55530074112,1559879,Yahoo Finance Equity Screener,2026-06-21
+TRGP,Targa Resources Corp.,NYSE,USA,Energy,300,US,55502618624,1250156,Yahoo Finance Equity Screener,2026-06-21
+DAL,"Delta Air Lines, Inc.",NYSE,USA,Industrials,301,US,55305785344,9337145,Yahoo Finance Equity Screener,2026-06-21
+VST,Vistra Corp.,NYSE,USA,Utilities,302,US,55213629440,4662517,Yahoo Finance Equity Screener,2026-06-21
+MET,"MetLife, Inc.",NYSE,USA,Financial Services,303,US,55065321472,3530891,Yahoo Finance Equity Screener,2026-06-21
+AJG,Arthur J. Gallagher & Co.,NYSE,USA,Financial Services,304,US,55001001984,1871559,Yahoo Finance Equity Screener,2026-06-21
+LHX,"L3Harris Technologies, Inc.",NYSE,USA,Industrials,305,US,54923476992,1327325,Yahoo Finance Equity Screener,2026-06-21
+ARGX,argenx SE,NasdaqGS,USA,Healthcare,306,US,54853083136,326804,Yahoo Finance Equity Screener,2026-06-21
+RELX,RELX PLC,NYSE,USA,Industrials,307,US,54759043072,2755406,Yahoo Finance Equity Screener,2026-06-21
+AME,"AMETEK, Inc.",NYSE,USA,Industrials,308,US,54417379328,1214366,Yahoo Finance Equity Screener,2026-06-21
+MCHP,Microchip Technology Incorporated,NasdaqGS,USA,Technology,309,US,54083248128,10714545,Yahoo Finance Equity Screener,2026-06-21
+FLEX,Flex Ltd.,NasdaqGS,USA,Technology,310,US,54081044480,6384193,Yahoo Finance Equity Screener,2026-06-21
+OKE,"ONEOK, Inc.",NYSE,USA,Energy,311,US,53571690496,4246156,Yahoo Finance Equity Screener,2026-06-21
+COR,"Cencora, Inc.",NYSE,USA,Healthcare,312,US,52887527424,1756533,Yahoo Finance Equity Screener,2026-06-21
+ROK,"Rockwell Automation, Inc.",NYSE,USA,Industrials,313,US,52720488448,739537,Yahoo Finance Equity Screener,2026-06-21
+FAST,Fastenal Company,NasdaqGS,USA,Industrials,314,US,52683329536,6952467,Yahoo Finance Equity Screener,2026-06-21
+CTVA,"Corteva, Inc.",NYSE,USA,Basic Materials,315,US,52562558976,3883619,Yahoo Finance Equity Screener,2026-06-21
+CAH,"Cardinal Health, Inc.",NYSE,USA,Healthcare,316,US,51939831808,2119767,Yahoo Finance Equity Screener,2026-06-21
+FANG,"Diamondback Energy, Inc.",NasdaqGS,USA,Energy,317,US,51620990976,2845020,Yahoo Finance Equity Screener,2026-06-21
+CBRS,Cerebras Systems Inc.,NasdaqGS,USA,Technology,318,US,51544748032,7999416,Yahoo Finance Equity Screener,2026-06-21
+OXY,Occidental Petroleum Corporation,NYSE,USA,Energy,319,US,51541970944,13670946,Yahoo Finance Equity Screener,2026-06-21
+ETR,Entergy Corporation,NYSE,USA,Utilities,320,US,50875809792,3600035,Yahoo Finance Equity Screener,2026-06-21
+CRDO,Credo Technology Group Holding Ltd,NasdaqGS,USA,Technology,321,US,50690285568,7722946,Yahoo Finance Equity Screener,2026-06-21
+EA,Electronic Arts Inc.,NasdaqGS,USA,Communication Services,322,US,50689413120,1912414,Yahoo Finance Equity Screener,2026-06-21
+EW,Edwards Lifesciences Corporation,NYSE,USA,Healthcare,323,US,50301886464,5101567,Yahoo Finance Equity Screener,2026-06-21
+AZO,"AutoZone, Inc.",NYSE,USA,Consumer Cyclical,324,US,50028724224,282145,Yahoo Finance Equity Screener,2026-06-21
+FER,Ferrovial N.V.,NasdaqGS,USA,Industrials,325,US,49546727424,1487758,Yahoo Finance Equity Screener,2026-06-21
+TAK,Takeda Pharmaceutical Company Limited,NYSE,USA,Healthcare,326,US,49386872832,3071200,Yahoo Finance Equity Screener,2026-06-21
+DVN,Devon Energy Corporation,NYSE,USA,Energy,327,US,48581337088,14848522,Yahoo Finance Equity Screener,2026-06-21
+ABEV,Ambev S.A.,NYSE,USA,Consumer Defensive,328,US,48408973312,28166440,Yahoo Finance Equity Screener,2026-06-21
+XEL,Xcel Energy Inc.,NasdaqGS,USA,Utilities,329,US,48324710400,5354006,Yahoo Finance Equity Screener,2026-06-21
+EBAY,eBay Inc.,NasdaqGS,USA,Consumer Cyclical,330,US,48058560512,5470396,Yahoo Finance Equity Screener,2026-06-21
+MT,ArcelorMittal S.A.,NYSE,USA,Basic Materials,331,US,47972159488,1974009,Yahoo Finance Equity Screener,2026-06-21
+FITB,Fifth Third Bancorp,NYSE,USA,Financial Services,332,US,47798874112,7192180,Yahoo Finance Equity Screener,2026-06-21
+LNG,"Cheniere Energy, Inc.",NYSE,USA,Energy,333,US,47574560768,2605438,Yahoo Finance Equity Screener,2026-06-21
+ON,ON Semiconductor Corporation,NasdaqGS,USA,Technology,334,US,47286247424,11397811,Yahoo Finance Equity Screener,2026-06-21
+GFS,GLOBALFOUNDRIES Inc.,NasdaqGS,USA,Technology,335,US,47094996992,4682079,Yahoo Finance Equity Screener,2026-06-21
+HEI,HEICO Corporation,NYSE,USA,Industrials,336,US,47079145472,691753,Yahoo Finance Equity Screener,2026-06-21
+CVE,Cenovus Energy Inc.,NYSE,USA,Energy,337,US,46918844416,9563114,Yahoo Finance Equity Screener,2026-06-21
+EXC,Exelon Corporation,NasdaqGS,USA,Utilities,338,US,46873165824,8063638,Yahoo Finance Equity Screener,2026-06-21
+STT,State Street Corporation,NYSE,USA,Financial Services,339,US,46582661120,2110488,Yahoo Finance Equity Screener,2026-06-21
+NDAQ,"Nasdaq, Inc.",NasdaqGS,USA,Financial Services,340,US,46510075904,3322303,Yahoo Finance Equity Screener,2026-06-21
+WAB,Westinghouse Air Brake Technologies Corporation,NYSE,USA,Industrials,341,US,46462746624,970093,Yahoo Finance Equity Screener,2026-06-21
+CCJ,Cameco Corporation,NYSE,USA,Energy,342,US,46379909120,3152637,Yahoo Finance Equity Screener,2026-06-21
+FERG,Ferguson Enterprises Inc.,NYSE,USA,Industrials,343,US,46225080320,1414361,Yahoo Finance Equity Screener,2026-06-21
+ODFL,"Old Dominion Freight Line, Inc.",NasdaqGS,USA,Industrials,344,US,45969309696,2058801,Yahoo Finance Equity Screener,2026-06-21
+AU,AngloGold Ashanti plc,NYSE,USA,Basic Materials,345,US,45946064896,2699350,Yahoo Finance Equity Screener,2026-06-21
+GRMN,Garmin Ltd.,NYSE,USA,Technology,346,US,45166923776,780733,Yahoo Finance Equity Screener,2026-06-21
+DHI,"D.R. Horton, Inc.",NYSE,USA,Consumer Cyclical,347,US,44751699968,2493787,Yahoo Finance Equity Screener,2026-06-21
+DEO,Diageo plc,NYSE,USA,Consumer Defensive,348,US,44722151424,1460962,Yahoo Finance Equity Screener,2026-06-21
+XYZ,"Block, Inc.",NYSE,USA,Technology,349,US,44507635712,5749062,Yahoo Finance Equity Screener,2026-06-21
+TTWO,"Take-Two Interactive Software, Inc.",NasdaqGS,USA,Communication Services,350,US,44426317824,2165600,Yahoo Finance Equity Screener,2026-06-21
+IDXX,"IDEXX Laboratories, Inc.",NasdaqGS,USA,Healthcare,351,US,44339347456,592685,Yahoo Finance Equity Screener,2026-06-21
+IX,ORIX Corporation,NYSE,USA,Financial Services,352,US,44040130560,349616,Yahoo Finance Equity Screener,2026-06-21
+SLF,Sun Life Financial Inc.,NYSE,USA,Financial Services,353,US,43761967104,709262,Yahoo Finance Equity Screener,2026-06-21
+VIK,Viking Holdings Ltd,NYSE,USA,Consumer Cyclical,354,US,43353088000,3177919,Yahoo Finance Equity Screener,2026-06-21
+HUM,Humana Inc.,NYSE,USA,Healthcare,355,US,43300179968,1712820,Yahoo Finance Equity Screener,2026-06-21
+FMX,"Fomento Económico Mexicano, S.A.B. de C.V.",NYSE,USA,Consumer Defensive,356,US,43085987840,484045,Yahoo Finance Equity Screener,2026-06-21
+COIN,"Coinbase Global, Inc.",NasdaqGS,USA,Financial Services,357,US,43012603904,9871893,Yahoo Finance Equity Screener,2026-06-21
+CCEP,Coca-Cola Europacific Partners PLC,NasdaqGS,USA,Consumer Defensive,358,US,42918379520,1882614,Yahoo Finance Equity Screener,2026-06-21
+CLS,Celestica Inc.,NYSE,USA,Technology,359,US,42833227776,2237638,Yahoo Finance Equity Screener,2026-06-21
+INFY,Infosys Limited,NYSE,USA,Technology,360,US,42793754624,17266966,Yahoo Finance Equity Screener,2026-06-21
+CCL,Carnival Corporation Ltd.,NYSE,USA,Consumer Cyclical,361,US,42759258112,27847798,Yahoo Finance Equity Screener,2026-06-21
+ARES,Ares Management Corporation,NYSE,USA,Financial Services,362,US,42662363136,2966329,Yahoo Finance Equity Screener,2026-06-21
+FNV,Franco-Nevada Corporation,NYSE,USA,Basic Materials,363,US,42285502464,853638,Yahoo Finance Equity Screener,2026-06-21
+MSCI,MSCI Inc.,NYSE,USA,Financial Services,364,US,42268549120,593427,Yahoo Finance Equity Screener,2026-06-21
+AMP,"Ameriprise Financial, Inc.",NYSE,USA,Financial Services,365,US,42020593664,644574,Yahoo Finance Equity Screener,2026-06-21
+YUM,"Yum! Brands, Inc.",NYSE,USA,Consumer Cyclical,366,US,41891672064,1864532,Yahoo Finance Equity Screener,2026-06-21
+KDP,Keurig Dr Pepper Inc.,NasdaqGS,USA,Consumer Defensive,367,US,41850810368,11785269,Yahoo Finance Equity Screener,2026-06-21
+CMG,"Chipotle Mexican Grill, Inc.",NYSE,USA,Consumer Cyclical,368,US,41676029952,17509088,Yahoo Finance Equity Screener,2026-06-21
+ADSK,"Autodesk, Inc.",NasdaqGS,USA,Technology,369,US,40924172288,2359212,Yahoo Finance Equity Screener,2026-06-21
+RKT,"Rocket Companies, Inc.",NYSE,USA,Financial Services,370,US,40800378880,25551577,Yahoo Finance Equity Screener,2026-06-21
+MSTR,Strategy Inc,NasdaqGS,USA,Technology,371,US,39954190336,18542638,Yahoo Finance Equity Screener,2026-06-21
+LYV,"Live Nation Entertainment, Inc.",NYSE,USA,Communication Services,372,US,39849742336,2740519,Yahoo Finance Equity Screener,2026-06-21
+PEG,Public Service Enterprise Group Incorporated,NYSE,USA,Utilities,373,US,39810895872,2794898,Yahoo Finance Equity Screener,2026-06-21
+BDX,"Becton, Dickinson and Company",NYSE,USA,Healthcare,374,US,39672307712,2802070,Yahoo Finance Equity Screener,2026-06-21
+VTR,"Ventas, Inc.",NYSE,USA,Real Estate,375,US,39671447552,4163041,Yahoo Finance Equity Screener,2026-06-21
+HLN,Haleon plc,NYSE,USA,Healthcare,376,US,39553290240,8971653,Yahoo Finance Equity Screener,2026-06-21
+VMC,Vulcan Materials Company,NYSE,USA,Basic Materials,377,US,39294967808,1168298,Yahoo Finance Equity Screener,2026-06-21
+AIG,"American International Group, Inc.",NYSE,USA,Financial Services,378,US,39245860864,4080417,Yahoo Finance Equity Screener,2026-06-21
+JBS,JBS N.V.,NYSE,USA,Consumer Defensive,379,US,39238098944,6752756,Yahoo Finance Equity Screener,2026-06-21
+JBL,Jabil Inc.,NYSE,USA,Technology,380,US,39234318336,1201379,Yahoo Finance Equity Screener,2026-06-21
+ED,"Consolidated Edison, Inc.",NYSE,USA,Utilities,381,US,39196819456,2253940,Yahoo Finance Equity Screener,2026-06-21
+WCN,"Waste Connections, Inc.",NYSE,USA,Industrials,382,US,39120838656,1646480,Yahoo Finance Equity Screener,2026-06-21
+BSBR,Banco Santander (Brasil) S.A.,NYSE,USA,Financial Services,383,US,38935142400,1078367,Yahoo Finance Equity Screener,2026-06-21
+CBRE,"CBRE Group, Inc.",NYSE,USA,Real Estate,384,US,38520020992,2249243,Yahoo Finance Equity Screener,2026-06-21
+UAL,"United Airlines Holdings, Inc.",NasdaqGS,USA,Industrials,385,US,38403088384,6859174,Yahoo Finance Equity Screener,2026-06-21
+WDS,Woodside Energy Group Ltd,NYSE,USA,Energy,386,US,38117056512,1095151,Yahoo Finance Equity Screener,2026-06-21
+IRM,Iron Mountain Incorporated,NYSE,USA,Real Estate,387,US,38032580608,1487874,Yahoo Finance Equity Screener,2026-06-21
+BIDU,"Baidu, Inc.",NasdaqGS,USA,Communication Services,388,US,38026637312,2333670,Yahoo Finance Equity Screener,2026-06-21
+TKO,"TKO Group Holdings, Inc.",NYSE,USA,Communication Services,389,US,37992083456,1505353,Yahoo Finance Equity Screener,2026-06-21
+KB,KB Financial Group Inc.,NYSE,USA,Financial Services,390,US,37870010368,227745,Yahoo Finance Equity Screener,2026-06-21
+ERIC,Telefonaktiebolaget LM Ericsson (publ),NasdaqGS,USA,Technology,391,US,37761970176,10342180,Yahoo Finance Equity Screener,2026-06-21
+SYY,Sysco Corporation,NYSE,USA,Consumer Defensive,392,US,37632966656,4777870,Yahoo Finance Equity Screener,2026-06-21
+PYPL,"PayPal Holdings, Inc.",NasdaqGS,USA,Financial Services,393,US,37498302464,15262979,Yahoo Finance Equity Screener,2026-06-21
+EME,"EMCOR Group, Inc.",NYSE,USA,Industrials,394,US,37255503872,367600,Yahoo Finance Equity Screener,2026-06-21
+JD,"JD.com, Inc.",NasdaqGS,USA,Consumer Cyclical,395,US,37233283072,9714333,Yahoo Finance Equity Screener,2026-06-21
+ALNY,"Alnylam Pharmaceuticals, Inc.",NasdaqGS,USA,Healthcare,396,US,37128511488,1118532,Yahoo Finance Equity Screener,2026-06-21
+PRU,"Prudential Financial, Inc.",NYSE,USA,Financial Services,397,US,37000544256,2097727,Yahoo Finance Equity Screener,2026-06-21
+ESLT,Elbit Systems Ltd.,NasdaqGS,USA,Industrials,398,US,36917485568,122138,Yahoo Finance Equity Screener,2026-06-21
+RBLX,Roblox Corporation,NYSE,USA,Communication Services,399,US,36894384128,11351529,Yahoo Finance Equity Screener,2026-06-21
+TEVA,Teva Pharmaceutical Industries Limited,NYSE,USA,Healthcare,400,US,36656160768,6262083,Yahoo Finance Equity Screener,2026-06-21
+MLM,"Martin Marietta Materials, Inc.",NYSE,USA,Basic Materials,401,US,36575158272,507827,Yahoo Finance Equity Screener,2026-06-21
+WEC,"WEC Energy Group, Inc.",NYSE,USA,Utilities,402,US,36536647680,2016795,Yahoo Finance Equity Screener,2026-06-21
+PCG,PG&E Corporation,NYSE,USA,Utilities,403,US,36292661248,20555729,Yahoo Finance Equity Screener,2026-06-21
+ADM,Archer-Daniels-Midland Company,NYSE,USA,Consumer Defensive,404,US,36194934784,3717972,Yahoo Finance Equity Screener,2026-06-21
+STLD,"Steel Dynamics, Inc.",NasdaqGS,USA,Basic Materials,405,US,36040216576,1182530,Yahoo Finance Equity Screener,2026-06-21
+A,"Agilent Technologies, Inc.",NYSE,USA,Healthcare,406,US,35885801472,2228630,Yahoo Finance Equity Screener,2026-06-21
+CCI,Crown Castle Inc.,NYSE,USA,Real Estate,407,US,35810885632,3615556,Yahoo Finance Equity Screener,2026-06-21
+UI,Ubiquiti Inc.,NYSE,USA,Technology,408,US,35675348992,122909,Yahoo Finance Equity Screener,2026-06-21
+SUNB,"Sunbelt Rentals Holdings, Inc.",NYSE,USA,Industrials,409,US,35568578560,3374146,Yahoo Finance Equity Screener,2026-06-21
+BBD,Banco Bradesco S.A.,NYSE,USA,Financial Services,410,US,35517591552,31496206,Yahoo Finance Equity Screener,2026-06-21
+Q,"Qnity Electronics, Inc.",NYSE,USA,Technology,411,US,35374137344,1804291,Yahoo Finance Equity Screener,2026-06-21
+PAYX,"Paychex, Inc.",NasdaqGS,USA,Technology,412,US,35198496768,3512467,Yahoo Finance Equity Screener,2026-06-21
+HIG,"The Hartford Insurance Group, Inc.",NYSE,USA,Financial Services,413,US,35157278720,1618896,Yahoo Finance Equity Screener,2026-06-21
+CHT,"Chunghwa Telecom Co., Ltd.",NYSE,USA,Communication Services,414,US,35156746240,154488,Yahoo Finance Equity Screener,2026-06-21
+HSY,The Hershey Company,NYSE,USA,Consumer Defensive,415,US,35016851456,2005967,Yahoo Finance Equity Screener,2026-06-21
+WAT,Waters Corporation,NYSE,USA,Healthcare,416,US,34899181568,1011480,Yahoo Finance Equity Screener,2026-06-21
+KVUE,Kenvue Inc.,NYSE,USA,Consumer Defensive,417,US,34790559744,19380633,Yahoo Finance Equity Screener,2026-06-21
+KR,The Kroger Co.,NYSE,USA,Consumer Defensive,418,US,34701930496,6316780,Yahoo Finance Equity Screener,2026-06-21
+RVMD,"Revolution Medicines, Inc.",NasdaqGS,USA,Healthcare,419,US,34651099136,3150120,Yahoo Finance Equity Screener,2026-06-21
+HEI-A,HEICO Corporation,NYSE,USA,Industrials,420,US,34576842752,341566,Yahoo Finance Equity Screener,2026-06-21
+GFI,Gold Fields Limited,NYSE,USA,Basic Materials,421,US,34524553216,3322017,Yahoo Finance Equity Screener,2026-06-21
+TRI,Thomson Reuters Corporation,NasdaqGS,USA,Industrials,422,US,34303223808,2048661,Yahoo Finance Equity Screener,2026-06-21
+HBAN,Huntington Bancshares Incorporated,NasdaqGS,USA,Financial Services,423,US,34177423360,22596185,Yahoo Finance Equity Screener,2026-06-21
+AXON,"Axon Enterprise, Inc.",NasdaqGS,USA,Industrials,424,US,34126919680,1163888,Yahoo Finance Equity Screener,2026-06-21
+TSEM,Tower Semiconductor Ltd.,NasdaqGS,USA,Technology,425,US,34118912000,2653498,Yahoo Finance Equity Screener,2026-06-21
+EC,Ecopetrol S.A.,NYSE,USA,Energy,426,US,34085740544,3099354,Yahoo Finance Equity Screener,2026-06-21
+HMC,"Honda Motor Co., Ltd.",NYSE,USA,Consumer Cyclical,427,US,34073053184,1944411,Yahoo Finance Equity Screener,2026-06-21
+KMB,Kimberly-Clark Corporation,NasdaqGS,USA,Consumer Defensive,428,US,34043801600,4650669,Yahoo Finance Equity Screener,2026-06-21
+RDDT,"Reddit, Inc.",NYSE,USA,Communication Services,429,US,33681383424,4928117,Yahoo Finance Equity Screener,2026-06-21
+QSR,Restaurant Brands International Inc.,NYSE,USA,Consumer Cyclical,430,US,33513381888,3345620,Yahoo Finance Equity Screener,2026-06-21
+PUK,Prudential plc,NYSE,USA,Financial Services,431,US,33465600000,1097685,Yahoo Finance Equity Screener,2026-06-21
+ROP,"Roper Technologies, Inc.",NasdaqGS,USA,Technology,432,US,33328463872,1183603,Yahoo Finance Equity Screener,2026-06-21
+NTRA,"Natera, Inc.",NasdaqGS,USA,Healthcare,433,US,33141471232,1412462,Yahoo Finance Equity Screener,2026-06-21
+ZTS,Zoetis Inc.,NYSE,USA,Healthcare,434,US,32997445632,6310043,Yahoo Finance Equity Screener,2026-06-21
+MTB,M&T Bank Corporation,NYSE,USA,Financial Services,435,US,32967710720,1050035,Yahoo Finance Equity Screener,2026-06-21
+VOD,Vodafone Group Public Limited Company,NasdaqGS,USA,Communication Services,436,US,32928241664,3826588,Yahoo Finance Equity Screener,2026-06-21
+CPNG,"Coupang, Inc.",NYSE,USA,Consumer Cyclical,437,US,32311154688,23741045,Yahoo Finance Equity Screener,2026-06-21
+LVS,Las Vegas Sands Corp.,NYSE,USA,Consumer Cyclical,438,US,32283691008,4302337,Yahoo Finance Equity Screener,2026-06-21
+EXR,Extra Space Storage Inc.,NYSE,USA,Real Estate,439,US,32073447424,1173456,Yahoo Finance Equity Screener,2026-06-21
+RYAAY,Ryanair Holdings plc,NasdaqGS,USA,Industrials,440,US,31867379712,1467177,Yahoo Finance Equity Screener,2026-06-21
+ACGL,Arch Capital Group Ltd.,NasdaqGS,USA,Financial Services,441,US,31857344512,2333616,Yahoo Finance Equity Screener,2026-06-21
+NTRS,Northern Trust Corporation,NasdaqGS,USA,Financial Services,442,US,31848484864,1101716,Yahoo Finance Equity Screener,2026-06-21
+KGC,Kinross Gold Corporation,NYSE,USA,Basic Materials,443,US,31846899712,8529751,Yahoo Finance Equity Screener,2026-06-21
+EQT,EQT Corporation,NYSE,USA,Energy,444,US,31724244992,7382529,Yahoo Finance Equity Screener,2026-06-21
+SATS,EchoStar Corporation,NasdaqGS,USA,Communication Services,445,US,31638939648,8166912,Yahoo Finance Equity Screener,2026-06-21
+ALC,Alcon Inc.,NYSE,USA,Healthcare,446,US,31544436736,1944998,Yahoo Finance Equity Screener,2026-06-21
+TECK,Teck Resources Limited,NYSE,USA,Basic Materials,447,US,31529596928,3223101,Yahoo Finance Equity Screener,2026-06-21
+SHG,"Shinhan Financial Group Co., Ltd.",NYSE,USA,Financial Services,448,US,31383109632,261141,Yahoo Finance Equity Screener,2026-06-21
+ASTS,"AST SpaceMobile, Inc.",NasdaqGS,USA,Technology,449,US,31306129408,21442196,Yahoo Finance Equity Screener,2026-06-21
+NTAP,"NetApp, Inc.",NasdaqGS,USA,Technology,450,US,31290372096,2922151,Yahoo Finance Equity Screener,2026-06-21
+CASY,"Casey's General Stores, Inc.",NasdaqGS,USA,Consumer Cyclical,451,US,31219623936,639979,Yahoo Finance Equity Screener,2026-06-21
+DTE,DTE Energy Company,NYSE,USA,Utilities,452,US,30696658944,1396535,Yahoo Finance Equity Screener,2026-06-21
+EL,The Estée Lauder Companies Inc.,NYSE,USA,Consumer Defensive,453,US,30683826176,4463590,Yahoo Finance Equity Screener,2026-06-21
+AMRZ,Amrize Ltd,NYSE,USA,Basic Materials,454,US,30638252032,2955796,Yahoo Finance Equity Screener,2026-06-21
+RPRX,Royalty Pharma plc,NasdaqGS,USA,Healthcare,455,US,30496071680,3626498,Yahoo Finance Equity Screener,2026-06-21
+IR,Ingersoll Rand Inc.,NYSE,USA,Industrials,456,US,30489053184,3820429,Yahoo Finance Equity Screener,2026-06-21
+BAP,Credicorp Ltd.,NYSE,USA,Financial Services,457,US,30409639936,486919,Yahoo Finance Equity Screener,2026-06-21
+RJF,"Raymond James Financial, Inc.",NYSE,USA,Financial Services,458,US,30374471680,1388027,Yahoo Finance Equity Screener,2026-06-21
+NTR,Nutrien Ltd.,NYSE,USA,Basic Materials,459,US,30174281728,3099508,Yahoo Finance Equity Screener,2026-06-21
+CNC,Centene Corporation,NYSE,USA,Healthcare,460,US,30131492864,6161422,Yahoo Finance Equity Screener,2026-06-21
+DOV,Dover Corporation,NYSE,USA,Industrials,461,US,30106251264,957082,Yahoo Finance Equity Screener,2026-06-21
+AEE,Ameren Corporation,NYSE,USA,Utilities,462,US,30074597376,1674191,Yahoo Finance Equity Screener,2026-06-21
+MTZ,"MasTec, Inc.",NYSE,USA,Industrials,463,US,30000187392,1016922,Yahoo Finance Equity Screener,2026-06-21
+MTSI,"MACOM Technology Solutions Holdings, Inc.",NasdaqGS,USA,Technology,464,US,29862930432,1389635,Yahoo Finance Equity Screener,2026-06-21
+BIP,Brookfield Infrastructure Partners L.P.,NYSE,USA,Utilities,465,US,29633349632,874037,Yahoo Finance Equity Screener,2026-06-21
+HAL,Halliburton Company,NYSE,USA,Energy,466,US,29180444672,12859622,Yahoo Finance Equity Screener,2026-06-21
+CRS,Carpenter Technology Corporation,NYSE,USA,Industrials,467,US,29139120128,712162,Yahoo Finance Equity Screener,2026-06-21
+CPRT,"Copart, Inc.",NasdaqGS,USA,Industrials,468,US,29120813056,9256440,Yahoo Finance Equity Screener,2026-06-21
+BIIB,Biogen Inc.,NasdaqGS,USA,Healthcare,469,US,29022504960,1171522,Yahoo Finance Equity Screener,2026-06-21
+TPR,"Tapestry, Inc.",NYSE,USA,Consumer Cyclical,470,US,28993417216,2284482,Yahoo Finance Equity Screener,2026-06-21
+EXPE,"Expedia Group, Inc.",NasdaqGS,USA,Consumer Cyclical,471,US,28913317888,1652240,Yahoo Finance Equity Screener,2026-06-21
+TS,Tenaris S.A.,NYSE,USA,Energy,472,US,28885792768,1798488,Yahoo Finance Equity Screener,2026-06-21
+WDAY,"Workday, Inc.",NasdaqGS,USA,Technology,473,US,28878608384,5217887,Yahoo Finance Equity Screener,2026-06-21
+TDY,Teledyne Technologies Incorporated,NYSE,USA,Technology,474,US,28704606208,323712,Yahoo Finance Equity Screener,2026-06-21
+NVT,nVent Electric plc,NYSE,USA,Industrials,475,US,28627755008,2103054,Yahoo Finance Equity Screener,2026-06-21
+FTS,Fortis Inc.,NYSE,USA,Utilities,476,US,28557268992,750506,Yahoo Finance Equity Screener,2026-06-21
+CW,Curtiss-Wright Corporation,NYSE,USA,Industrials,477,US,28515991552,278677,Yahoo Finance Equity Screener,2026-06-21
+NRG,"NRG Energy, Inc.",NYSE,USA,Utilities,478,US,28495831040,2591132,Yahoo Finance Equity Screener,2026-06-21
+TCOM,Trip.com Group Limited,NasdaqGS,USA,Consumer Cyclical,479,US,28399704064,2810108,Yahoo Finance Equity Screener,2026-06-21
+ATO,Atmos Energy Corporation,NYSE,USA,Utilities,480,US,28394731520,1264325,Yahoo Finance Equity Screener,2026-06-21
+CFG,"Citizens Financial Group, Inc.",NYSE,USA,Financial Services,481,US,28366921728,4451677,Yahoo Finance Equity Screener,2026-06-21
+FTAI,FTAI Aviation Ltd.,NasdaqGS,USA,Industrials,482,US,28324184064,1246190,Yahoo Finance Equity Screener,2026-06-21
+VICI,VICI Properties Inc.,NYSE,USA,Real Estate,483,US,28297783296,8144025,Yahoo Finance Equity Screener,2026-06-21
+TWLO,Twilio Inc.,NYSE,USA,Technology,484,US,28255737856,2700800,Yahoo Finance Equity Screener,2026-06-21
+OTIS,Otis Worldwide Corporation,NYSE,USA,Industrials,485,US,28114874368,3712759,Yahoo Finance Equity Screener,2026-06-21
+CQP,"Cheniere Energy Partners, L.P.",NYSE,USA,Energy,486,US,28099340288,131643,Yahoo Finance Equity Screener,2026-06-21
+INIO,Innio N.V.,NasdaqGS,USA,Industrials,487,US,28087500800,4284100,Yahoo Finance Equity Screener,2026-06-21
+ONC,BeOne Medicines AG,NasdaqGS,USA,Healthcare,488,US,28028389376,243208,Yahoo Finance Equity Screener,2026-06-21
+GEHC,GE HealthCare Technologies Inc.,NasdaqGS,USA,Healthcare,489,US,28016785408,4916772,Yahoo Finance Equity Screener,2026-06-21
+CNP,"CenterPoint Energy, Inc.",NYSE,USA,Utilities,490,US,28011536384,4897727,Yahoo Finance Equity Screener,2026-06-21
+IQV,IQVIA Holdings Inc.,NYSE,USA,Healthcare,491,US,28000813056,1626677,Yahoo Finance Equity Screener,2026-06-21
+DXCM,"DexCom, Inc.",NasdaqGS,USA,Healthcare,492,US,27964215296,5461900,Yahoo Finance Equity Screener,2026-06-21
+FSLR,"First Solar, Inc.",NasdaqGS,USA,Technology,493,US,27690731520,2504377,Yahoo Finance Equity Screener,2026-06-21
+HUBB,Hubbell Incorporated,NYSE,USA,Industrials,494,US,27672709120,620792,Yahoo Finance Equity Screener,2026-06-21
+EIX,Edison International,NYSE,USA,Utilities,495,US,27662837760,2713866,Yahoo Finance Equity Screener,2026-06-21
+ATI,ATI Inc.,NYSE,USA,Industrials,496,US,27476957184,1864600,Yahoo Finance Equity Screener,2026-06-21
+MKSI,MKS Inc.,NasdaqGS,USA,Technology,497,US,27447906304,1141982,Yahoo Finance Equity Screener,2026-06-21
+VG,"Venture Global, Inc.",NYSE,USA,Energy,498,US,27377627136,22012545,Yahoo Finance Equity Screener,2026-06-21
+RMD,ResMed Inc.,NYSE,USA,Healthcare,499,US,27361986560,1369872,Yahoo Finance Equity Screener,2026-06-21
+ENTG,"Entegris, Inc.",NasdaqGS,USA,Technology,500,US,27226671104,2941230,Yahoo Finance Equity Screener,2026-06-21
+KHC,The Kraft Heinz Company,NasdaqGS,USA,Consumer Defensive,501,US,27059445760,14373766,Yahoo Finance Equity Screener,2026-06-21
+FE,FirstEnergy Corp.,NYSE,USA,Utilities,502,US,26868127744,5018256,Yahoo Finance Equity Screener,2026-06-21
+PBA,Pembina Pipeline Corporation,NYSE,USA,Energy,503,US,26833225728,1336291,Yahoo Finance Equity Screener,2026-06-21
+MDB,"MongoDB, Inc.",NasdaqGM,USA,Technology,504,US,26763724800,2035919,Yahoo Finance Equity Screener,2026-06-21
+WSM,"Williams-Sonoma, Inc.",NYSE,USA,Consumer Cyclical,505,US,26719059968,1206887,Yahoo Finance Equity Screener,2026-06-21
+PPL,PPL Corporation,NYSE,USA,Utilities,506,US,26618155008,8436775,Yahoo Finance Equity Screener,2026-06-21
+XYL,Xylem Inc.,NYSE,USA,Industrials,507,US,26483808256,2163516,Yahoo Finance Equity Screener,2026-06-21
+STRL,"Sterling Infrastructure, Inc.",NasdaqGS,USA,Industrials,508,US,26447609856,614445,Yahoo Finance Equity Screener,2026-06-21
+PPG,"PPG Industries, Inc.",NYSE,USA,Basic Materials,509,US,26357925888,1996427,Yahoo Finance Equity Screener,2026-06-21
+CINF,Cincinnati Financial Corporation,NasdaqGS,USA,Financial Services,510,US,26327681024,714774,Yahoo Finance Equity Screener,2026-06-21
+NMR,"Nomura Holdings, Inc.",NYSE,USA,Financial Services,511,US,26219048960,1723766,Yahoo Finance Equity Screener,2026-06-21
+ES,Eversource Energy,NYSE,USA,Utilities,512,US,26171408384,2508941,Yahoo Finance Equity Screener,2026-06-21
+PHG,Koninklijke Philips N.V.,NYSE,USA,Healthcare,513,US,26029697024,1188900,Yahoo Finance Equity Screener,2026-06-21
+FTI,TechnipFMC plc,NYSE,USA,Energy,514,US,25983401984,4518082,Yahoo Finance Equity Screener,2026-06-21
+WWD,"Woodward, Inc.",NasdaqGS,USA,Industrials,515,US,25625395200,760475,Yahoo Finance Equity Screener,2026-06-21
+JBHT,"J.B. Hunt Transport Services, Inc.",NasdaqGS,USA,Industrials,516,US,25575829504,953796,Yahoo Finance Equity Screener,2026-06-21
+FISV,"Fiserv, Inc.",NasdaqGS,USA,Technology,517,US,25521534976,7111116,Yahoo Finance Equity Screener,2026-06-21
+FICO,Fair Isaac Corporation,NYSE,USA,Technology,518,US,25428363264,371946,Yahoo Finance Equity Screener,2026-06-21
+MRNA,"Moderna, Inc.",NasdaqGS,USA,Healthcare,519,US,25378449408,6878045,Yahoo Finance Equity Screener,2026-06-21
+IHG,InterContinental Hotels Group PLC,NYSE,USA,Consumer Cyclical,520,US,25373313024,231459,Yahoo Finance Equity Screener,2026-06-21
+ZM,"Zoom Communications, Inc.",NasdaqGS,USA,Technology,521,US,25323534336,4715648,Yahoo Finance Equity Screener,2026-06-21
+SYF,Synchrony Financial,NYSE,USA,Financial Services,522,US,25315225600,3746854,Yahoo Finance Equity Screener,2026-06-21
+AVB,"AvalonBay Communities, Inc.",NYSE,USA,Real Estate,523,US,25156755456,1084811,Yahoo Finance Equity Screener,2026-06-21
+WIT,Wipro Limited,NYSE,USA,Technology,524,US,25075030016,11636237,Yahoo Finance Equity Screener,2026-06-21
+DG,Dollar General Corporation,NYSE,USA,Consumer Defensive,525,US,25025554432,3605220,Yahoo Finance Equity Screener,2026-06-21
+WRB,W. R. Berkley Corporation,NYSE,USA,Financial Services,526,US,25009551360,2155379,Yahoo Finance Equity Screener,2026-06-21
+VEEV,Veeva Systems Inc.,NYSE,USA,Healthcare,527,US,24902557696,3067822,Yahoo Finance Equity Screener,2026-06-21
+P,"Everpure, Inc.",NYSE,USA,Technology,528,US,24800731136,3270219,Yahoo Finance Equity Screener,2026-06-21
+EQR,Equity Residential,NYSE,USA,Real Estate,529,US,24762836992,2924977,Yahoo Finance Equity Screener,2026-06-21
+AFRM,"Affirm Holdings, Inc.",NasdaqGS,USA,Financial Services,530,US,24755701760,5036903,Yahoo Finance Equity Screener,2026-06-21
+RL,Ralph Lauren Corporation,NYSE,USA,Consumer Cyclical,531,US,24580845568,684470,Yahoo Finance Equity Screener,2026-06-21
+ILMN,"Illumina, Inc.",NasdaqGS,USA,Healthcare,532,US,24500006912,1657882,Yahoo Finance Equity Screener,2026-06-21
+TPL,Texas Pacific Land Corporation,NYSE,USA,Energy,533,US,24493508608,450529,Yahoo Finance Equity Screener,2026-06-21
+DRI,"Darden Restaurants, Inc.",NYSE,USA,Consumer Cyclical,534,US,24447496192,1142972,Yahoo Finance Equity Screener,2026-06-21
+AWK,"American Water Works Company, Inc.",NYSE,USA,Utilities,535,US,24423735296,1993775,Yahoo Finance Equity Screener,2026-06-21
+RF,Regions Financial Corporation,NYSE,USA,Financial Services,536,US,24423723008,11240333,Yahoo Finance Equity Screener,2026-06-21
+KEY,KeyCorp,NYSE,USA,Financial Services,537,US,24382939136,12434087,Yahoo Finance Equity Screener,2026-06-21
+STZ,"Constellation Brands, Inc.",NYSE,USA,Consumer Defensive,538,US,24314677248,2089651,Yahoo Finance Equity Screener,2026-06-21
+FDXF,"FedEx Freight Holding Company, Inc.",NYSE,USA,Industrials,539,US,24249368576,2463711,Yahoo Finance Equity Screener,2026-06-21
+PHM,"PulteGroup, Inc.",NYSE,USA,Consumer Cyclical,540,US,24184147968,1842987,Yahoo Finance Equity Screener,2026-06-21
+WTW,Willis Towers Watson Public Limited Company,NasdaqGS,USA,Financial Services,541,US,24103122944,741696,Yahoo Finance Equity Screener,2026-06-21
+VRSN,"VeriSign, Inc.",NasdaqGS,USA,Technology,542,US,24082241536,854146,Yahoo Finance Equity Screener,2026-06-21
+PFG,"Principal Financial Group, Inc.",NasdaqGS,USA,Financial Services,543,US,23668475904,1251240,Yahoo Finance Equity Screener,2026-06-21
+LPLA,LPL Financial Holdings Inc.,NasdaqGS,USA,Financial Services,544,US,23510964224,924958,Yahoo Finance Equity Screener,2026-06-21
+LUV,Southwest Airlines Co.,NYSE,USA,Industrials,545,US,23446476800,7052232,Yahoo Finance Equity Screener,2026-06-21
+XPO,"XPO, Inc.",NYSE,USA,Industrials,546,US,23423291392,1519520,Yahoo Finance Equity Screener,2026-06-21
+SW,Smurfit Westrock Plc,NYSE,USA,Consumer Cyclical,547,US,23181312000,5347524,Yahoo Finance Equity Screener,2026-06-21
+WST,"West Pharmaceutical Services, Inc.",NYSE,USA,Healthcare,548,US,23168878592,842893,Yahoo Finance Equity Screener,2026-06-21
+MTD,Mettler-Toledo International Inc.,NYSE,USA,Healthcare,549,US,23134468096,183061,Yahoo Finance Equity Screener,2026-06-21
+TROW,"T. Rowe Price Group, Inc.",NasdaqGS,USA,Financial Services,550,US,23065800704,2176495,Yahoo Finance Equity Screener,2026-06-21
+KOF,"Coca-Cola FEMSA, S.A.B. de C.V.",NYSE,USA,Consumer Defensive,551,US,23014619136,145537,Yahoo Finance Equity Screener,2026-06-21
+BNTX,BioNTech SE,NasdaqGS,USA,Healthcare,552,US,22984650752,948711,Yahoo Finance Equity Screener,2026-06-21
+SOFI,"SoFi Technologies, Inc.",NasdaqGS,USA,Financial Services,553,US,22973894656,67782387,Yahoo Finance Equity Screener,2026-06-21
+SNX,TD SYNNEX Corporation,NYSE,USA,Technology,554,US,22943045632,841750,Yahoo Finance Equity Screener,2026-06-21
+AER,AerCap Holdings N.V.,NYSE,USA,Industrials,555,US,22873800704,1276877,Yahoo Finance Equity Screener,2026-06-21
+DOW,Dow Inc.,NYSE,USA,Basic Materials,556,US,22869125120,13067925,Yahoo Finance Equity Screener,2026-06-21
+UTHR,United Therapeutics Corporation,NasdaqGS,USA,Healthcare,557,US,22776494080,535282,Yahoo Finance Equity Screener,2026-06-21
+VRSK,"Verisk Analytics, Inc.",NasdaqGS,USA,Industrials,558,US,22771595264,2287064,Yahoo Finance Equity Screener,2026-06-21
+SQM,Sociedad Química y Minera de Chile S.A.,NYSE,USA,Basic Materials,559,US,22762479616,1352353,Yahoo Finance Equity Screener,2026-06-21
+FWONK,Formula One Group,NasdaqGS,USA,Communication Services,560,US,22744975360,1901730,Yahoo Finance Equity Screener,2026-06-21
+BEP,Brookfield Renewable Partners L.P.,NYSE,USA,Utilities,561,US,22669338624,907551,Yahoo Finance Equity Screener,2026-06-21
+CMS,CMS Energy Corporation,NYSE,USA,Utilities,562,US,22668521472,3032358,Yahoo Finance Equity Screener,2026-06-21
+CHD,"Church & Dwight Co., Inc.",NYSE,USA,Consumer Defensive,563,US,22658916352,2035361,Yahoo Finance Equity Screener,2026-06-21
+NI,NiSource Inc.,NYSE,USA,Utilities,564,US,22658297856,4229382,Yahoo Finance Equity Screener,2026-06-21
+ROIV,Roivant Sciences Ltd.,NasdaqGS,USA,Healthcare,565,US,22606669824,5483656,Yahoo Finance Equity Screener,2026-06-21
+CPAY,"Corpay, Inc.",NYSE,USA,Technology,566,US,22568163328,562398,Yahoo Finance Equity Screener,2026-06-21
+TTMI,"TTM Technologies, Inc.",NasdaqGS,USA,Technology,567,US,22477305856,2262314,Yahoo Finance Equity Screener,2026-06-21
+AXIA,AXIA Energia SA,NYSE,USA,Utilities,568,US,22445289472,2445004,Yahoo Finance Equity Screener,2026-06-21
+AMKR,"Amkor Technology, Inc.",NasdaqGS,USA,Technology,569,US,22422546432,5001267,Yahoo Finance Equity Screener,2026-06-21
+RIVN,"Rivian Automotive, Inc.",NasdaqGS,USA,Consumer Cyclical,570,US,22184153088,28612916,Yahoo Finance Equity Screener,2026-06-21
+LEN,Lennar Corporation,NYSE,USA,Consumer Cyclical,571,US,22100346880,2938854,Yahoo Finance Equity Screener,2026-06-21
+L,Loews Corporation,NYSE,USA,Financial Services,572,US,22074886144,798632,Yahoo Finance Equity Screener,2026-06-21
+FOXA,Fox Corporation,NasdaqGS,USA,Communication Services,573,US,21931409408,4461311,Yahoo Finance Equity Screener,2026-06-21
+BG,Bunge Global SA,NYSE,USA,Consumer Defensive,574,US,21842558976,1670745,Yahoo Finance Equity Screener,2026-06-21
+CHRW,"C.H. Robinson Worldwide, Inc.",NasdaqGS,USA,Industrials,575,US,21811226624,1749491,Yahoo Finance Equity Screener,2026-06-21
+FFIV,"F5, Inc.",NasdaqGS,USA,Technology,576,US,21749055488,709729,Yahoo Finance Equity Screener,2026-06-21
+BCE,BCE Inc.,NYSE,USA,Communication Services,577,US,21709201408,3462874,Yahoo Finance Equity Screener,2026-06-21
+TW,Tradeweb Markets Inc.,NasdaqGS,USA,Financial Services,578,US,21691408384,1596377,Yahoo Finance Equity Screener,2026-06-21
+ROL,"Rollins, Inc.",NYSE,USA,Consumer Cyclical,579,US,21646604288,3477411,Yahoo Finance Equity Screener,2026-06-21
+AXIA-PC,AXIA Energia SA,NYSE,USA,Utilities,580,US,21613150208,216037,Yahoo Finance Equity Screener,2026-06-21
+DGX,Quest Diagnostics Incorporated,NYSE,USA,Healthcare,581,US,21585803264,899288,Yahoo Finance Equity Screener,2026-06-21
+HPQ,HP Inc.,NYSE,USA,Technology,582,US,21491283968,19709879,Yahoo Finance Equity Screener,2026-06-21
+DLTR,"Dollar Tree, Inc.",NasdaqGS,USA,Consumer Defensive,583,US,21456293888,3593135,Yahoo Finance Equity Screener,2026-06-21
+CRCL,Circle Internet Group,NYSE,USA,Financial Services,584,US,21444732928,15188020,Yahoo Finance Equity Screener,2026-06-21
+AS,"Amer Sports, Inc.",NYSE,USA,Consumer Cyclical,585,US,21428506624,4301517,Yahoo Finance Equity Screener,2026-06-21
+IREN,IREN Limited,NasdaqGS,USA,Financial Services,586,US,21428426752,44619300,Yahoo Finance Equity Screener,2026-06-21
+BURL,"Burlington Stores, Inc.",NYSE,USA,Consumer Cyclical,587,US,21170661376,794454,Yahoo Finance Equity Screener,2026-06-21
+IONQ,"IonQ, Inc.",NYSE,USA,Technology,588,US,21108416512,30904183,Yahoo Finance Equity Screener,2026-06-21
+EXPD,"Expeditors International of Washington, Inc.",NYSE,USA,Industrials,589,US,21099227136,1171111,Yahoo Finance Equity Screener,2026-06-21
+FWONA,Formula One Group,NasdaqGS,USA,Communication Services,590,US,21070927872,146420,Yahoo Finance Equity Screener,2026-06-21
+LSCC,Lattice Semiconductor Corporation,NasdaqGS,USA,Technology,591,US,21060847616,2081941,Yahoo Finance Equity Screener,2026-06-21
+TEAM,Atlassian Corporation,NasdaqGS,USA,Technology,592,US,20991676416,7241169,Yahoo Finance Equity Screener,2026-06-21
+LH,Labcorp Holdings Inc.,NYSE,USA,Healthcare,593,US,20977240064,636364,Yahoo Finance Equity Screener,2026-06-21
+TLN,Talen Energy Corporation,NasdaqGS,USA,Utilities,594,US,20852482048,744653,Yahoo Finance Equity Screener,2026-06-21
+DKS,"DICK'S Sporting Goods, Inc.",NYSE,USA,Consumer Cyclical,595,US,20850511872,1163174,Yahoo Finance Equity Screener,2026-06-21
+EXE,Expand Energy Corporation,NasdaqGS,USA,Energy,596,US,20808126464,3386235,Yahoo Finance Equity Screener,2026-06-21
+INSM,Insmed Incorporated,NasdaqGS,USA,Healthcare,597,US,20764884992,3639879,Yahoo Finance Equity Screener,2026-06-21
+CTSH,Cognizant Technology Solutions Corporation,NasdaqGS,USA,Technology,598,US,20670099456,8245180,Yahoo Finance Equity Screener,2026-06-21
+OKTA,"Okta, Inc.",NasdaqGS,USA,Technology,599,US,20657563648,4101688,Yahoo Finance Equity Screener,2026-06-21
+PAAS,Pan American Silver Corp.,NYSE,USA,Basic Materials,600,US,20646150144,5209819,Yahoo Finance Equity Screener,2026-06-21
+VLTO,Veralto Corporation,NYSE,USA,Industrials,601,US,20635248640,2190448,Yahoo Finance Equity Screener,2026-06-21
+RBA,"RB Global, Inc.",NYSE,USA,Industrials,602,US,20599191552,1083517,Yahoo Finance Equity Screener,2026-06-21
+FN,Fabrinet,NYSE,USA,Technology,603,US,20557672448,847046,Yahoo Finance Equity Screener,2026-06-21
+ROKU,"Roku, Inc.",NasdaqGS,USA,Communication Services,604,US,20481603584,3790977,Yahoo Finance Equity Screener,2026-06-21
+PKG,Packaging Corporation of America,NYSE,USA,Consumer Cyclical,605,US,20405372928,777456,Yahoo Finance Equity Screener,2026-06-21
+OMC,Omnicom Group Inc.,NYSE,USA,Communication Services,606,US,20335192064,4450709,Yahoo Finance Equity Screener,2026-06-21
+BCH,Banco de Chile,NYSE,USA,Financial Services,607,US,20309483520,409927,Yahoo Finance Equity Screener,2026-06-21
+RCI,Rogers Communications Inc.,NYSE,USA,Communication Services,608,US,20296263680,1329420,Yahoo Finance Equity Screener,2026-06-21
+USFD,US Foods Holding Corp.,NYSE,USA,Consumer Defensive,609,US,20240574464,2530996,Yahoo Finance Equity Screener,2026-06-21
+RS,"Reliance, Inc.",NYSE,USA,Basic Materials,610,US,20232570880,329148,Yahoo Finance Equity Screener,2026-06-21
+RBC,RBC Bearings Incorporated,NYSE,USA,Industrials,611,US,20220688384,236841,Yahoo Finance Equity Screener,2026-06-21
+ZS,"Zscaler, Inc.",NasdaqGS,USA,Technology,612,US,20189433856,4609500,Yahoo Finance Equity Screener,2026-06-21
+VIV,Telefônica Brasil S.A.,NYSE,USA,Communication Services,613,US,20116340736,1036990,Yahoo Finance Equity Screener,2026-06-21
+SNA,Snap-on Incorporated,NYSE,USA,Industrials,614,US,20060291072,365509,Yahoo Finance Equity Screener,2026-06-21
+BRO,"Brown & Brown, Inc.",NYSE,USA,Financial Services,615,US,20031817728,3292977,Yahoo Finance Equity Screener,2026-06-21
+SN,"SharkNinja, Inc.",NYSE,USA,Consumer Cyclical,616,US,19931729920,2042854,Yahoo Finance Equity Screener,2026-06-21
+SMCI,"Super Micro Computer, Inc.",NasdaqGS,USA,Technology,617,US,19833126912,48982825,Yahoo Finance Equity Screener,2026-06-21
+SBAC,SBA Communications Corporation,NasdaqGS,USA,Real Estate,618,US,19819995136,1177072,Yahoo Finance Equity Screener,2026-06-21
+YPF,YPF Sociedad Anónima,NYSE,USA,Energy,619,US,19782801408,2359170,Yahoo Finance Equity Screener,2026-06-21
+CHTR,"Charter Communications, Inc.",NasdaqGS,USA,Communication Services,620,US,19777511424,3194222,Yahoo Finance Equity Screener,2026-06-21
+FIS,"Fidelity National Information Services, Inc.",NYSE,USA,Technology,621,US,19749951488,6798750,Yahoo Finance Equity Screener,2026-06-21
+STE,STERIS plc,NYSE,USA,Healthcare,622,US,19745900544,772140,Yahoo Finance Equity Screener,2026-06-21
+FOX,Fox Corporation,NasdaqGS,USA,Communication Services,623,US,19714334720,1585432,Yahoo Finance Equity Screener,2026-06-21
+INCY,Incyte Corporation,NasdaqGS,USA,Healthcare,624,US,19622604800,1583104,Yahoo Finance Equity Screener,2026-06-21
+ULTA,"Ulta Beauty, Inc.",NasdaqGS,USA,Consumer Cyclical,625,US,19608715264,766919,Yahoo Finance Equity Screener,2026-06-21
+IFF,International Flavors & Fragrances Inc.,NYSE,USA,Basic Materials,626,US,19586883584,1852543,Yahoo Finance Equity Screener,2026-06-21
+TSN,"Tyson Foods, Inc.",NYSE,USA,Consumer Defensive,627,US,19529097216,3087056,Yahoo Finance Equity Screener,2026-06-21
+IP,International Paper Company,NYSE,USA,Consumer Cyclical,628,US,19496814592,6982837,Yahoo Finance Equity Screener,2026-06-21
+LYB,LyondellBasell Industries N.V.,NYSE,USA,Basic Materials,629,US,19389681664,6215793,Yahoo Finance Equity Screener,2026-06-21
+DD,"DuPont de Nemours, Inc.",NYSE,USA,Basic Materials,630,US,19325327360,3605880,Yahoo Finance Equity Screener,2026-06-21
+CIB,Grupo Cibest S.A.,NYSE,USA,Financial Services,631,US,19325251584,369848,Yahoo Finance Equity Screener,2026-06-21
+FPS,"Forgent Power Solutions, Inc.",NYSE,USA,Industrials,632,US,19303835648,5753372,Yahoo Finance Equity Screener,2026-06-21
+SITM,SiTime Corporation,NasdaqGM,USA,Technology,633,US,19244343296,489970,Yahoo Finance Equity Screener,2026-06-21
+NXT,Nextpower Inc.,NasdaqGS,USA,Technology,634,US,19159877632,2215087,Yahoo Finance Equity Screener,2026-06-21
+MAIR,Madison Air Solutions Corporation,NYSE,USA,Industrials,635,US,19115227136,3179175,Yahoo Finance Equity Screener,2026-06-21
+H,Hyatt Hotels Corporation,NYSE,USA,Consumer Cyclical,636,US,19029118976,845096,Yahoo Finance Equity Screener,2026-06-21
+EVRG,"Evergy, Inc.",NasdaqGS,USA,Utilities,637,US,19017324544,1878319,Yahoo Finance Equity Screener,2026-06-21
+AMCR,Amcor plc,NYSE,USA,Consumer Cyclical,638,US,18993162240,4312575,Yahoo Finance Equity Screener,2026-06-21
+ALB,Albemarle Corporation,NYSE,USA,Basic Materials,639,US,18910822400,2170661,Yahoo Finance Equity Screener,2026-06-21
+ESS,"Essex Property Trust, Inc.",NYSE,USA,Real Estate,640,US,18865786880,480517,Yahoo Finance Equity Screener,2026-06-21
+LNT,Alliant Energy Corporation,NasdaqGS,USA,Utilities,641,US,18854223872,2295866,Yahoo Finance Equity Screener,2026-06-21
+BWXT,"BWX Technologies, Inc.",NYSE,USA,Industrials,642,US,18817648640,1006451,Yahoo Finance Equity Screener,2026-06-21
+FTV,Fortive Corporation,NYSE,USA,Technology,643,US,18605668352,3093385,Yahoo Finance Equity Screener,2026-06-21
+EFX,Equifax Inc.,NYSE,USA,Industrials,644,US,18569283584,1785145,Yahoo Finance Equity Screener,2026-06-21
+LII,Lennox International Inc.,NYSE,USA,Industrials,645,US,18528546816,440425,Yahoo Finance Equity Screener,2026-06-21
+IOT,Samsara Inc.,NYSE,USA,Technology,646,US,18466082816,6124296,Yahoo Finance Equity Screener,2026-06-21
+APG,APi Group Corporation,NYSE,USA,Industrials,647,US,18429519872,2980338,Yahoo Finance Equity Screener,2026-06-21
+ULS,UL Solutions Inc.,NYSE,USA,Industrials,648,US,18410774528,772670,Yahoo Finance Equity Screener,2026-06-21
+SBS,Companhia de Saneamento Básico do Estado de São Paulo - SABESP,NYSE,USA,Utilities,649,US,18410668032,6410356,Yahoo Finance Equity Screener,2026-06-21
+STLA,Stellantis N.V.,NYSE,USA,Consumer Cyclical,650,US,18370199552,20160333,Yahoo Finance Equity Screener,2026-06-21
+CX,"CEMEX, S.A.B. de C.V.",NYSE,USA,Basic Materials,651,US,18368784384,5304503,Yahoo Finance Equity Screener,2026-06-21
+PKX,POSCO Holdings Inc.,NYSE,USA,Basic Materials,652,US,18357698560,279904,Yahoo Finance Equity Screener,2026-06-21
+NVMI,Nova Ltd.,NasdaqGS,USA,Technology,653,US,18298402816,397916,Yahoo Finance Equity Screener,2026-06-21
+GPN,Global Payments Inc.,NYSE,USA,Industrials,654,US,18294589440,3541103,Yahoo Finance Equity Screener,2026-06-21
+RGLD,"Royal Gold, Inc.",NasdaqGS,USA,Basic Materials,655,US,18231044096,842374,Yahoo Finance Equity Screener,2026-06-21
+AKAM,"Akamai Technologies, Inc.",NasdaqGS,USA,Technology,656,US,18160097280,5509596,Yahoo Finance Equity Screener,2026-06-21
+DOCN,"DigitalOcean Holdings, Inc.",NYSE,USA,Technology,657,US,18083182592,4263891,Yahoo Finance Equity Screener,2026-06-21
+CDE,"Coeur Mining, Inc.",NYSE,USA,Basic Materials,658,US,18044659712,29463119,Yahoo Finance Equity Screener,2026-06-21
+TU,TELUS Corporation,NYSE,USA,Communication Services,659,US,18017966080,5741332,Yahoo Finance Equity Screener,2026-06-21
+VTRS,Viatris Inc.,NasdaqGS,USA,Healthcare,660,US,17899175936,10549680,Yahoo Finance Equity Screener,2026-06-21
+ARXS,"Arxis, Inc.",NasdaqGS,USA,Industrials,661,US,17894696960,1605466,Yahoo Finance Equity Screener,2026-06-21
+GIS,"General Mills, Inc.",NYSE,USA,Consumer Defensive,662,US,17835624448,9405358,Yahoo Finance Equity Screener,2026-06-21
+WCC,"WESCO International, Inc.",NYSE,USA,Industrials,663,US,17794818048,561004,Yahoo Finance Equity Screener,2026-06-21
+MGA,Magna International Inc.,NYSE,USA,Consumer Cyclical,664,US,17789874176,1479437,Yahoo Finance Equity Screener,2026-06-21
+WES,"Western Midstream Partners, LP",NYSE,USA,Energy,665,US,17749809152,1407711,Yahoo Finance Equity Screener,2026-06-21
+ITT,ITT Inc.,NYSE,USA,Industrials,666,US,17681375232,859603,Yahoo Finance Equity Screener,2026-06-21
+FLUT,Flutter Entertainment plc,NYSE,USA,Consumer Cyclical,667,US,17657370624,2973158,Yahoo Finance Equity Screener,2026-06-21
+WY,Weyerhaeuser Company,NYSE,USA,Real Estate,668,US,17535756288,5073448,Yahoo Finance Equity Screener,2026-06-21
+GH,"Guardant Health, Inc.",NasdaqGS,USA,Healthcare,669,US,17474019328,2241472,Yahoo Finance Equity Screener,2026-06-21
+EWBC,"East West Bancorp, Inc.",NasdaqGS,USA,Financial Services,670,US,17372495872,942295,Yahoo Finance Equity Screener,2026-06-21
+HST,"Host Hotels & Resorts, Inc.",NasdaqGS,USA,Real Estate,671,US,17351094272,8825487,Yahoo Finance Equity Screener,2026-06-21
+BEN,"Franklin Resources, Inc.",NYSE,USA,Financial Services,672,US,17174007808,4871151,Yahoo Finance Equity Screener,2026-06-21
+ZBH,"Zimmer Biomet Holdings, Inc.",NYSE,USA,Healthcare,673,US,17018894336,2314551,Yahoo Finance Equity Screener,2026-06-21
+INVH,Invitation Homes Inc.,NYSE,USA,Real Estate,674,US,16876732416,5877380,Yahoo Finance Equity Screener,2026-06-21
+ZTO,ZTO Express (Cayman) Inc.,NYSE,USA,Industrials,675,US,16778095616,1653612,Yahoo Finance Equity Screener,2026-06-21
+KEP,Korea Electric Power Corporation,NYSE,USA,Utilities,676,US,16691066880,937385,Yahoo Finance Equity Screener,2026-06-21
+IEX,IDEX Corporation,NYSE,USA,Industrials,677,US,16648206336,743530,Yahoo Finance Equity Screener,2026-06-21
+ONTO,Onto Innovation Inc.,NYSE,USA,Technology,678,US,16602414080,1069377,Yahoo Finance Equity Screener,2026-06-21
+BEKE,KE Holdings Inc.,NYSE,USA,Real Estate,679,US,16580372480,4633780,Yahoo Finance Equity Screener,2026-06-21
+WSO,"Watsco, Inc.",NYSE,USA,Industrials,680,US,16518148096,449196,Yahoo Finance Equity Screener,2026-06-21
+NDSN,Nordson Corporation,NasdaqGS,USA,Industrials,681,US,16488055808,385732,Yahoo Finance Equity Screener,2026-06-21
+KIM,Kimco Realty Corporation,NYSE,USA,Real Estate,682,US,16441621504,4992859,Yahoo Finance Equity Screener,2026-06-21
+GNRC,Generac Holdings Inc.,NYSE,USA,Industrials,683,US,16433191936,892716,Yahoo Finance Equity Screener,2026-06-21
+CDW,CDW Corporation,NasdaqGS,USA,Technology,684,US,16399709184,1991679,Yahoo Finance Equity Screener,2026-06-21
+LTM,LATAM Airlines Group S.A.,NYSE,USA,Industrials,685,US,16349748224,944119,Yahoo Finance Equity Screener,2026-06-21
+PFGC,Performance Food Group Company,NYSE,USA,Consumer Defensive,686,US,16277651456,1698924,Yahoo Finance Equity Screener,2026-06-21
+NLY,"Annaly Capital Management, Inc.",NYSE,USA,Real Estate,687,US,16274960384,6823135,Yahoo Finance Equity Screener,2026-06-21
+CG,The Carlyle Group Inc.,NasdaqGS,USA,Financial Services,688,US,16126854144,3259398,Yahoo Finance Equity Screener,2026-06-21
+NBIX,"Neurocrine Biosciences, Inc.",NasdaqGS,USA,Healthcare,689,US,15916056576,1199166,Yahoo Finance Equity Screener,2026-06-21
+BR,"Broadridge Financial Solutions, Inc.",NYSE,USA,Technology,690,US,15914582016,1527688,Yahoo Finance Equity Screener,2026-06-21
+PR,Permian Resources Corporation,NYSE,USA,Energy,691,US,15878111232,12286282,Yahoo Finance Equity Screener,2026-06-21
+WPC,W. P. Carey Inc.,NYSE,USA,Real Estate,692,US,15863479296,1380191,Yahoo Finance Equity Screener,2026-06-21
+TSCO,Tractor Supply Company,NasdaqGS,USA,Consumer Cyclical,693,US,15859355648,11446038,Yahoo Finance Equity Screener,2026-06-21
+EMA,Emera Incorporated,NYSE,USA,Utilities,694,US,15842561024,395650,Yahoo Finance Equity Screener,2026-06-21
+CF,"CF Industries Holdings, Inc.",NYSE,USA,Basic Materials,695,US,15813061632,3572940,Yahoo Finance Equity Screener,2026-06-21
+MAA,"Mid-America Apartment Communities, Inc.",NYSE,USA,Real Estate,696,US,15810780160,975696,Yahoo Finance Equity Screener,2026-06-21
+SGI,Somnigroup International Inc.,NYSE,USA,Consumer Cyclical,697,US,15796580352,3155203,Yahoo Finance Equity Screener,2026-06-21
+SSNC,"SS&C Technologies Holdings, Inc.",NasdaqGS,USA,Technology,698,US,15755362304,2607146,Yahoo Finance Equity Screener,2026-06-21
+BBY,"Best Buy Co., Inc.",NYSE,USA,Consumer Cyclical,699,US,15750627328,4199254,Yahoo Finance Equity Screener,2026-06-21
+MOD,Modine Manufacturing Company,NYSE,USA,Consumer Cyclical,700,US,15705829376,1155450,Yahoo Finance Equity Screener,2026-06-21
+AA,Alcoa Corporation,NYSE,USA,Basic Materials,701,US,15667141632,5006216,Yahoo Finance Equity Screener,2026-06-21
+NWS,News Corporation,NasdaqGS,USA,Communication Services,702,US,15643536384,1614691,Yahoo Finance Equity Screener,2026-06-21
+KSPI,Joint Stock Company Kaspi.kz,NasdaqGS,USA,Technology,703,US,15621191680,511543,Yahoo Finance Equity Screener,2026-06-21
+TXT,Textron Inc.,NYSE,USA,Industrials,704,US,15557847040,1332596,Yahoo Finance Equity Screener,2026-06-21
+GMAB,Genmab A/S,NasdaqGS,USA,Healthcare,705,US,15514160128,1848972,Yahoo Finance Equity Screener,2026-06-21
+VNOM,"Viper Energy, Inc.",NasdaqGS,USA,Energy,706,US,15512161280,1857562,Yahoo Finance Equity Screener,2026-06-21
+LOGI,Logitech International S.A.,NasdaqGS,USA,Technology,707,US,15450170368,1065203,Yahoo Finance Equity Screener,2026-06-21
+BSAC,Banco Santander-Chile,NYSE,USA,Financial Services,708,US,15377204224,453153,Yahoo Finance Equity Screener,2026-06-21
+BALL,Ball Corporation,NYSE,USA,Consumer Cyclical,709,US,15367748608,2752491,Yahoo Finance Equity Screener,2026-06-21
+RMBS,Rambus Inc.,NasdaqGS,USA,Technology,710,US,15265695744,2530201,Yahoo Finance Equity Screener,2026-06-21
+AGI,Alamos Gold Inc.,NYSE,USA,Basic Materials,711,US,15261543424,3457693,Yahoo Finance Equity Screener,2026-06-21
+CLH,"Clean Harbors, Inc.",NYSE,USA,Industrials,712,US,15251364864,532675,Yahoo Finance Equity Screener,2026-06-21
+MLI,"Mueller Industries, Inc.",NYSE,USA,Industrials,713,US,15191297024,685975,Yahoo Finance Equity Screener,2026-06-21
+LAMR,Lamar Advertising Company,NasdaqGS,USA,Real Estate,714,US,15185748992,612996,Yahoo Finance Equity Screener,2026-06-21
+WF,Woori Financial Group Inc.,NYSE,USA,Financial Services,715,US,15173645312,149656,Yahoo Finance Equity Screener,2026-06-21
+PHYS,Sprott Physical Gold Trust,NYSE American,USA,Financial Services,716,US,15168036864,3750309,Yahoo Finance Equity Screener,2026-06-21
+DECK,Deckers Outdoor Corporation,NYSE,USA,Consumer Cyclical,717,US,15153301504,1988093,Yahoo Finance Equity Screener,2026-06-21
+SUI,"Sun Communities, Inc.",NYSE,USA,Real Estate,718,US,15146391552,879396,Yahoo Finance Equity Screener,2026-06-21
+ASND,Ascendis Pharma A/S,NasdaqGS,USA,Healthcare,719,US,15136937984,656543,Yahoo Finance Equity Screener,2026-06-21
+PAC,"Grupo Aeroportuario del Pacífico, S.A.B. de C.V.",NYSE,USA,Industrials,720,US,15131908096,128404,Yahoo Finance Equity Screener,2026-06-21
+GPC,Genuine Parts Company,NYSE,USA,Consumer Cyclical,721,US,15122573312,1810708,Yahoo Finance Equity Screener,2026-06-21
+RRX,Regal Rexnord Corporation,NYSE,USA,Industrials,722,US,15096647680,1063385,Yahoo Finance Equity Screener,2026-06-21
+VICR,Vicor Corporation,NasdaqGS,USA,Technology,723,US,15095650304,834351,Yahoo Finance Equity Screener,2026-06-21
+LECO,"Lincoln Electric Holdings, Inc.",NasdaqGS,USA,Industrials,724,US,15079057408,368595,Yahoo Finance Equity Screener,2026-06-21
+PAA,"Plains All American Pipeline, L.P.",NasdaqGS,USA,Energy,725,US,15056047104,3000188,Yahoo Finance Equity Screener,2026-06-21
+MAS,Masco Corporation,NYSE,USA,Industrials,726,US,15005006848,2815456,Yahoo Finance Equity Screener,2026-06-21
+AEIS,"Advanced Energy Industries, Inc.",NasdaqGS,USA,Industrials,727,US,14907570176,819298,Yahoo Finance Equity Screener,2026-06-21
+YUMC,"Yum China Holdings, Inc.",NYSE,USA,Consumer Cyclical,728,US,14877563904,1551870,Yahoo Finance Equity Screener,2026-06-21
+THC,Tenet Healthcare Corporation,NYSE,USA,Healthcare,729,US,14864662528,1426943,Yahoo Finance Equity Screener,2026-06-21
+SMTC,Semtech Corporation,NasdaqGS,USA,Technology,730,US,14739308544,3282254,Yahoo Finance Equity Screener,2026-06-21
+BWA,BorgWarner Inc.,NYSE,USA,Consumer Cyclical,731,US,14735457280,2859537,Yahoo Finance Equity Screener,2026-06-21
+OVV,Ovintiv Inc.,NYSE,USA,Energy,732,US,14728184832,3639024,Yahoo Finance Equity Screener,2026-06-21
+WMG,Warner Music Group Corp.,NasdaqGS,USA,Communication Services,733,US,14693909504,2457740,Yahoo Finance Equity Screener,2026-06-21
+TLK,Perusahaan Perseroan (Persero) PT Telekomunikasi Indonesia Tbk,NYSE,USA,Communication Services,734,US,14686489600,960803,Yahoo Finance Equity Screener,2026-06-21
+DTM,"DT Midstream, Inc.",NYSE,USA,Energy,735,US,14618624000,763104,Yahoo Finance Equity Screener,2026-06-21
+SPY,State Street SPDR S&P 500 ETF Trust,NYSE Arca,USA,ETF,736,US,,,Yahoo Finance verified market symbol,2026-06-21
+QQQ,Invesco QQQ Trust,NASDAQ,USA,ETF,737,US,,,Yahoo Finance verified market symbol,2026-06-21
+DIA,State Street SPDR Dow Jones Industrial Average ETF Trust,NYSE Arca,USA,ETF,738,US,,,Yahoo Finance verified market symbol,2026-06-21
+IWM,iShares Russell 2000 ETF,NYSE Arca,USA,ETF,739,US,,,Yahoo Finance verified market symbol,2026-06-21
+SMH,VanEck Semiconductor ETF,NASDAQ,USA,ETF,740,US,,,Yahoo Finance verified market symbol,2026-06-21
+VTI,Vanguard Total Stock Market Index Fund ETF Shares,NYSE Arca,USA,ETF,741,US,,,Yahoo Finance verified market symbol,2026-06-21
+XLK,State Street Technology Select Sector SPDR ETF,NYSE Arca,USA,ETF,742,US,,,Yahoo Finance verified market symbol,2026-06-21
+XLF,State Street Financial Select Sector SPDR ETF,NYSE Arca,USA,ETF,743,US,,,Yahoo Finance verified market symbol,2026-06-21
+XLE,State Street Energy Select Sector SPDR ETF,NYSE Arca,USA,ETF,744,US,,,Yahoo Finance verified market symbol,2026-06-21
+TLT,iShares 20+ Year Treasury Bond ETF,NASDAQ,USA,Bond ETF,745,US,,,Yahoo Finance verified market symbol,2026-06-21
+HYG,iShares iBoxx $ High Yield Corporate Bond ETF,NYSE Arca,USA,Bond ETF,746,US,,,Yahoo Finance verified market symbol,2026-06-21
+^GSPC,S&P 500 Index,Index,USA,Market Index,747,US,,,Yahoo Finance verified market symbol,2026-06-21
+^IXIC,NASDAQ Composite Index,Index,USA,Market Index,748,US,,,Yahoo Finance verified market symbol,2026-06-21
+^DJI,Dow Jones Industrial Average,Index,USA,Market Index,749,US,,,Yahoo Finance verified market symbol,2026-06-21
+^RUT,Russell 2000 Index,Index,USA,Market Index,750,US,,,Yahoo Finance verified market symbol,2026-06-21
+TYT.L,Toyota Motor Corporation,LSE,UK,Consumer Cyclical,751,UK,32876682805248,463351,Yahoo Finance Equity Screener,2026-06-21
+0RIH.L,Alphabet Inc.,LSE,UK,Communication Services,752,UK,4548041113600,230528,Yahoo Finance Equity Screener,2026-06-21
+0HD6.L,Alphabet Inc.,LSE,UK,Communication Services,753,UK,4504608047104,227878,Yahoo Finance Equity Screener,2026-06-21
+0R2V.L,Apple Inc.,LSE,UK,Technology,754,UK,4463087058944,450155,Yahoo Finance Equity Screener,2026-06-21
+0QYP.L,Microsoft Corporation,LSE,UK,Technology,755,UK,2817917452288,156754,Yahoo Finance Equity Screener,2026-06-21
+0R0X.L,"Tesla, Inc.",LSE,UK,Consumer Cyclical,756,UK,1463804755968,779731,Yahoo Finance Equity Screener,2026-06-21
+0QZI.L,"Meta Platforms, Inc.",LSE,UK,Communication Services,757,UK,1458057773056,62385,Yahoo Finance Equity Screener,2026-06-21
+0R37.L,Berkshire Hathaway Inc.,LSE,UK,Financial Services,758,UK,1040287465472,21500,Yahoo Finance Equity Screener,2026-06-21
+0R1W.L,Walmart Inc.,LSE,UK,Consumer Defensive,759,UK,939492966400,45803,Yahoo Finance Equity Screener,2026-06-21
+0Q1F.L,JPMorgan Chase & Co.,LSE,UK,Financial Services,760,UK,923451129856,134288,Yahoo Finance Equity Screener,2026-06-21
+0QZ0.L,Visa Inc.,LSE,UK,Financial Services,761,UK,624296263680,15279,Yahoo Finance Equity Screener,2026-06-21
+0R1M.L,Exxon Mobil Corporation,LSE,UK,Energy,762,UK,602067173376,65503,Yahoo Finance Equity Screener,2026-06-21
+0Q16.L,Bank of America Corporation,LSE,UK,Financial Services,763,UK,424734064640,978975,Yahoo Finance Equity Screener,2026-06-21
+0R0O.L,UnitedHealth Group Incorporated,LSE,UK,Healthcare,764,UK,369037180928,26821,Yahoo Finance Equity Screener,2026-06-21
+0NOF.L,The Procter & Gamble Company,LSE,UK,Consumer Defensive,765,UK,362991747072,77053,Yahoo Finance Equity Screener,2026-06-21
+0QAH.L,"Merck & Co., Inc.",LSE,UK,Healthcare,766,UK,288403226624,63990,Yahoo Finance Equity Screener,2026-06-21
+0M8V.L,Philip Morris International Inc.,LSE,UK,Consumer Defensive,767,UK,278644228096,11286,Yahoo Finance Equity Screener,2026-06-21
+HSBA.L,HSBC Holdings plc,LSE,UK,Financial Services,768,UK,245493760000,24189956,Yahoo Finance Equity Screener,2026-06-21
+AZN.L,AstraZeneca PLC,LSE,UK,Healthcare,769,UK,205241122816,2123247,Yahoo Finance Equity Screener,2026-06-21
+0HLE.L,"Banco Santander, S.A.",LSE,UK,Financial Services,770,UK,205116391424,29502,Yahoo Finance Equity Screener,2026-06-21
+0QOS.L,"PepsiCo, Inc.",LSE,UK,Consumer Defensive,771,UK,195718365184,16412,Yahoo Finance Equity Screener,2026-06-21
+0Q1S.L,Verizon Communications Inc.,LSE,UK,Communication Services,772,UK,193240055808,140436,Yahoo Finance Equity Screener,2026-06-21
+TTE.L,TotalEnergies SE,LSE,UK,Energy,773,UK,166735167488,2724724,Yahoo Finance Equity Screener,2026-06-21
+SHEL.L,Shell plc,LSE,UK,Energy,774,UK,165960024064,10863988,Yahoo Finance Equity Screener,2026-06-21
+BHP.L,BHP Group Limited,LSE,UK,Basic Materials,775,UK,161718370304,828299,Yahoo Finance Equity Screener,2026-06-21
+0Q15.L,Abbott Laboratories,LSE,UK,Healthcare,776,UK,154286735360,116565,Yahoo Finance Equity Screener,2026-06-21
+0A1U.L,"Uber Technologies, Inc.",LSE,UK,Technology,777,UK,150988259328,34441,Yahoo Finance Equity Screener,2026-06-21
+0QYJ.L,"Salesforce, Inc.",LSE,UK,Technology,778,UK,147671891968,43932,Yahoo Finance Equity Screener,2026-06-21
+BNC.L,"Banco Santander, S.A.",LSE,UK,Financial Services,779,UK,146364792832,3973952,Yahoo Finance Equity Screener,2026-06-21
+0Q1N.L,Pfizer Inc.,LSE,UK,Healthcare,780,UK,144618602496,231797,Yahoo Finance Equity Screener,2026-06-21
+0BOE.L,The Boeing Company,LSE,UK,Industrials,781,UK,136207220736,37564,Yahoo Finance Equity Screener,2026-06-21
+RIO.L,Rio Tinto Group,LSE,UK,Basic Materials,782,UK,120245084160,2764732,Yahoo Finance Equity Screener,2026-06-21
+RR.L,Rolls-Royce Holdings plc,LSE,UK,Industrials,783,UK,116710932480,33982098,Yahoo Finance Equity Screener,2026-06-21
+BVA.L,"Banco Bilbao Vizcaya Argentaria, S.A.",LSE,UK,Financial Services,784,UK,116559069184,4911317,Yahoo Finance Equity Screener,2026-06-21
+0A2V.L,Sanofi,LSE,UK,Healthcare,785,UK,103475552256,20430,Yahoo Finance Equity Screener,2026-06-21
+ULVR.L,Unilever PLC,LSE,UK,Consumer Defensive,786,UK,94488952832,6813162,Yahoo Finance Equity Screener,2026-06-21
+BATS.L,British American Tobacco p.l.c.,LSE,UK,Consumer Defensive,787,UK,93690896384,4432497,Yahoo Finance Equity Screener,2026-06-21
+0R0E.L,General Motors Company,LSE,UK,Consumer Cyclical,788,UK,79308103680,21477,Yahoo Finance Equity Screener,2026-06-21
+BP.L,BP p.l.c.,LSE,UK,Energy,789,UK,77839024128,47671130,Yahoo Finance Equity Screener,2026-06-21
+GSK.L,GSK plc,LSE,UK,Healthcare,790,UK,77168787456,7924741,Yahoo Finance Equity Screener,2026-06-21
+0K8D.L,Nokia Oyj,LSE,UK,Technology,791,UK,73190760448,32980,Yahoo Finance Equity Screener,2026-06-21
+BARC.L,Barclays PLC,LSE,UK,Financial Services,792,UK,67057504256,58071128,Yahoo Finance Equity Screener,2026-06-21
+0QZ6.L,"NIKE, Inc.",LSE,UK,Consumer Cyclical,793,UK,66748518400,88759,Yahoo Finance Equity Screener,2026-06-21
+GLEN.L,Glencore plc,LSE,UK,Basic Materials,794,UK,65254789120,39640633,Yahoo Finance Equity Screener,2026-06-21
+LLOY.L,Lloyds Banking Group plc,LSE,UK,Financial Services,795,UK,61180272640,197459918,Yahoo Finance Equity Screener,2026-06-21
+NG.L,National Grid plc,LSE,UK,Utilities,796,UK,60305612800,14048286,Yahoo Finance Equity Screener,2026-06-21
+0P4F.L,Ford Motor Company,LSE,UK,Consumer Cyclical,797,UK,56232517632,60319,Yahoo Finance Equity Screener,2026-06-21
+CPG.L,Compass Group PLC,LSE,UK,Consumer Cyclical,798,UK,54750076928,3948600,Yahoo Finance Equity Screener,2026-06-21
+BA.L,BAE Systems plc,LSE,UK,Industrials,799,UK,54165291008,6826117,Yahoo Finance Equity Screener,2026-06-21
+NWG.L,NatWest Group plc,LSE,UK,Financial Services,800,UK,50765156352,27814815,Yahoo Finance Equity Screener,2026-06-21
+STAN.L,Standard Chartered PLC,LSE,UK,Financial Services,801,UK,44504092672,8537648,Yahoo Finance Equity Screener,2026-06-21
+REL.L,RELX PLC,LSE,UK,Industrials,802,UK,41745428480,6251132,Yahoo Finance Equity Screener,2026-06-21
+AAL.L,Anglo American plc,LSE,UK,Basic Materials,803,UK,41680879616,5288755,Yahoo Finance Equity Screener,2026-06-21
+LSEG.L,London Stock Exchange Group plc,LSE,UK,Financial Services,804,UK,41192583168,1605035,Yahoo Finance Equity Screener,2026-06-21
+WPM.L,Wheaton Precious Metals Corp.,LSE,UK,Basic Materials,805,UK,40689610752,12413,Yahoo Finance Equity Screener,2026-06-21
+ANTO.L,Antofagasta plc,LSE,UK,Basic Materials,806,UK,38566715392,1544820,Yahoo Finance Equity Screener,2026-06-21
+FERG.L,Ferguson Enterprises Inc.,LSE,UK,Industrials,807,UK,34559721472,16162,Yahoo Finance Equity Screener,2026-06-21
+DGE.L,Diageo plc,LSE,UK,Consumer Defensive,808,UK,34021076992,6077575,Yahoo Finance Equity Screener,2026-06-21
+0QYI.L,"Netflix, Inc.",LSE,UK,Communication Services,809,UK,33232431104,10362,Yahoo Finance Equity Screener,2026-06-21
+CCEP.L,Coca-Cola Europacific Partners PLC,LSE,UK,Consumer Defensive,810,UK,32521975808,204683,Yahoo Finance Equity Screener,2026-06-21
+HLN.L,Haleon plc,LSE,UK,Healthcare,811,UK,29488390144,24267793,Yahoo Finance Equity Screener,2026-06-21
+RKT.L,Reckitt Benckiser Group plc,LSE,UK,Consumer Defensive,812,UK,29301153792,2229106,Yahoo Finance Equity Screener,2026-06-21
+SSE.L,SSE plc,LSE,UK,Utilities,813,UK,28041682944,4165247,Yahoo Finance Equity Screener,2026-06-21
+TSCO.L,Tesco PLC,LSE,UK,Consumer Defensive,814,UK,27682764800,19133527,Yahoo Finance Equity Screener,2026-06-21
+SUNB.L,"Sunbelt Rentals Holdings, Inc.",LSE,UK,Industrials,815,UK,26046152704,683102,Yahoo Finance Equity Screener,2026-06-21
+PRU.L,Prudential plc,LSE,UK,Financial Services,816,UK,25146042368,8960230,Yahoo Finance Equity Screener,2026-06-21
+IHG.L,InterContinental Hotels Group PLC,LSE,UK,Consumer Cyclical,817,UK,25110706176,447979,Yahoo Finance Equity Screener,2026-06-21
+VOD.L,Vodafone Group Public Limited Company,LSE,UK,Communication Services,818,UK,24638613504,77903972,Yahoo Finance Equity Screener,2026-06-21
+EXPN.L,Experian plc,LSE,UK,Industrials,819,UK,22648987648,3164419,Yahoo Finance Equity Screener,2026-06-21
+III.L,3i Group Ord,LSE,UK,Financial Services,820,UK,22240505856,3160111,Yahoo Finance Equity Screener,2026-06-21
+FRES.L,Fresnillo plc,LSE,UK,Basic Materials,821,UK,21900476416,1138669,Yahoo Finance Equity Screener,2026-06-21
+IMB.L,Imperial Brands PLC,LSE,UK,Consumer Defensive,822,UK,20993697792,2472114,Yahoo Finance Equity Screener,2026-06-21
+0A2Z.L,Tencent Music Entertainment Group,LSE,UK,Communication Services,823,UK,20526290944,11127,Yahoo Finance Equity Screener,2026-06-21
+IAG.L,International Consolidated Airlines Group S.A.,LSE,UK,Industrials,824,UK,20193294336,22098856,Yahoo Finance Equity Screener,2026-06-21
+AIBG.L,AIB Group plc,LSE,UK,Financial Services,825,UK,19614720000,1104760,Yahoo Finance Equity Screener,2026-06-21
+BT-A.L,BT Group plc,LSE,UK,Communication Services,826,UK,19283535872,20870672,Yahoo Finance Equity Screener,2026-06-21
+AV.L,Aviva plc,LSE,UK,Financial Services,827,UK,18991300608,9805430,Yahoo Finance Equity Screener,2026-06-21
+SWR.L,Smurfit Westrock Plc,LSE,UK,Consumer Cyclical,828,UK,17616748544,390915,Yahoo Finance Equity Screener,2026-06-21
+CCH.L,Coca-Cola HBC AG,LSE,UK,Consumer Defensive,829,UK,16553979904,650673,Yahoo Finance Equity Screener,2026-06-21
+SMT.L,Scottish Mortgage Ord,LSE,UK,Financial Services,830,UK,16306685952,3860877,Yahoo Finance Equity Screener,2026-06-21
+NXT.L,NEXT plc,LSE,UK,Consumer Cyclical,831,UK,16141100032,545745,Yahoo Finance Equity Screener,2026-06-21
+HKLD.L,Hongkong Land Holdings Limited,LSE,UK,Real Estate,832,UK,15892182016,13385,Yahoo Finance Equity Screener,2026-06-21
+LGEN.L,Legal & General Group Plc,LSE,UK,Financial Services,833,UK,15520923648,28250562,Yahoo Finance Equity Screener,2026-06-21
+IPC.L,International Paper Company,LSE,UK,Consumer Cyclical,834,UK,15038280704,22500,Yahoo Finance Equity Screener,2026-06-21
+HLMA.L,Halma plc,LSE,UK,Industrials,835,UK,14956986368,1234673,Yahoo Finance Equity Screener,2026-06-21
+VALT.L,Valterra Platinum Limited,LSE,UK,Basic Materials,836,UK,14122051584,115158,Yahoo Finance Equity Screener,2026-06-21
+ABF.L,Associated British Foods plc,LSE,UK,Consumer Defensive,837,UK,13191721984,1065778,Yahoo Finance Equity Screener,2026-06-21
+FLTR.L,Flutter Entertainment plc,LSE,UK,Consumer Cyclical,838,UK,12838572032,87038,Yahoo Finance Equity Screener,2026-06-21
+AAF.L,Airtel Africa Plc,LSE,UK,Communication Services,839,UK,12759662592,5686930,Yahoo Finance Equity Screener,2026-06-21
+KYGA.L,Kerry Group plc,LSE,UK,Consumer Defensive,840,UK,11891065856,187188,Yahoo Finance Equity Screener,2026-06-21
+INF.L,Informa plc,LSE,UK,Communication Services,841,UK,10988059648,4724195,Yahoo Finance Equity Screener,2026-06-21
+RTO.L,Rentokil Initial plc,LSE,UK,Industrials,842,UK,10794669056,7911186,Yahoo Finance Equity Screener,2026-06-21
+SGRO.L,SEGRO Plc,LSE,UK,Real Estate,843,UK,10008103936,3398748,Yahoo Finance Equity Screener,2026-06-21
+S32.L,South32 Limited,LSE,UK,Basic Materials,844,UK,9955853312,706057,Yahoo Finance Equity Screener,2026-06-21
+EDV.L,Endeavour Mining plc,LSE,UK,Basic Materials,845,UK,9744340992,953774,Yahoo Finance Equity Screener,2026-06-21
+ADM.L,Admiral Group plc,LSE,UK,Financial Services,846,UK,9726271488,836046,Yahoo Finance Equity Screener,2026-06-21
+DPLM.L,Diploma PLC,LSE,UK,Industrials,847,UK,9654828032,524392,Yahoo Finance Equity Screener,2026-06-21
+UU.L,United Utilities Group PLC,LSE,UK,Utilities,848,UK,9575517184,2523362,Yahoo Finance Equity Screener,2026-06-21
+SN.L,Smith & Nephew plc,LSE,UK,Healthcare,849,UK,9518148608,3008754,Yahoo Finance Equity Screener,2026-06-21
+SDR.L,Schroders plc,LSE,UK,Financial Services,850,UK,9122027520,3236877,Yahoo Finance Equity Screener,2026-06-21
+ITRK.L,Intertek Group plc,LSE,UK,Industrials,851,UK,8910454784,1417054,Yahoo Finance Equity Screener,2026-06-21
+SVT.L,Severn Trent PLC,LSE,UK,Utilities,852,UK,8575752192,812842,Yahoo Finance Equity Screener,2026-06-21
+WISE.L,Wise Group plc,LSE,UK,Technology,853,UK,8182164480,2148748,Yahoo Finance Equity Screener,2026-06-21
+SDLF.L,Standard Life plc,LSE,UK,Financial Services,854,UK,8075959808,2804989,Yahoo Finance Equity Screener,2026-06-21
+PCT.L,Polar Capital Technology Ord,LSE,UK,Financial Services,855,UK,8053180928,4665967,Yahoo Finance Equity Screener,2026-06-21
+BNZL.L,Bunzl plc,LSE,UK,Consumer Defensive,856,UK,7943345152,1346826,Yahoo Finance Equity Screener,2026-06-21
+0RNH.L,Snap Inc.,LSE,UK,Communication Services,857,UK,7929781760,166853,Yahoo Finance Equity Screener,2026-06-21
+MNG.L,M&G plc,LSE,UK,Financial Services,858,UK,7885494272,6197465,Yahoo Finance Equity Screener,2026-06-21
+CNA.L,Centrica plc,LSE,UK,Utilities,859,UK,7819304448,19635288,Yahoo Finance Equity Screener,2026-06-21
+SMIN.L,Smiths Group plc,LSE,UK,Industrials,860,UK,7757140480,1113549,Yahoo Finance Equity Screener,2026-06-21
+BEZ.L,Beazley plc,LSE,UK,Financial Services,861,UK,7591856128,4617010,Yahoo Finance Equity Screener,2026-06-21
+MICC.L,The Magnum Ice Cream Company N.V.,LSE,UK,Consumer Defensive,862,UK,7546100736,762072,Yahoo Finance Equity Screener,2026-06-21
+SGE.L,The Sage Group plc,LSE,UK,Technology,863,UK,7321272832,4763164,Yahoo Finance Equity Screener,2026-06-21
+0T3W.L,Bilibili Inc.,LSE,UK,Communication Services,864,UK,7299366400,23130,Yahoo Finance Equity Screener,2026-06-21
+IMI.L,IMI plc,LSE,UK,Industrials,865,UK,7228098048,1432014,Yahoo Finance Equity Screener,2026-06-21
+MKS.L,Marks and Spencer Group plc,LSE,UK,Consumer Cyclical,866,UK,7148907520,8702463,Yahoo Finance Equity Screener,2026-06-21
+PSON.L,Pearson plc,LSE,UK,Communication Services,867,UK,6817717760,2020378,Yahoo Finance Equity Screener,2026-06-21
+PSH.L,"Pershing Square Holdings, Ltd.",LSE,UK,Financial Services,868,UK,6784941568,172179,Yahoo Finance Equity Screener,2026-06-21
+GAW.L,Games Workshop Group PLC,LSE,UK,Consumer Cyclical,869,UK,6727888384,91083,Yahoo Finance Equity Screener,2026-06-21
+SBRY.L,J Sainsbury plc,LSE,UK,Consumer Defensive,870,UK,6607882240,9626074,Yahoo Finance Equity Screener,2026-06-21
+FCIT.L,F&C Investment Trust Ord,LSE,UK,Financial Services,871,UK,6593820672,1781758,Yahoo Finance Equity Screener,2026-06-21
+WEIR.L,The Weir Group PLC,LSE,UK,Industrials,872,UK,6308572672,1237025,Yahoo Finance Equity Screener,2026-06-21
+IGG.L,IG Group Holdings plc,LSE,UK,Financial Services,873,UK,6261367808,1313731,Yahoo Finance Equity Screener,2026-06-21
+FRMI.L,Fermi Inc.,LSE,UK,Real Estate,874,UK,6119219200,101225,Yahoo Finance Equity Screener,2026-06-21
+MRO.L,Melrose Industries PLC,LSE,UK,Industrials,875,UK,5870075392,5397183,Yahoo Finance Equity Screener,2026-06-21
+MTLN.L,Metlen Energy & Metals PLC,LSE,UK,Utilities,876,UK,5832476672,248239,Yahoo Finance Equity Screener,2026-06-21
+STJ.L,St. James's Place plc,LSE,UK,Financial Services,877,UK,5828321792,2791875,Yahoo Finance Equity Screener,2026-06-21
+HSX.L,Hiscox Ltd,LSE,UK,Financial Services,878,UK,5698891264,1477558,Yahoo Finance Equity Screener,2026-06-21
+GLB.L,Glanbia plc,LSE,UK,Consumer Defensive,879,UK,5564597248,115739,Yahoo Finance Equity Screener,2026-06-21
+DCC.L,DCC plc,LSE,UK,Energy,880,UK,5296296448,386421,Yahoo Finance Equity Screener,2026-06-21
+SPX.L,Spirax Group plc,LSE,UK,Industrials,881,UK,5202609664,197211,Yahoo Finance Equity Screener,2026-06-21
+BAB.L,Babcock International Group PLC,LSE,UK,Industrials,882,UK,5117543936,2785110,Yahoo Finance Equity Screener,2026-06-21
+ALW.L,Alliance Witan Ord,LSE,UK,Financial Services,883,UK,5005711872,724873,Yahoo Finance Equity Screener,2026-06-21
+ICG.L,ICG plc,LSE,UK,Financial Services,884,UK,4971580928,1522829,Yahoo Finance Equity Screener,2026-06-21
+BGEO.L,Lion Finance Group PLC,LSE,UK,Financial Services,885,UK,4933581824,93172,Yahoo Finance Equity Screener,2026-06-21
+GGP.L,Greatland Resources Limited,LSE,UK,Basic Materials,886,UK,4838197760,3024924,Yahoo Finance Equity Screener,2026-06-21
+KGF.L,Kingfisher plc,LSE,UK,Consumer Cyclical,887,UK,4629773824,7686086,Yahoo Finance Equity Screener,2026-06-21
+LAND.L,Land Securities Group Plc,LSE,UK,Real Estate,888,UK,4623002112,3562961,Yahoo Finance Equity Screener,2026-06-21
+CCC.L,Computacenter plc,LSE,UK,Technology,889,UK,4456118784,328357,Yahoo Finance Equity Screener,2026-06-21
+0AA7.L,Truecaller AB (publ),LSE,UK,Technology,890,UK,4440155648,31326,Yahoo Finance Equity Screener,2026-06-21
+HWDN.L,Howden Joinery Group Plc,LSE,UK,Consumer Cyclical,891,UK,4354641920,2259332,Yahoo Finance Equity Screener,2026-06-21
+CRDA.L,Croda International Plc,LSE,UK,Basic Materials,892,UK,4345062400,403038,Yahoo Finance Equity Screener,2026-06-21
+LMP.L,LondonMetric Property Plc,LSE,UK,Real Estate,893,UK,4270390528,6846338,Yahoo Finance Equity Screener,2026-06-21
+ABDN.L,Aberdeen Group Plc,LSE,UK,Financial Services,894,UK,4186602240,5176293,Yahoo Finance Equity Screener,2026-06-21
+BBY.L,Balfour Beatty plc,LSE,UK,Industrials,895,UK,4140949504,1689269,Yahoo Finance Equity Screener,2026-06-21
+BBOX.L,Tritax Big Box Ord,LSE,UK,Real Estate,896,UK,4120607488,9770295,Yahoo Finance Equity Screener,2026-06-21
+BLND.L,British Land Company PLC,LSE,UK,Real Estate,897,UK,4103789824,5246273,Yahoo Finance Equity Screener,2026-06-21
+JD.L,JD Sports Fashion Plc,LSE,UK,Consumer Cyclical,898,UK,4083126016,21555290,Yahoo Finance Equity Screener,2026-06-21
+BRBY.L,Burberry Group plc,LSE,UK,Consumer Cyclical,899,UK,4075222784,2049024,Yahoo Finance Equity Screener,2026-06-21
+CTEC.L,Convatec Group PLC,LSE,UK,Healthcare,900,UK,4045720832,10513972,Yahoo Finance Equity Screener,2026-06-21
+WTB.L,Whitbread plc,LSE,UK,Consumer Cyclical,901,UK,3979639808,1151836,Yahoo Finance Equity Screener,2026-06-21
+INVP.L,Investec Group,LSE,UK,Financial Services,902,UK,3977181952,2816507,Yahoo Finance Equity Screener,2026-06-21
+ZEG.L,Zegona Communications plc,LSE,UK,Communication Services,903,UK,3821192448,628927,Yahoo Finance Equity Screener,2026-06-21
+ITH.L,Ithaca Energy plc,LSE,UK,Energy,904,UK,3802981888,2153686,Yahoo Finance Equity Screener,2026-06-21
+AUTO.L,Autotrader Group plc,LSE,UK,Communication Services,905,UK,3800966656,7432040,Yahoo Finance Equity Screener,2026-06-21
+RSW.L,Renishaw plc,LSE,UK,Technology,906,UK,3793119744,131261,Yahoo Finance Equity Screener,2026-06-21
+EZJ.L,easyJet plc,LSE,UK,Industrials,907,UK,3767532032,6915566,Yahoo Finance Equity Screener,2026-06-21
+HBR.L,Harbour Energy plc,LSE,UK,Energy,908,UK,3743384832,7606663,Yahoo Finance Equity Screener,2026-06-21
+BTRW.L,Barratt Redrow plc,LSE,UK,Consumer Cyclical,909,UK,3655363072,10098986,Yahoo Finance Equity Screener,2026-06-21
+JMAT.L,Johnson Matthey Plc,LSE,UK,Basic Materials,910,UK,3589388800,583186,Yahoo Finance Equity Screener,2026-06-21
+ENT.L,Entain Plc,LSE,UK,Consumer Cyclical,911,UK,3490057984,4409851,Yahoo Finance Equity Screener,2026-06-21
+SCT.L,Softcat plc,LSE,UK,Technology,912,UK,3480607744,554199,Yahoo Finance Equity Screener,2026-06-21
+3IN.L,3i Infrastructure plc,LSE,UK,Financial Services,913,UK,3431142144,1226740,Yahoo Finance Equity Screener,2026-06-21
+ROSE.L,Rosebank Industries plc,LSE,UK,Financial Services,914,UK,3400168960,3630996,Yahoo Finance Equity Screener,2026-06-21
+PLUS.L,Plus500 Ltd.,LSE,UK,Financial Services,915,UK,3340597760,129770,Yahoo Finance Equity Screener,2026-06-21
+0A4H.L,StoneCo Ltd.,LSE,UK,Technology,916,UK,3318444800,20614,Yahoo Finance Equity Screener,2026-06-21
+JGGI.L,JPMorgan Global Growth & Income Ord,LSE,UK,Financial Services,917,UK,3317979904,1179157,Yahoo Finance Equity Screener,2026-06-21
+PSN.L,Persimmon Plc,LSE,UK,Consumer Cyclical,918,UK,3311369216,2714811,Yahoo Finance Equity Screener,2026-06-21
+EMG.L,Man Group Plc,LSE,UK,Financial Services,919,UK,3276249600,3401636,Yahoo Finance Equity Screener,2026-06-21
+BKG.L,The Berkeley Group Holdings plc,LSE,UK,Consumer Cyclical,920,UK,3253325568,453641,Yahoo Finance Equity Screener,2026-06-21
+MNDI.L,Mondi plc,LSE,UK,Basic Materials,921,UK,3176389376,1395630,Yahoo Finance Equity Screener,2026-06-21
+RCP.L,RIT Capital Partners Ord,LSE,UK,Financial Services,922,UK,3141677312,278381,Yahoo Finance Equity Screener,2026-06-21
+RMV.L,Rightmove plc,LSE,UK,Communication Services,923,UK,3106753536,4691362,Yahoo Finance Equity Screener,2026-06-21
+HIK.L,Hikma Pharmaceuticals PLC,LSE,UK,Healthcare,924,UK,3082155776,915807,Yahoo Finance Equity Screener,2026-06-21
+FRAS.L,Frasers Group Plc,LSE,UK,Consumer Cyclical,925,UK,3057270528,208889,Yahoo Finance Equity Screener,2026-06-21
+ITV.L,ITV plc,LSE,UK,Communication Services,926,UK,3014409472,8677956,Yahoo Finance Equity Screener,2026-06-21
+TEM.L,Templeton Emerging Mkts Invmt Tr TEMIT,LSE,UK,Financial Services,927,UK,3010347264,2777328,Yahoo Finance Equity Screener,2026-06-21
+SEPL.L,Seplat Energy Plc,LSE,UK,Energy,928,UK,2927729408,1550729,Yahoo Finance Equity Screener,2026-06-21
+WPP.L,WPP plc,LSE,UK,Communication Services,929,UK,2927115520,5419730,Yahoo Finance Equity Screener,2026-06-21
+CWK.L,Cranswick plc,LSE,UK,Consumer Defensive,930,UK,2901199104,154753,Yahoo Finance Equity Screener,2026-06-21
+RS1.L,RS Group plc,LSE,UK,Industrials,931,UK,2867867392,2023663,Yahoo Finance Equity Screener,2026-06-21
+CTY.L,City of London Ord,LSE,UK,Financial Services,932,UK,2865498112,1169220,Yahoo Finance Equity Screener,2026-06-21
+INCH.L,Inchcape plc,LSE,UK,Consumer Cyclical,933,UK,2819153152,837992,Yahoo Finance Equity Screener,2026-06-21
+HOC.L,Hochschild Mining plc,LSE,UK,Basic Materials,934,UK,2801226240,1987150,Yahoo Finance Equity Screener,2026-06-21
+TW.L,Taylor Wimpey plc,LSE,UK,Consumer Cyclical,935,UK,2742662144,27591829,Yahoo Finance Equity Screener,2026-06-21
+UTG.L,Unite Group PLC,LSE,UK,Real Estate,936,UK,2642862336,3173900,Yahoo Finance Equity Screener,2026-06-21
+QLT.L,Quilter plc,LSE,UK,Financial Services,937,UK,2583576576,3876633,Yahoo Finance Equity Screener,2026-06-21
+MNKS.L,Monks Ord,LSE,UK,Financial Services,938,UK,2579940864,439441,Yahoo Finance Equity Screener,2026-06-21
+ATT.L,Allianz Technology Trust Ord,LSE,UK,Financial Services,939,UK,2573971200,1580689,Yahoo Finance Equity Screener,2026-06-21
+ROR.L,Rotork plc,LSE,UK,Industrials,940,UK,2555892480,2784092,Yahoo Finance Equity Screener,2026-06-21
+CAN.L,Canal+ SA,LSE,UK,Communication Services,941,UK,2549433088,906346,Yahoo Finance Equity Screener,2026-06-21
+HICL.L,HICL Infrastructure PLC Ord,LSE,UK,Financial Services,942,UK,2523782912,4690499,Yahoo Finance Equity Screener,2026-06-21
+OMU.L,Old Mutual Limited,LSE,UK,Financial Services,943,UK,2520787968,286738,Yahoo Finance Equity Screener,2026-06-21
+TCAP.L,TP ICAP Group PLC,LSE,UK,Financial Services,944,UK,2516862208,3342443,Yahoo Finance Equity Screener,2026-06-21
+INPP.L,International Public Partnerships Limited,LSE,UK,Financial Services,945,UK,2515147520,4171069,Yahoo Finance Equity Screener,2026-06-21
+TBCG.L,TBC Bank Group PLC,LSE,UK,Financial Services,946,UK,2495190528,100396,Yahoo Finance Equity Screener,2026-06-21
+DRX.L,Drax Group plc,LSE,UK,Utilities,947,UK,2483197952,891103,Yahoo Finance Equity Screener,2026-06-21
+SHC.L,Shaftesbury Capital PLC,LSE,UK,Real Estate,948,UK,2450141952,3764369,Yahoo Finance Equity Screener,2026-06-21
+TATE.L,Tate & Lyle plc,LSE,UK,Consumer Defensive,949,UK,2449595136,3454187,Yahoo Finance Equity Screener,2026-06-21
+PHP.L,Primary Health Properties Plc,LSE,UK,Real Estate,950,UK,2392727552,12347731,Yahoo Finance Equity Screener,2026-06-21
+AJB.L,AJ Bell plc,LSE,UK,Financial Services,951,UK,2360679424,1629584,Yahoo Finance Equity Screener,2026-06-21
+HVPE.L,HarbourVest Global Private Equity Ltd.,LSE,UK,Financial Services,952,UK,2356520960,177541,Yahoo Finance Equity Screener,2026-06-21
+JET2.L,Jet2 plc,LSE,UK,Consumer Cyclical,953,UK,2338163456,715579,Yahoo Finance Equity Screener,2026-06-21
+SRP.L,Serco Group plc,LSE,UK,Industrials,954,UK,2329919232,3130650,Yahoo Finance Equity Screener,2026-06-21
+JTC.L,JTC PLC,LSE,UK,Financial Services,955,UK,2272673536,827447,Yahoo Finance Equity Screener,2026-06-21
+UKW.L,Greencoat UK Wind,LSE,UK,Utilities,956,UK,2266679808,5152544,Yahoo Finance Equity Screener,2026-06-21
+QQ.L,QinetiQ Group plc,LSE,UK,Industrials,957,UK,2252964864,2096748,Yahoo Finance Equity Screener,2026-06-21
+HILS.L,Hill & Smith PLC,LSE,UK,Industrials,958,UK,2243087360,238861,Yahoo Finance Equity Screener,2026-06-21
+HTWS.L,Helios Towers plc,LSE,UK,Communication Services,959,UK,2214959104,2628286,Yahoo Finance Equity Screener,2026-06-21
+MGNS.L,Morgan Sindall Group plc,LSE,UK,Industrials,960,UK,2193643520,124514,Yahoo Finance Equity Screener,2026-06-21
+PNN.L,Pennon Group Plc,LSE,UK,Utilities,961,UK,2168080896,1694024,Yahoo Finance Equity Screener,2026-06-21
+PAF.L,Pan African Resources PLC,LSE,UK,Basic Materials,962,UK,2157061632,7285739,Yahoo Finance Equity Screener,2026-06-21
+FEV.L,Fidelity European Trust Ord,LSE,UK,Financial Services,963,UK,2150777856,1012997,Yahoo Finance Equity Screener,2026-06-21
+MYI.L,Murray International Ord,LSE,UK,Financial Services,964,UK,2142779008,933644,Yahoo Finance Equity Screener,2026-06-21
+DLN.L,Derwent London Plc,LSE,UK,Real Estate,965,UK,2121996544,482236,Yahoo Finance Equity Screener,2026-06-21
+BPT.L,Bridgepoint Group plc,LSE,UK,Financial Services,966,UK,2113232768,2196149,Yahoo Finance Equity Screener,2026-06-21
+BWY.L,Bellway p.l.c.,LSE,UK,Consumer Cyclical,967,UK,2101883648,811108,Yahoo Finance Equity Screener,2026-06-21
+N91.L,Ninety One Group,LSE,UK,Financial Services,968,UK,2073635584,947067,Yahoo Finance Equity Screener,2026-06-21
+JAM.L,JPMorgan American Ord,LSE,UK,Financial Services,969,UK,2033194240,271975,Yahoo Finance Equity Screener,2026-06-21
+TKO.L,Taseko Mines Limited,LSE,UK,Basic Materials,970,UK,2011060352,16902,Yahoo Finance Equity Screener,2026-06-21
+MTO.L,Mitie Group plc,LSE,UK,Industrials,971,UK,1914312448,4498105,Yahoo Finance Equity Screener,2026-06-21
+BME.L,B&M European Value Retail plc,LSE,UK,Consumer Defensive,972,UK,1880426752,7207515,Yahoo Finance Equity Screener,2026-06-21
+CLDN.L,Caledonia Investments Ord,LSE,UK,Financial Services,973,UK,1845799680,466903,Yahoo Finance Equity Screener,2026-06-21
+HMSO.L,Hammerson Plc,LSE,UK,Real Estate,974,UK,1818451328,1113809,Yahoo Finance Equity Screener,2026-06-21
+KLR.L,Keller Group plc,LSE,UK,Industrials,975,UK,1817383296,219005,Yahoo Finance Equity Screener,2026-06-21
+HGT.L,HgCapital Trust Ord,LSE,UK,Financial Services,976,UK,1809712256,1228361,Yahoo Finance Equity Screener,2026-06-21
+BRWM.L,BlackRock World Mining Trust Ord,LSE,UK,Financial Services,977,UK,1807876736,446335,Yahoo Finance Equity Screener,2026-06-21
+OSB.L,OSB Group Plc,LSE,UK,Financial Services,978,UK,1775547904,1145994,Yahoo Finance Equity Screener,2026-06-21
+GFTU.L,Grafton Group plc,LSE,UK,Industrials,979,UK,1747651840,474929,Yahoo Finance Equity Screener,2026-06-21
+IWG.L,International Workplace Group plc,LSE,UK,Real Estate,980,UK,1743841792,4115164,Yahoo Finance Equity Screener,2026-06-21
+TRIG.L,The Renewables Infrastructure Group Limited,LSE,UK,Utilities,981,UK,1732617856,8687785,Yahoo Finance Equity Screener,2026-06-21
+RPI.L,Raspberry Pi Holdings plc,LSE,UK,Technology,982,UK,1721695744,1130045,Yahoo Finance Equity Screener,2026-06-21
+MRC.L,Mercantile Ord,LSE,UK,Financial Services,983,UK,1710342656,2557805,Yahoo Finance Equity Screener,2026-06-21
+PFD.L,Premier Foods plc,LSE,UK,Consumer Defensive,984,UK,1706102784,1591006,Yahoo Finance Equity Screener,2026-06-21
+WOSG.L,Watches of Switzerland Group PLC,LSE,UK,Consumer Cyclical,985,UK,1698564864,706655,Yahoo Finance Equity Screener,2026-06-21
+OXIG.L,Oxford Instruments plc,LSE,UK,Technology,986,UK,1693325696,291096,Yahoo Finance Equity Screener,2026-06-21
+BYG.L,Big Yellow Group Plc,LSE,UK,Real Estate,987,UK,1675878400,789117,Yahoo Finance Equity Screener,2026-06-21
+JMGI.L,JPMorgan Emerging Markets Growth & Income plc.,LSE,UK,Financial Services,988,UK,1673080704,1730458,Yahoo Finance Equity Screener,2026-06-21
+PNL.L,Personal Assets Ord,LSE,UK,Financial Services,989,UK,1651605376,632897,Yahoo Finance Equity Screener,2026-06-21
+RAT.L,Rathbones Group Plc,LSE,UK,Financial Services,990,UK,1637745280,145453,Yahoo Finance Equity Screener,2026-06-21
+GRG.L,Greggs plc,LSE,UK,Consumer Cyclical,991,UK,1626182400,354409,Yahoo Finance Equity Screener,2026-06-21
+SHAW.L,Shawbrook Group PLC,LSE,UK,Financial Services,992,UK,1621424256,480371,Yahoo Finance Equity Screener,2026-06-21
+LWDB.L,Law Debenture Corporation Ord,LSE,UK,Financial Services,993,UK,1605294976,203405,Yahoo Finance Equity Screener,2026-06-21
+PIN.L,Pantheon International Ord,LSE,UK,Financial Services,994,UK,1593692160,1462598,Yahoo Finance Equity Screener,2026-06-21
+DNLM.L,Dunelm Group plc,LSE,UK,Consumer Cyclical,995,UK,1590490624,456696,Yahoo Finance Equity Screener,2026-06-21
+CURY.L,Currys plc,LSE,UK,Consumer Cyclical,996,UK,1580219392,4662567,Yahoo Finance Equity Screener,2026-06-21
+GNC.L,Greencore Group plc,LSE,UK,Consumer Defensive,997,UK,1549994496,3807659,Yahoo Finance Equity Screener,2026-06-21
+LRE.L,Lancashire Holdings Limited,LSE,UK,Financial Services,998,UK,1547531008,930198,Yahoo Finance Equity Screener,2026-06-21
+VUSA.L,Vanguard S&P 500 UCITS ETF,LSE,UK,ETF,999,UK,,,Yahoo Finance verified market symbol,2026-06-21
+^FTSE,FTSE 100 Index,Index,UK,Market Index,1000,UK,,,Yahoo Finance verified market symbol,2026-06-21
+MAERSK-B.CO,A.P. Møller - Mærsk A/S Class B,Copenhagen,Denmark,Industrials / Marine Shipping,1001,Global Extras,,,Yahoo Finance verified market symbol,2026-06-21
+MAERSK-A.CO,A.P. Møller - Mærsk A/S Class A,Copenhagen,Denmark,Industrials / Marine Shipping,1002,Global Extras,,,Yahoo Finance verified market symbol,2026-06-21
