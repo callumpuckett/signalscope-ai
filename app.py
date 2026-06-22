@@ -1,5 +1,5 @@
 from flask import Flask, Response, render_template_string, redirect, url_for, request, session, jsonify
-from datetime import datetime, time as dt_time, timezone
+from datetime import datetime, time as dt_time, timedelta, timezone
 from email.utils import format_datetime
 from xml.sax.saxutils import escape as xml_escape
 from zoneinfo import ZoneInfo
@@ -103,6 +103,13 @@ RECOMMENDATIONS_CACHE = {
     "timestamp": 0,
     "rows": None,
 }
+WEEKLY_NEWSLETTER_ISSUE_CACHE = {
+    "issue_date": None,
+    "issue_status": None,
+    "generated_at": None,
+    "issue": None,
+}
+WEEKLY_NEWSLETTER_PREVIEW_CACHE_TTL_SECONDS = 900
 
 # --- Helper for fetching JSON from URL with fallback for local SSL certificate errors ---
 def fetch_url_json(url, timeout=8):
@@ -413,6 +420,8 @@ STOCK_DISPLAY_LOOKUP_CACHE = {
     "rows": None,
     "lookup": {},
 }
+DIVIDEND_CONTEXT_CACHE_TTL_SECONDS = 3600
+DIVIDEND_CONTEXT_CACHE = {}
 
 TRACKED_STOCK_UNIVERSE = [
     "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "PLTR", "SPCX", "AVGO", "AMD", "NFLX",
@@ -1133,6 +1142,237 @@ def classify_portfolio_role(symbol):
         "concentration_note": "Check whether this duplicates a sector, theme or risk you already own.",
     }
 
+
+DIVIDEND_ETF_TICKERS = {
+    "SPY", "QQQ", "DIA", "IWM", "SMH", "GLD", "SLV", "USO", "TLT", "HYG",
+    "VUSA", "VUSA.L", "VUAG", "VUAG.L", "VWRP", "VWRP.L", "VWRL", "VWRL.L",
+}
+
+
+def get_dividend_context(symbol):
+    cleaned_symbol = canonical_stock_symbol(symbol)
+    now = time.time()
+    cached = DIVIDEND_CONTEXT_CACHE.get(cleaned_symbol)
+    if cached and now - cached["timestamp"] < DIVIDEND_CONTEXT_CACHE_TTL_SECONDS:
+        return dict(cached["context"])
+
+    universe_item = next(
+        (
+            item for item in get_stock_universe()
+            if str(item.get("ticker") or "").strip().upper() == cleaned_symbol
+        ),
+        {},
+    )
+    sector = str(
+        universe_item.get("sector")
+        or SECTOR_MAP.get(cleaned_symbol, "")
+    ).strip()
+    info = {}
+    info_loaded = False
+
+    if yf is not None and cleaned_symbol:
+        try:
+            ticker_object = yf.Ticker(cleaned_symbol)
+            get_info = getattr(ticker_object, "get_info", None)
+            if callable(get_info):
+                info = get_info() or {}
+            else:
+                info = getattr(ticker_object, "info", {}) or {}
+            info_loaded = isinstance(info, dict)
+            if not info_loaded:
+                info = {}
+        except Exception:
+            app.logger.info("Dividend metadata unavailable for %s.", cleaned_symbol)
+            info = {}
+
+    quote_type = str(info.get("quoteType") or "").strip().upper()
+    category = str(info.get("category") or "").strip()
+    fund_markers = ("ETF", "FUND", "INDEX")
+    sector_category_text = f"{sector} {category}".upper()
+    is_etf = (
+        cleaned_symbol in DIVIDEND_ETF_TICKERS
+        or quote_type in {"ETF", "MUTUALFUND"}
+        or any(marker in sector_category_text for marker in fund_markers)
+    )
+
+    def numeric_value(value):
+        try:
+            number = float(value)
+            if pd.isna(number):
+                return None
+            return number
+        except (TypeError, ValueError):
+            return None
+
+    def percentage_text(value):
+        number = numeric_value(value)
+        if number is None or number < 0:
+            return "Not available"
+        percentage = number * 100 if number <= 1 else number
+        return f"{percentage:.2f}".rstrip("0").rstrip(".") + "%"
+
+    def amount_text(value):
+        number = numeric_value(value)
+        if number is None or number < 0:
+            return "Not available"
+        return f"{number:.4f}".rstrip("0").rstrip(".") + " per share annually"
+
+    def date_text(value):
+        if value is None or value == "":
+            return "Not available"
+        if isinstance(value, datetime):
+            parsed = value
+        else:
+            number = numeric_value(value)
+            if number is None:
+                return "Not available"
+            try:
+                parsed = datetime.fromtimestamp(number, tz=timezone.utc)
+            except (OverflowError, OSError, ValueError):
+                return "Not available"
+        return parsed.strftime("%d %B %Y")
+
+    reported_yield_value = info.get("dividendYield")
+    trailing_yield_value = info.get("trailingAnnualDividendYield")
+    annual_value = (
+        info.get("forwardAnnualDividendRate")
+        if info.get("forwardAnnualDividendRate") is not None
+        else info.get("trailingAnnualDividendRate")
+    )
+    market_price = (
+        info.get("currentPrice")
+        if info.get("currentPrice") is not None
+        else info.get("regularMarketPrice")
+    )
+    ex_dividend_value = info.get("exDividendDate")
+    payout_value = info.get("payoutRatio")
+
+    def yield_text():
+        trailing_yield = numeric_value(trailing_yield_value)
+        if trailing_yield is not None and trailing_yield > 0:
+            return percentage_text(trailing_yield)
+
+        annual_amount = numeric_value(annual_value)
+        price = numeric_value(market_price)
+        if annual_amount is not None and annual_amount > 0 and price is not None and price > 0:
+            return f"{annual_amount / price * 100:.2f}".rstrip("0").rstrip(".") + "%"
+
+        reported_yield = numeric_value(reported_yield_value)
+        if reported_yield is None or reported_yield <= 0:
+            return "Not available"
+        percentage = reported_yield * 100 if reported_yield <= 0.2 else reported_yield
+        return f"{percentage:.2f}".rstrip("0").rstrip(".") + "%"
+
+    yield_number = numeric_value(trailing_yield_value)
+    if yield_number is None:
+        yield_number = numeric_value(reported_yield_value)
+    annual_number = numeric_value(annual_value)
+    has_dividend_data = (
+        (yield_number is not None and yield_number > 0)
+        or (annual_number is not None and annual_number > 0)
+        or date_text(ex_dividend_value) != "Not available"
+    )
+    dividend_label = "Distribution" if is_etf else "Dividend"
+
+    if is_etf:
+        beginner_explanation = (
+            "ETF distributions are payments made from income received by the fund’s "
+            "underlying holdings. Some ETFs distribute income as cash, while accumulating "
+            "ETFs may reinvest income inside the fund instead. Distribution amounts can "
+            "change over time."
+        )
+        no_data_message = (
+            "No regular cash distribution found from the available data. Some ETFs "
+            "reinvest income or may not currently show distribution data."
+        )
+        frequency_note = (
+            "Distribution frequency varies by fund and share class. Check the fund’s "
+            "official schedule before relying on a payment date."
+        )
+    else:
+        beginner_explanation = (
+            "Dividends are cash payments some companies make to shareholders. They are "
+            "usually paid from company profits, but they are not guaranteed. A higher "
+            "yield can look attractive, but it can also signal risk if the market expects "
+            "the payment to be cut."
+        )
+        no_data_message = "No regular dividend found for this ticker from the available data."
+        frequency_note = (
+            "Payment frequency varies by company and market. Check the company’s official "
+            "announcements for the current schedule."
+        )
+
+    context = {
+        "ticker": cleaned_symbol,
+        "is_etf": is_etf,
+        "has_dividend_data": has_dividend_data,
+        "dividend_label": dividend_label,
+        "dividend_yield": yield_text(),
+        "annual_dividend": amount_text(annual_value),
+        "ex_dividend_date": date_text(ex_dividend_value),
+        "payout_ratio": percentage_text(payout_value),
+        "dividend_frequency_note": frequency_note,
+        "beginner_explanation": beginner_explanation,
+        "risk_note": (
+            "Dividend and distribution data is educational only. Yield changes when the "
+            "share price or payment amount changes. A high yield is not automatically a "
+            "good investment and may indicate elevated risk."
+        ),
+        "data_available": info_loaded,
+        "no_data_message": no_data_message,
+        "source_note": (
+            "Source: Yahoo Finance data accessed through yfinance. Values may be delayed, "
+            "incomplete or unavailable; confirm important details with the company or fund."
+            if info_loaded
+            else "Source data is currently unavailable from yfinance."
+        ),
+    }
+    DIVIDEND_CONTEXT_CACHE[cleaned_symbol] = {
+        "timestamp": now,
+        "context": dict(context),
+    }
+
+    return context
+
+
+# --- Helper for rendering dividend/distribution snapshot HTML for stock pages ---
+def render_dividend_snapshot_html(dividend_context):
+    context = dividend_context or {}
+    label = context.get("dividend_label") or "Dividend"
+    is_etf = bool(context.get("is_etf"))
+    section_title = "Distribution snapshot" if is_etf else "Dividend snapshot"
+    has_data = bool(context.get("has_dividend_data"))
+    no_data_message = context.get("no_data_message") or "No regular dividend or distribution found from the available data."
+
+    rows = ""
+    if has_data:
+        rows = f"""
+        <div class=\"dividend-metric\"><span>{label} yield</span><strong>{context.get('dividend_yield', 'Not available')}</strong></div>
+        <div class=\"dividend-metric\"><span>Annual {label.lower()}</span><strong>{context.get('annual_dividend', 'Not available')}</strong></div>
+        <div class=\"dividend-metric\"><span>Ex-dividend date</span><strong>{context.get('ex_dividend_date', 'Not available')}</strong></div>
+        """
+        if not is_etf:
+            rows += f"""
+            <div class=\"dividend-metric\"><span>Payout ratio</span><strong>{context.get('payout_ratio', 'Not available')}</strong></div>
+            """
+    else:
+        rows = f"""
+        <div class=\"dividend-empty\">{no_data_message}</div>
+        """
+
+    return f"""
+    <section class=\"card dividend-card\" aria-label=\"{section_title}\">
+        <p class=\"kicker\">Income education</p>
+        <h2>{section_title}</h2>
+        <div class=\"dividend-grid\">{rows}</div>
+        <p>{context.get('beginner_explanation', '')}</p>
+        <p class=\"dividend-note\">{context.get('dividend_frequency_note', '')}</p>
+        <p class=\"dividend-risk\">{context.get('risk_note', '')}</p>
+        <p class=\"muted\">{context.get('source_note', '')}</p>
+    </section>
+    """
+
+
 def get_premium_report(symbol, ai_context):
     cleaned_symbol = symbol.strip().upper()
     signal = ai_context.get("signal", "HOLD")
@@ -1452,6 +1692,8 @@ def premium_watchlist():
         a{color:#38bdf8;font-weight:900;text-decoration:none;}
         .button{display:inline-block;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-radius:15px;padding:14px 18px;font-weight:950;text-decoration:none;margin-top:12px;}
         .locked{background:rgba(239,68,68,0.09);border:1px solid rgba(239,68,68,0.20);border-radius:20px;padding:18px;color:#fecaca;line-height:1.65;}
+        .future-feature{margin-top:20px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.22);border-radius:18px;padding:16px;color:#fde68a;line-height:1.65;}
+        .future-feature strong{display:block;color:#fbbf24;margin-bottom:5px;}
         </style>
         </head>
         <body>
@@ -1467,6 +1709,11 @@ def premium_watchlist():
                     <li>Quality, growth and defensive buckets</li>
                     <li>Theme concentration read</li>
                 </ul>
+                <div class="future-feature">
+                    <strong>Coming later: Dividend Dip Tracker</strong>
+                    Track dividend-related watchlist moves, ex-dividend effects, income dips, and possible yield-trap risks as a future Premium research feature.
+                    <small style="display:block;margin-top:7px;color:#cbd5e1;">Future Premium research feature · Not live yet · Not financial advice</small>
+                </div>
                 <div class="locked"><strong>Locked:</strong> Upgrade to unlock the full watchlist intelligence layer.</div>
                 <a class="button" href="/upgrade">Unlock Premium</a>
             </div>
@@ -1499,6 +1746,8 @@ def premium_watchlist():
     th,td{text-align:left;padding:13px;border-bottom:1px solid rgba(255,255,255,0.08);vertical-align:top;}
     th{color:#94a3b8;text-transform:uppercase;letter-spacing:0.08em;font-size:12px;}
     .note{background:rgba(0,255,170,0.09);border:1px solid rgba(0,255,170,0.18);border-radius:20px;padding:18px;color:#d1fae5;line-height:1.7;}
+    .future-feature{background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.22);border-radius:20px;padding:18px;color:#fde68a;line-height:1.7;}
+    .future-feature strong{display:block;color:#fbbf24;font-size:18px;margin-bottom:5px;}
     @media(max-width:900px){body{padding:24px;}.grid{grid-template-columns:1fr;}h1{font-size:34px;}}
     </style>
     </head>
@@ -1556,6 +1805,13 @@ def premium_watchlist():
             </table>
                         <div class="note">Premium read: do not just chase the strongest BUY signal. Review whether your next addition improves the overall mix.</div>
             <a class="button" href="/portfolio-fit">Check Portfolio Fit</a>
+        </div>
+        <div class="card">
+            <div class="future-feature">
+                <strong>Coming later: Dividend Dip Tracker</strong>
+                Track dividend-related watchlist moves, ex-dividend effects, income dips, and possible yield-trap risks as a future Premium research feature.
+                <small style="display:block;margin-top:7px;color:#cbd5e1;">Future Premium research feature · Not live yet · Not financial advice</small>
+            </div>
         </div>
         {{ disclaimer_footer() | safe }}
     </div>
@@ -2710,108 +2966,85 @@ def build_newsletter_signal_highlights(recommendations, limit=5):
     return highlights
 
 
-def build_newsletter_watchlist(recommendations):
-    recommendation_lookup = {
-        str(item.get("ticker") or "").strip().upper(): item
-        for item in recommendations
+def build_newsletter_recommendation_universe():
+    recommendation_rows = get_recommendations() or []
+    output = [dict(item) for item in recommendation_rows]
+    seen = {
+        str(item.get("ticker") or "").strip().upper()
+        for item in output
         if item.get("ticker")
     }
-    universe_rows = get_stock_universe()
-    universe_lookup = {
-        str(item.get("ticker") or "").strip().upper(): item
-        for item in universe_rows
+    universe_rows = get_stock_universe() or []
+    universe_index = {
+        str(item.get("ticker") or "").strip().upper(): index
+        for index, item in enumerate(universe_rows)
         if item.get("ticker")
     }
 
-    requested_names = [
-        ("GOOGL", "Alphabet"),
-        ("NVDA", "NVIDIA"),
-        ("V", "Visa"),
-        ("BAE Systems", "BAE Systems"),
-        ("QinetiQ", "QinetiQ"),
-        ("VUSA", "Vanguard S&P 500 UCITS ETF"),
-        ("SPCX", "SpaceX"),
-    ]
+    for index, item in enumerate(universe_rows):
+        ticker = str(item.get("ticker") or "").strip().upper()
+        if not ticker or ticker in seen:
+            continue
+
+        signal_source = generated_signal_source_ticker(ticker)
+        signal_index = universe_index.get(signal_source, index)
+        signal, confidence = generated_signal_for_ticker(signal_source, signal_index)
+        company_name = str(item.get("name") or ticker).strip()
+        sector = str(item.get("sector") or "Diversified").strip()
+
+        output.append({
+            "ticker": ticker,
+            "signal": signal,
+            "confidence": confidence,
+            "reason": (
+                f"{company_name} is part of the StockRadar tracked stock universe. "
+                f"Its current {signal} research prompt reflects deterministic screening "
+                f"within the {sector} group and should be checked against live price action, "
+                "news and fundamentals."
+            ),
+            "sector": sector,
+        })
+        seen.add(ticker)
+
+    return output
+
+
+def build_newsletter_watchlist(recommendations, limit=8):
+    ranked_rows = sorted(
+        recommendations,
+        key=lambda item: confidence_number(item.get("confidence")),
+        reverse=True,
+    )
     watchlist = []
     seen = set()
 
-    for query, fallback_name in requested_names:
-        exact_ticker = query.upper()
-
-        if exact_ticker == "VUSA":
-            watchlist.append({
-                "ticker": "VUSA",
-                "name": "Vanguard S&P 500 UCITS ETF (VUSA)",
-                "badge": "WATCH",
-                "status": "Core",
-                "reason": "Broad S&P 500 exposure and core market benchmark.",
-                "data_confidence": "Medium",
-            })
-            seen.add("VUSA")
-            continue
-
-        universe_item = universe_lookup.get(exact_ticker)
-
-        if universe_item is None and exact_ticker not in recommendation_lookup:
-            matches = search_stock_universe(query, limit=1)
-            universe_item = matches[0] if matches else None
-
-        ticker = str(
-            (universe_item or {}).get("ticker")
-            or (exact_ticker if exact_ticker in recommendation_lookup else "")
-        ).strip().upper()
-
-        if not ticker or ticker in seen:
-            watchlist.append({
-                "ticker": query if query.isupper() else fallback_name,
-                "name": fallback_name,
-                "badge": "WATCH",
-                "status": "Caution",
-                "reason": "Signal pending — this name is not currently available in the StockRadar feed.",
-                "data_confidence": "Low",
-            })
-            continue
-
-        seen.add(ticker)
-        recommendation = recommendation_lookup.get(ticker)
-
-        if ticker == "SPCX":
+    for desired_signal in ("BUY", "HOLD", "SELL"):
+        candidates = [
+            item for item in ranked_rows
+            if clean_signal(item.get("signal"), item.get("confidence")) == desired_signal
+        ]
+        for item in candidates[:3]:
+            ticker = str(item.get("ticker") or "").strip().upper()
+            if not ticker or ticker in seen:
+                continue
+            signal = clean_signal(item.get("signal"), item.get("confidence"))
             watchlist.append({
                 "ticker": ticker,
                 "name": stock_display_label(ticker),
-                "badge": "WATCH",
-                "status": "High Risk",
-                "reason": newsletter_reader_safe_reason({}, ticker),
-                "data_confidence": "Low",
-            })
-        elif recommendation:
-            signal = clean_signal(
-                recommendation.get("signal"),
-                recommendation.get("confidence"),
-            )
-            watchlist.append({
-                "ticker": ticker,
-                "name": stock_display_label(ticker),
-                "badge": f"{signal} pattern",
+                "badge": "WATCH" if ticker == "SPCX" else f"{signal} pattern",
                 "status": newsletter_status(signal, ticker),
-                "reason": newsletter_reader_safe_reason(recommendation, ticker),
-                "data_confidence": newsletter_data_confidence(recommendation),
+                "reason": newsletter_reader_safe_reason(item, ticker),
+                "data_confidence": newsletter_data_confidence(item),
             })
-        else:
-            watchlist.append({
-                "ticker": ticker,
-                "name": stock_display_label(ticker),
-                "badge": "WATCH",
-                "status": "Steady",
-                "reason": "Signal pending — the stock is available in the universe but not in the current recommendation feed.",
-                "data_confidence": "Low",
-            })
+            seen.add(ticker)
+            if len(watchlist) >= limit:
+                return watchlist
 
     return watchlist
 
 
 def build_free_weekly_newsletter():
-    recommendations = get_recommendations() or []
+    recommendations = build_newsletter_recommendation_universe()
     buy_count, hold_count, sell_count, _ = calculate_counts(recommendations)
     total_count = len(recommendations)
     highlights = build_newsletter_signal_highlights(recommendations)
@@ -2839,24 +3072,24 @@ def build_free_weekly_newsletter():
 
     if not total_count:
         market_mood = "Data unavailable"
-        market_pulse = "Recommendation data is currently unavailable. No market direction is inferred."
+        market_pulse = "StockRadar tracked stock universe data is currently unavailable. No market direction is inferred."
     elif buy_count > sell_count * 1.5:
         market_mood = "Constructive, with selectivity"
         market_pulse = (
             f"{buy_count} constructive patterns, {hold_count} steady patterns and "
-            f"{sell_count} caution patterns appear in the current StockRadar feed."
+            f"{sell_count} caution patterns appear across the StockRadar tracked stock universe."
         )
     elif sell_count > buy_count:
         market_mood = "Cautious"
         market_pulse = (
             f"Caution patterns ({sell_count}) outnumber constructive patterns ({buy_count}). "
-            f"{hold_count} names remain steady or unresolved."
+            f"{hold_count} names remain steady or unresolved across the StockRadar tracked stock universe."
         )
     else:
         market_mood = "Mixed"
         market_pulse = (
-            f"The feed is balanced: {buy_count} constructive, {hold_count} steady and "
-            f"{sell_count} caution patterns."
+            f"The StockRadar tracked stock universe is balanced: {buy_count} constructive, "
+            f"{hold_count} steady and {sell_count} caution patterns."
         )
 
     try:
@@ -2932,6 +3165,7 @@ def build_free_weekly_newsletter():
         "best_looking_area": best_area,
         "risk_area": risk_area,
         "market_pulse": market_pulse,
+        "tracked_universe_count": total_count,
         "signal_highlights": highlights,
         "trending_vs_forecasting": {
             "trending": trending,
@@ -2952,7 +3186,9 @@ def build_free_weekly_newsletter():
 def build_newsletter_plain_text(draft):
     lines = [
         draft["title"],
-        f"Generated: {draft['generated_at']}",
+        f"Issue date: {draft.get('issue_date_label', 'Not available')}",
+        f"Issue status: {draft.get('issue_status', 'Preview')}",
+        f"Last refreshed: {draft.get('last_refreshed', draft['generated_at'])}",
         "",
         "MARKET PULSE",
         f"Mood: {draft['market_mood']}",
@@ -2992,38 +3228,266 @@ def build_newsletter_plain_text(draft):
     for item in draft["risk_check"]:
         lines.append(f"- {item}")
 
+    if draft.get("premium_note"):
+        lines.extend([
+            "",
+            "PREMIUM RESEARCH PREVIEW",
+            draft["premium_note"],
+            f"Explore Premium: {PRODUCTION_BASE_URL}/upgrade",
+            f"Premium Watchlist: {PRODUCTION_BASE_URL}/premium-watchlist",
+            f"Latest issue: {PRODUCTION_BASE_URL}/newsletter/latest",
+            "Research prompts only. Premium tools are not financial advice or buy/sell instructions.",
+        ])
+
     lines.extend(["", draft["disclaimer"]])
     return "\n".join(lines)
 
 
-def newsletter_issue_metadata(now=None):
-    issue_time = now or datetime.now(timezone.utc)
-    iso_year, iso_week, _ = issue_time.isocalendar()
+def get_weekly_newsletter_issue_date(now=None):
+    """Return the Friday issue date used for StockRadar Weekly."""
+    london_timezone = ZoneInfo("Europe/London")
+    london_now = now or datetime.now(london_timezone)
+
+    if london_now.tzinfo is None:
+        london_now = london_now.replace(tzinfo=london_timezone)
+    else:
+        london_now = london_now.astimezone(london_timezone)
+
+    today = london_now.date()
+    weekday = today.weekday()
+
+    if weekday <= 4:
+        return today + timedelta(days=4 - weekday)
+
+    return today - timedelta(days=weekday - 4)
+
+
+def get_weekly_newsletter_status(now=None):
+    london_timezone = ZoneInfo("Europe/London")
+    london_now = now or datetime.now(london_timezone)
+    if london_now.tzinfo is None:
+        london_now = london_now.replace(tzinfo=london_timezone)
+    else:
+        london_now = london_now.astimezone(london_timezone)
+
+    weekday = london_now.weekday()
+    if weekday < 4:
+        issue_date = get_weekly_newsletter_issue_date(london_now)
+        return {
+            "key": "preview",
+            "label": "Preview",
+            "message": f"Preview for Friday {issue_date.strftime('%d %B %Y')}",
+            "rss_label": "Preview issue",
+            "is_final": False,
+        }
+    if weekday == 4 and london_now.time() < dt_time(hour=17):
+        return {
+            "key": "friday_preview",
+            "label": "Friday preview",
+            "message": "Friday issue in progress",
+            "rss_label": "Preview issue",
+            "is_final": False,
+        }
     return {
-        "title": f"StockRadar Weekly — Week {iso_week}, {iso_year}",
-        "guid": f"stockradar-weekly-{iso_year}-W{iso_week:02d}",
-        "published_at": issue_time,
+        "key": "final",
+        "label": "Final end-of-week issue",
+        "message": "Final end-of-week issue",
+        "rss_label": "Final end-of-week issue",
+        "is_final": True,
     }
 
 
+def newsletter_cache_is_fresh(issue_date, issue_status, now=None):
+    cached_issue = WEEKLY_NEWSLETTER_ISSUE_CACHE.get("issue")
+    cached_generated_at = WEEKLY_NEWSLETTER_ISSUE_CACHE.get("generated_at")
+    if (
+        cached_issue is None
+        or cached_generated_at is None
+        or WEEKLY_NEWSLETTER_ISSUE_CACHE.get("issue_date") != issue_date
+        or WEEKLY_NEWSLETTER_ISSUE_CACHE.get("issue_status") != issue_status["key"]
+    ):
+        return False
+
+    if issue_status["is_final"]:
+        return True
+
+    london_timezone = ZoneInfo("Europe/London")
+    london_now = now or datetime.now(london_timezone)
+    if london_now.tzinfo is None:
+        london_now = london_now.replace(tzinfo=london_timezone)
+    else:
+        london_now = london_now.astimezone(london_timezone)
+
+    generated_at = cached_generated_at
+    if generated_at.tzinfo is None:
+        generated_at = generated_at.replace(tzinfo=london_timezone)
+    else:
+        generated_at = generated_at.astimezone(london_timezone)
+
+    age_seconds = (london_now - generated_at).total_seconds()
+    return 0 <= age_seconds <= WEEKLY_NEWSLETTER_PREVIEW_CACHE_TTL_SECONDS
+
+
+def newsletter_issue_date(now=None):
+    return get_weekly_newsletter_issue_date(now)
+
+
+def newsletter_issue_metadata(now=None, generated_at=None, issue_status=None):
+    london_timezone = ZoneInfo("Europe/London")
+    london_now = now or datetime.now(london_timezone)
+    if london_now.tzinfo is None:
+        london_now = london_now.replace(tzinfo=london_timezone)
+    else:
+        london_now = london_now.astimezone(london_timezone)
+
+    issue_date = get_weekly_newsletter_issue_date(london_now)
+    status = issue_status or get_weekly_newsletter_status(london_now)
+    refreshed_at = generated_at or london_now
+    return {
+        "title": f"StockRadar Weekly — Friday {issue_date.strftime('%d %B %Y')}",
+        "guid": f"stockradar-weekly-{issue_date.isoformat()}",
+        "published_at": refreshed_at,
+        "issue_date": issue_date.isoformat(),
+        "issue_date_label": f"Friday {issue_date.strftime('%d %B %Y')}",
+        "issue_status": status["label"],
+        "issue_status_key": status["key"],
+        "issue_status_message": status["message"],
+        "rss_status_label": status["rss_label"],
+        "is_final": status["is_final"],
+        "generated_at": refreshed_at,
+        "generated_at_label": refreshed_at.strftime("%d %B %Y, %H:%M %Z"),
+    }
+
+
+def build_weekly_newsletter_issue(now=None, force_refresh=False):
+    london_timezone = ZoneInfo("Europe/London")
+    london_now = now or datetime.now(london_timezone)
+    if london_now.tzinfo is None:
+        london_now = london_now.replace(tzinfo=london_timezone)
+    else:
+        london_now = london_now.astimezone(london_timezone)
+
+    status = get_weekly_newsletter_status(london_now)
+    metadata = newsletter_issue_metadata(london_now, issue_status=status)
+    issue_date = metadata["issue_date"]
+
+    if (
+        not force_refresh
+        and newsletter_cache_is_fresh(issue_date, status, london_now)
+    ):
+        return WEEKLY_NEWSLETTER_ISSUE_CACHE["issue"]
+
+    refreshed_at = london_now
+    metadata = newsletter_issue_metadata(
+        london_now,
+        generated_at=refreshed_at,
+        issue_status=status,
+    )
+    draft = build_free_weekly_newsletter()
+    recommendations = build_newsletter_recommendation_universe()
+    buy_rows, hold_rows, sell_rows, conviction_rows = split_rows(recommendations)
+    full_signal_rows = {
+        signal: [
+            item for item in recommendations
+            if clean_signal(item.get("signal"), item.get("confidence")) == signal
+        ]
+        for signal in ("BUY", "HOLD", "SELL")
+    }
+
+    def issue_signal_rows(rows, limit):
+        output = []
+        ranked_rows = sorted(
+            rows,
+            key=lambda item: confidence_number(item.get("confidence")),
+            reverse=True,
+        )
+        for item in ranked_rows[:limit]:
+            ticker = str(item.get("ticker") or "").strip().upper()
+            if not ticker:
+                continue
+            output.append({
+                "ticker": ticker,
+                "name": stock_display_label(ticker),
+                "signal": clean_signal(item.get("signal"), item.get("confidence")),
+                "confidence": normalise_confidence(item.get("confidence")),
+                "reason": newsletter_reader_safe_reason(item, ticker),
+            })
+        return output
+
+    draft["title"] = metadata["title"]
+    draft["issue_date_label"] = metadata["issue_date_label"]
+    draft["issue_status"] = metadata["issue_status"]
+    draft["issue_status_message"] = metadata["issue_status_message"]
+    draft["is_final"] = metadata["is_final"]
+    draft["last_refreshed"] = metadata["generated_at_label"]
+    draft["preview_refresh_note"] = (
+        "This preview refreshes as StockRadar signals, market news and tracked-stock "
+        "data update before the Friday end-of-week issue."
+        if not metadata["is_final"]
+        else ""
+    )
+    draft["signal_watch"] = {
+        "strongest_buy": issue_signal_rows(full_signal_rows["BUY"] or buy_rows, 3),
+        "notable_hold": issue_signal_rows(full_signal_rows["HOLD"] or hold_rows, 3),
+        "caution_sell": issue_signal_rows(full_signal_rows["SELL"] or sell_rows, 3),
+        "highest_conviction": issue_signal_rows(conviction_rows, 3),
+    }
+    draft["premium_note"] = (
+        "Premium adds decision checks, portfolio-fit prompts and future research "
+        "tools such as the Dividend Dip Tracker."
+    )
+    draft["disclaimer"] = (
+        "StockRadar provides educational market information and research tools only. "
+        "It is not personal financial advice. BUY, HOLD, and SELL signals are research "
+        "prompts, not buy/sell instructions or guarantees."
+    )
+    draft["plain_text"] = build_newsletter_plain_text(draft)
+
+    issue = {
+        "draft": draft,
+        "metadata": metadata,
+        "summary": draft.get("market_pulse") or "Market pulse data unavailable.",
+    }
+    WEEKLY_NEWSLETTER_ISSUE_CACHE["issue_date"] = issue_date
+    WEEKLY_NEWSLETTER_ISSUE_CACHE["issue_status"] = status["key"]
+    WEEKLY_NEWSLETTER_ISSUE_CACHE["generated_at"] = refreshed_at
+    WEEKLY_NEWSLETTER_ISSUE_CACHE["issue"] = issue
+    return issue
+
+
 newsletter_issue_body_html = """
+<section>
+<p><strong>Issue date:</strong> {{ draft.issue_date_label }}</p>
+<p><strong>Issue status:</strong> {{ draft.issue_status }}</p>
+<p><strong>{{ draft.issue_status_message }}</strong></p>
+<p><strong>Last refreshed:</strong> {{ draft.last_refreshed }}</p>
+{% if draft.preview_refresh_note %}<p>{{ draft.preview_refresh_note }}</p>{% endif %}
+</section>
 <section>
 <h2>Market pulse</h2>
 <p style="margin-bottom:16px;"><strong>Market mood:</strong> {{ draft.market_mood }}.</p>
 <p style="margin-top:0;">{{ draft.market_pulse }}</p>
 </section>
 <section>
-<h2>Signal highlights</h2>
-{% if draft.signal_highlights %}
-{% for item in draft.signal_highlights[:5] %}
+<h2>Signal Watch</h2>
+{% set signal_groups = [
+    ("Stronger BUY research prompts", draft.signal_watch.strongest_buy),
+    ("Notable HOLD / watchlist names", draft.signal_watch.notable_hold),
+    ("Caution / SELL research prompts", draft.signal_watch.caution_sell)
+] %}
+{% for group_title, items in signal_groups %}
+{% if items %}
+<h3>{{ group_title }}</h3>
+{% for item in items[:2] %}
 <article>
 <h3>{{ item.name }}</h3>
-<p><strong>{{ item.badge }}</strong> · {{ item.status }} · Data confidence: {{ item.data_confidence }}</p>
+<p><strong>{{ item.signal }} research prompt</strong> · Confidence: {{ item.confidence }}</p>
 <p><strong>Why it appears:</strong> {{ item.reason }}</p>
-<p>{{ item.plain_english_takeaway }}</p>
 </article>
 {% endfor %}
-{% else %}
+{% endif %}
+{% endfor %}
+{% if not draft.signal_watch.strongest_buy and not draft.signal_watch.notable_hold and not draft.signal_watch.caution_sell %}
 <p>Signal data unavailable.</p>
 {% endif %}
 </section>
@@ -3043,7 +3507,7 @@ newsletter_issue_body_html = """
 </ul>
 </section>
 <section>
-<h2>Watchlist</h2>
+<h2>Stocks to Watch Next Week</h2>
 <ul>
 {% for item in draft.watchlist %}
 <li><strong>{{ item.name }}</strong> — {{ item.badge }} · {{ item.status }}: {{ item.reason }}</li>
@@ -3059,11 +3523,25 @@ newsletter_issue_body_html = """
 </ul>
 <p><strong>Educational only.</strong> {{ draft.disclaimer }}</p>
 </section>
+<section>
+<h2>Premium research preview</h2>
+<p>{{ draft.premium_note }}</p>
+<p>
+<a href="{{ production_base_url }}/upgrade">Explore Premium</a> ·
+<a href="{{ production_base_url }}/premium-watchlist">Preview Premium Watchlist</a> ·
+<a href="{{ production_base_url }}/newsletter/latest">Read the latest StockRadar Weekly issue</a>
+</p>
+<p><strong>Research prompts only.</strong> Premium tools are not financial advice or buy/sell instructions.</p>
+</section>
 """
 
 
 def render_newsletter_issue_body(draft):
-    return render_template_string(newsletter_issue_body_html, draft=draft)
+    return render_template_string(
+        newsletter_issue_body_html,
+        draft=draft,
+        production_base_url=PRODUCTION_BASE_URL,
+    )
 
 
 newsletter_landing_html = """
@@ -3136,23 +3614,34 @@ newsletter_latest_html = """
 <header class="header">
 <div class="kicker">The 5-minute market signal</div>
 <h1>{{ issue.title }}</h1>
-<p class="meta">Generated {{ draft.generated_at }}</p>
+<p class="meta">Issue date: {{ issue.issue_date_label }}</p>
+<p class="meta">Issue status: {{ issue.issue_status }}</p>
+<p><strong>{{ issue.issue_status_message }}</strong></p>
+<p class="meta">Last refreshed: {{ issue.generated_at_label }}</p>
+{% if draft.preview_refresh_note %}<p>{{ draft.preview_refresh_note }}</p>{% endif %}
 <p style="margin-bottom:16px;"><strong>Market mood:</strong> {{ draft.market_mood }}.</p>
 <p style="margin-top:0;">{{ draft.market_pulse }}</p>
 </header>
 <section class="section">
-<h2>Signal highlights</h2>
-{% if draft.signal_highlights %}
-{% for item in draft.signal_highlights[:5] %}
+<h2>Signal Watch</h2>
+{% set signal_groups = [
+    ("Stronger BUY research prompts", draft.signal_watch.strongest_buy),
+    ("Notable HOLD / watchlist names", draft.signal_watch.notable_hold),
+    ("Caution / SELL research prompts", draft.signal_watch.caution_sell)
+] %}
+{% for group_title, items in signal_groups %}
+{% if items %}
+<h3>{{ group_title }}</h3>
+{% for item in items[:2] %}
 <article class="signal">
 <h3>{{ item.name }}</h3>
-<p><strong>{{ item.badge }} · {{ item.status }}</strong></p>
+<p><strong>{{ item.signal }} research prompt · {{ item.confidence }}</strong></p>
 <p><strong>Why it appears:</strong> {{ item.reason }}</p>
-<p>{{ item.plain_english_takeaway }}</p>
-<div class="confidence">Data confidence: {{ item.data_confidence }}</div>
 </article>
 {% endfor %}
-{% else %}
+{% endif %}
+{% endfor %}
+{% if not draft.signal_watch.strongest_buy and not draft.signal_watch.notable_hold and not draft.signal_watch.caution_sell %}
 <p>Signal data unavailable.</p>
 {% endif %}
 </section>
@@ -3164,13 +3653,19 @@ newsletter_latest_html = """
 <ul>{% for item in draft.trending_vs_forecasting.forecasting %}<li>{{ item }}</li>{% endfor %}</ul>
 </section>
 <section class="section">
-<h2>Watchlist</h2>
+<h2>Stocks to Watch Next Week</h2>
 <ul>{% for item in draft.watchlist %}<li><strong>{{ item.name }}</strong> — {{ item.badge }} · {{ item.status }}: {{ item.reason }}</li>{% endfor %}</ul>
 </section>
 <section class="section">
 <h2>Risk check</h2>
 <ul>{% for item in draft.risk_check %}<li>{{ item }}</li>{% endfor %}</ul>
 <p><strong>Educational only.</strong> {{ draft.disclaimer }}</p>
+</section>
+<section class="section">
+<h2>Premium research preview</h2>
+<p>{{ draft.premium_note }}</p>
+<p><a href="/upgrade">Explore Premium</a> · <a href="/premium-watchlist">Preview Premium Watchlist</a> · <a href="/newsletter/latest">Latest issue</a></p>
+<p><strong>Research prompts only.</strong> Premium tools are not financial advice or buy/sell instructions.</p>
 </section>
 </div>
 </body>
@@ -4301,6 +4796,9 @@ p{color:#cbd5e1;line-height:1.7;font-size:16px;}
 .mini{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:20px;padding:18px;color:#e5e7eb;line-height:1.55;}
 .mini strong{display:block;color:white;margin-bottom:6px;}
 .active-card{background:linear-gradient(135deg,rgba(0,255,170,0.16),rgba(56,189,248,0.10));border-color:rgba(0,255,170,0.24);}
+.future-card{margin-top:24px;background:linear-gradient(135deg,rgba(245,158,11,0.10),rgba(15,23,42,0.72));border-color:rgba(245,158,11,0.24);}
+.future-card .future-label{color:#fbbf24;font-weight:950;text-transform:uppercase;letter-spacing:0.1em;font-size:12px;margin:0 0 10px;}
+.future-card h2{color:#f8fafc;}
 @media(max-width:850px){body{padding:24px;}.hero,.grid{grid-template-columns:1fr;}h1{font-size:42px;}}
 </style>
 </head>
@@ -4361,6 +4859,13 @@ p{color:#cbd5e1;line-height:1.7;font-size:16px;}
         </div>
     </div>
     {% endif %}
+    <div class="card future-card">
+        <p class="future-label">Coming later · Future Premium research feature · Not live yet</p>
+        <h2>Coming later: Dividend Dip Tracker</h2>
+        <p>Track dividend-related watchlist moves, ex-dividend effects, income dips, and possible yield-trap risks as a future Premium research feature.</p>
+        <p>This will be a research prompt tool only. It will not be financial advice, a buy signal, or a recommendation to trade around dividends.</p>
+        <p class="note"><strong style="color:#fde68a;">Future Premium research feature · Not live yet · Not financial advice</strong></p>
+    </div>
     {{ disclaimer_footer() | safe }}
 </div>
 </body>
@@ -4382,7 +4887,7 @@ stock_detail_html = """
 <title>{{ stock_display_label(symbol) }} Stock Detail</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-*{box-sizing:border-box;}body{background:radial-gradient(circle at 12% 6%,rgba(0,255,170,0.11),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;margin:0;min-height:100vh;padding:48px;}.card{background:linear-gradient(180deg,rgba(18,29,42,0.97),rgba(12,22,33,0.97));padding:30px;border-radius:28px;margin-bottom:22px;border:1px solid rgba(148,163,184,0.16);box-shadow:0 22px 65px rgba(0,0,0,0.30);}h1,h2{color:#f1f5f9;}p{color:#b9c5d2;line-height:1.7;}a{color:#69c9f2;text-decoration:none;font-weight:bold;}.range-row{display:flex;gap:12px;flex-wrap:wrap;margin:22px 0;}.range-button{display:inline-block;padding:12px 16px;border-radius:15px;background:#111d2b;color:#dbe4ee;text-decoration:none;border:1px solid rgba(148,163,184,0.14);font-weight:800;}.range-button.active{background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;}.metric-grid,.ai-grid,.example-report-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-bottom:22px;}.metric-grid{grid-template-columns:repeat(4,1fr);}.ai-card,.metric,.example-report-card{background:rgba(14,25,38,0.90);border:1px solid rgba(148,163,184,0.15);border-radius:22px;padding:23px;}.ai-card.warning{background:linear-gradient(145deg,rgba(89,70,28,0.35),rgba(14,25,38,0.94));}.ai-card.risk{background:linear-gradient(145deg,rgba(24,60,78,0.32),rgba(14,25,38,0.94));}.premium-banner,.example-report{background:linear-gradient(135deg,rgba(15,55,50,0.74),rgba(55,42,26,0.60),rgba(20,45,61,0.62));border:1px solid rgba(74,222,163,0.20);border-radius:28px;padding:30px;margin-bottom:22px;}.premium-banner{display:grid;grid-template-columns:1.45fr 0.75fr;gap:24px;align-items:center;}.premium-cta-box{background:rgba(9,18,28,0.80);border:1px solid rgba(148,163,184,0.16);border-radius:22px;padding:22px;text-align:center;}.payment-button{display:inline-block;background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;border-radius:16px;padding:14px 20px;font-size:15px;font-weight:950;text-decoration:none;}.payment-note{color:#91a3b4;font-size:13px;margin-top:12px;line-height:1.55;}.signal-badge,.free-strength,.strength-pill{display:inline-block;margin-top:10px;padding:8px 12px;border-radius:999px;background:rgba(148,163,184,0.09);font-weight:900;font-size:12px;text-transform:uppercase;}.confidence-large,.confidence-score{font-size:40px;font-weight:950;}.free-meter,.confidence-meter{font-size:26px;letter-spacing:2px;color:#4adea3;font-weight:950;margin:8px 0;}.buy{color:#4ade80;font-weight:bold;}.sell{color:#fb7185;font-weight:bold;}.hold{color:#f4c95d;font-weight:bold;}canvas{background:#0a1420;border-radius:18px;padding:18px;}@media(max-width:900px){body{padding:24px 16px;}.metric-grid,.ai-grid,.premium-banner,.example-report-grid{grid-template-columns:1fr;}}
+*{box-sizing:border-box;}body{background:radial-gradient(circle at 12% 6%,rgba(0,255,170,0.11),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;margin:0;min-height:100vh;padding:48px;}.card{background:linear-gradient(180deg,rgba(18,29,42,0.97),rgba(12,22,33,0.97));padding:30px;border-radius:28px;margin-bottom:22px;border:1px solid rgba(148,163,184,0.16);box-shadow:0 22px 65px rgba(0,0,0,0.30);}h1,h2{color:#f1f5f9;}p{color:#b9c5d2;line-height:1.7;}a{color:#69c9f2;text-decoration:none;font-weight:bold;}.kicker{color:#4adea3;font-weight:950;text-transform:uppercase;letter-spacing:.1em;font-size:12px;margin:0 0 8px;}.muted{color:#91a3b4;font-size:13px;}.range-row{display:flex;gap:12px;flex-wrap:wrap;margin:22px 0;}.range-button{display:inline-block;padding:12px 16px;border-radius:15px;background:#111d2b;color:#dbe4ee;text-decoration:none;border:1px solid rgba(148,163,184,0.14);font-weight:800;}.range-button.active{background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;}.metric-grid,.ai-grid,.example-report-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-bottom:22px;}.metric-grid{grid-template-columns:repeat(4,1fr);}.ai-card,.metric,.example-report-card{background:rgba(14,25,38,0.90);border:1px solid rgba(148,163,184,0.15);border-radius:22px;padding:23px;}.ai-card.warning{background:linear-gradient(145deg,rgba(89,70,28,0.35),rgba(14,25,38,0.94));}.ai-card.risk{background:linear-gradient(145deg,rgba(24,60,78,0.32),rgba(14,25,38,0.94));}.premium-banner,.example-report{background:linear-gradient(135deg,rgba(15,55,50,0.74),rgba(55,42,26,0.60),rgba(20,45,61,0.62));border:1px solid rgba(74,222,163,0.20);border-radius:28px;padding:30px;margin-bottom:22px;}.premium-banner{display:grid;grid-template-columns:1.45fr 0.75fr;gap:24px;align-items:center;}.premium-cta-box{background:rgba(9,18,28,0.80);border:1px solid rgba(148,163,184,0.16);border-radius:22px;padding:22px;text-align:center;}.payment-button{display:inline-block;background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;border-radius:16px;padding:14px 20px;font-size:15px;font-weight:950;text-decoration:none;}.payment-note{color:#91a3b4;font-size:13px;margin-top:12px;line-height:1.55;}.signal-badge,.free-strength,.strength-pill{display:inline-block;margin-top:10px;padding:8px 12px;border-radius:999px;background:rgba(148,163,184,0.09);font-weight:900;font-size:12px;text-transform:uppercase;}.confidence-large,.confidence-score{font-size:40px;font-weight:950;}.free-meter,.confidence-meter{font-size:26px;letter-spacing:2px;color:#4adea3;font-weight:950;margin:8px 0;}.dividend-card{border:1px solid rgba(74,222,163,0.18);}.dividend-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:16px 0;}.dividend-metric{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:16px;padding:14px;line-height:1.45;}.dividend-metric span{display:block;color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:0.07em;font-weight:900;margin-bottom:6px;}.dividend-metric strong{display:block;color:#e5f4ff;font-size:17px;}.dividend-empty{background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.20);border-radius:16px;padding:14px;color:#fde68a;line-height:1.65;}.dividend-note{color:#cbd5e1;background:rgba(148,163,184,0.07);border-radius:14px;padding:12px 14px;}.dividend-risk{color:#fecaca;background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.16);border-radius:14px;padding:12px 14px;}.buy{color:#4ade80;font-weight:bold;}.sell{color:#fb7185;font-weight:bold;}.hold{color:#f4c95d;font-weight:bold;}canvas{background:#0a1420;border-radius:18px;padding:18px;}@media(max-width:900px){body{padding:24px 16px;}.metric-grid,.ai-grid,.premium-banner,.example-report-grid,.dividend-grid{grid-template-columns:1fr;}}
 </style>
 </head>
 <body>
@@ -4391,6 +4896,45 @@ stock_detail_html = """
 <div class="premium-banner"><div><small>Premium AI Intelligence Preview</small><h2>{{ stock_display_label(symbol) }} intelligence, not just a chart.</h2><p>Every supported stock and index gets the same structure: a useful free preview, then a stronger Premium decision panel with deeper AI explanation, risk read, portfolio role and what to watch next.</p></div><div class="premium-cta-box">{% if has_premium_access %}<strong>✅ Premium Active</strong><p>You have full premium access for {{ stock_display_label(symbol) }}.</p><a class="payment-button" href="/premium-decision/{{ symbol }}">Open Decision Panel</a>{% else %}<strong>Unlock the full {{ stock_display_label(symbol) }} Decision Panel</strong><p>Premium adds portfolio role, concentration risk, readiness and before-acting checks.</p><a class="payment-button" href="/premium-decision/{{ symbol }}">Preview Premium Panel</a><div class="payment-note">Non-premium users see the locked preview and upgrade route.</div>{% endif %}</div></div>
 
 <div class="ai-grid"><div class="ai-card"><small>Free Signal Preview</small><h2 class="{% if ai_context.signal == 'BUY' %}buy{% elif ai_context.signal == 'SELL' %}sell{% elif ai_context.signal == 'HOLD' %}hold{% endif %}">{{ ai_context.signal }}</h2><p>Every supported stock page gets the same free AI preview. Current signal for {{ stock_display_label(symbol) }}: {{ ai_context.signal }}.</p><span class="signal-badge">Live stock page: {{ stock_display_label(symbol) }}</span></div><div class="ai-card warning"><small>Free Confidence Preview</small><div class="confidence-large">{{ ai_context.confidence }}</div><div class="free-meter">{{ ai_context.confidence_meter }}</div><span class="free-strength">Signal strength: {{ ai_context.strength_label }}</span><p style="margin-top:12px;">Free shows the basic score and meter. Pro explains what is driving it for {{ stock_display_label(symbol) }}.</p></div><div class="ai-card risk"><small>{% if has_premium_access %}Premium Active{% else %}Pro Preview{% endif %}</small><h2>Next Move</h2>{% if has_premium_access %}<p>{{ ai_context.watch_next }}</p><span class="signal-badge">Premium unlocked</span>{% else %}<p>Pro unlocks the full interpretation behind the meter: why the score matters, what risk is building and what to watch next for {{ stock_display_label(symbol) }}.</p><a class="signal-badge" href="/upgrade">Unlock Premium</a>{% endif %}</div></div>
+
+{% if dividend_context %}
+<div class="card dividend-card">
+    <p class="kicker">Income education</p>
+    <h2>{{ "Distribution snapshot" if dividend_context.is_etf else "Dividend snapshot" }}</h2>
+
+    {% if dividend_context.has_dividend_data %}
+    <div class="dividend-grid">
+        <div class="dividend-metric">
+            <span>{{ dividend_context.dividend_label }} yield</span>
+            <strong>{{ dividend_context.dividend_yield }}</strong>
+        </div>
+        <div class="dividend-metric">
+            <span>Annual {{ dividend_context.dividend_label | lower }}</span>
+            <strong>{{ dividend_context.annual_dividend }}</strong>
+        </div>
+        <div class="dividend-metric">
+            <span>Ex-dividend date</span>
+            <strong>{{ dividend_context.ex_dividend_date }}</strong>
+        </div>
+        {% if not dividend_context.is_etf %}
+        <div class="dividend-metric">
+            <span>Payout ratio</span>
+            <strong>{{ dividend_context.payout_ratio }}</strong>
+        </div>
+        {% endif %}
+    </div>
+    {% else %}
+    <div class="dividend-empty">
+        {{ dividend_context.no_data_message }}
+    </div>
+    {% endif %}
+
+    <p>{{ dividend_context.beginner_explanation }}</p>
+    <p class="dividend-note">{{ dividend_context.dividend_frequency_note }}</p>
+    <p class="dividend-risk">{{ dividend_context.risk_note }}</p>
+    <p class="muted">{{ dividend_context.source_note }}</p>
+</div>
+{% endif %}
 
 <div class="card" style="background:linear-gradient(135deg,rgba(0,255,170,0.12),rgba(56,189,248,0.08));border-color:rgba(0,255,170,0.22);"><small style="color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.1em;">StockRadar Weekly</small><h2>Want the weekly market signal?</h2><p style="color:#cbd5e1;line-height:1.7;">Get StockRadar Weekly for market pulse, signal highlights, watchlist moves and risk checks.</p><a class="payment-button" href="/newsletter">Get the Weekly Brief</a></div>
 
@@ -4425,22 +4969,26 @@ def newsletter():
 
 @app.route("/newsletter/latest")
 def newsletter_latest():
-    draft = build_free_weekly_newsletter()
-    issue = newsletter_issue_metadata()
+    weekly_issue = build_weekly_newsletter_issue()
     return render_template_string(
         newsletter_latest_html,
-        draft=draft,
-        issue=issue,
+        draft=weekly_issue["draft"],
+        issue=weekly_issue["metadata"],
     )
 
 
 @app.route("/newsletter/rss")
 def newsletter_rss():
-    draft = build_free_weekly_newsletter()
-    issue = newsletter_issue_metadata()
+    weekly_issue = build_weekly_newsletter_issue()
+    draft = weekly_issue["draft"]
+    issue = weekly_issue["metadata"]
     feed_url = f"{PRODUCTION_BASE_URL}/newsletter"
     item_url = f"{PRODUCTION_BASE_URL}/newsletter/latest"
     issue_body = render_newsletter_issue_body(draft).replace("]]>", "]]&gt;")
+    rss_description = (
+        f"{issue['rss_status_label']}: "
+        f"{weekly_issue['summary']}"
+    )
     rss_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:dc="http://purl.org/dc/elements/1.1/">
 <channel>
@@ -4454,8 +5002,7 @@ def newsletter_rss():
 <link>{xml_escape(item_url)}</link>
 <guid isPermaLink="false">{xml_escape(issue["guid"])}</guid>
 <pubDate>{format_datetime(issue["published_at"])}</pubDate>
-<dc:creator>StockRadar Team</dc:creator>
-<description>{xml_escape(draft.get("market_pulse") or "Market pulse data unavailable.")}</description>
+<description>{xml_escape(rss_description)}</description>
 <content:encoded><![CDATA[{issue_body}]]></content:encoded>
 </item>
 </channel>
@@ -4851,7 +5398,7 @@ def ai_recommendations():
     return redirect(url_for("dashboard", tab="watchlist"))
 
 
-@app.route("/stock/<path:symbol>")
+@app.route("/stock/<symbol>")
 def stock_detail(symbol):
     requested_symbol = symbol.strip().upper()
     cleaned_symbol = canonical_stock_symbol(symbol)
@@ -4867,6 +5414,7 @@ def stock_detail(symbol):
     lifetime = stock_lifetime_growth(cleaned_symbol)
     ai_context = get_stock_ai_context(cleaned_symbol)
     example_report = get_premium_report(cleaned_symbol, ai_context)
+    dividend_context = get_dividend_context(cleaned_symbol)
 
     return render_template_string(
         stock_detail_html,
@@ -4878,6 +5426,7 @@ def stock_detail(symbol):
         lifetime=lifetime,
         ai_context=ai_context,
         example_report=example_report,
+        dividend_context=dividend_context,
         has_premium_access=premium_has_access(),
     )
 
