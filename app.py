@@ -5021,6 +5021,15 @@ def admin_newsletter_preview():
 
 
 # --- Health and diagnostics routes ---
+@app.route("/deploy-version")
+def deploy_version():
+    return jsonify({
+        "build": "dividend-snapshot-f1ade12",
+        "commit_expected": "f1ade12",
+        "dividend_template_expected": True,
+    })
+
+
 @app.route("/health")
 def health():
     return jsonify({
