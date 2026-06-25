@@ -1697,6 +1697,299 @@ def get_premium_report(symbol, ai_context):
         "checklist": checklist,
     }
 
+
+def compare_signal_rank(signal):
+    return {
+        "BUY": 3,
+        "HOLD": 2,
+        "WATCH": 2,
+        "SELL": 1,
+    }.get(str(signal or "").upper(), 2)
+
+
+def build_compare_stock_context(symbol):
+    cleaned_symbol = canonical_stock_symbol(symbol)
+    ai_context = get_stock_ai_context(cleaned_symbol)
+    premium_report = get_premium_report(cleaned_symbol, ai_context)
+    dividend_context = get_dividend_context(cleaned_symbol)
+
+    income_text = dividend_context.get("no_data_message")
+    if dividend_context.get("has_dividend_data"):
+        income_text = (
+            f"{dividend_context.get('dividend_label', 'Dividend')} yield: "
+            f"{dividend_context.get('dividend_yield', 'Not available')}. "
+            f"Annual {dividend_context.get('dividend_label', 'Dividend').lower()}: "
+            f"{dividend_context.get('annual_dividend', 'Not available')}."
+        )
+
+    return {
+        "symbol": cleaned_symbol,
+        "label": stock_display_label(cleaned_symbol),
+        "ai": ai_context,
+        "report": premium_report,
+        "dividend": dividend_context,
+        "income_text": income_text,
+        "confidence_value": confidence_number(ai_context.get("confidence", "0%")),
+        "signal_rank": compare_signal_rank(ai_context.get("signal")),
+    }
+
+
+def compare_strength_summary(left, right):
+    left_signal = left["ai"].get("signal", "HOLD")
+    right_signal = right["ai"].get("signal", "HOLD")
+
+    if left_signal == "SELL" and right_signal == "SELL":
+        return (
+            "Neither stock currently shows a stronger constructive research case. "
+            "Both are in caution-review territory, so compare what could change the risk picture before drawing conclusions."
+        )
+
+    if left["signal_rank"] == right["signal_rank"]:
+        if abs(left["confidence_value"] - right["confidence_value"]) < 5:
+            return (
+                f"{left['label']} and {right['label']} look broadly similar on the current signal layer. "
+                "Use the portfolio role, risk notes and watch-next triggers to decide which research case is clearer."
+            )
+        stronger = left if left["confidence_value"] > right["confidence_value"] else right
+        other = right if stronger is left else left
+        return (
+            f"{stronger['label']} has the stronger current research case by signal confidence versus {other['label']}. "
+            "That is not a guaranteed winner; it means the next step is to review risk, valuation, portfolio overlap and the watch-next trigger."
+        )
+
+    stronger = left if left["signal_rank"] > right["signal_rank"] else right
+    other = right if stronger is left else left
+    return (
+        f"{stronger['label']} has the stronger current research case because its signal is more constructive than {other['label']} right now. "
+        "This is educational context only, not a buy instruction or a return forecast."
+    )
+
+
+def before_you_choose_checklist(left, right):
+    return [
+        f"Similar exposure: do I already own either {left['label']} or {right['label']} through an ETF, sector fund or similar company?",
+        "Time horizon: which research case still makes sense for my planned holding period if short-term momentum fades?",
+        f"Risk fit: am I more comfortable with {left['report']['risk_level'].lower()} or {right['report']['risk_level'].lower()}?",
+        "Portfolio role: which one has the clearer purpose - core, satellite, dividend/income, defensive, cyclical or speculative?",
+        "Watch-next trigger: what price, headline, signal change or confidence update would make me review the comparison again?",
+    ]
+
+
+compare_html = """
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compare Stocks — StockRadar</title>
+<meta name="description" content="Compare two stocks with StockRadar Premium decision context. Free users can preview the tool; Premium unlocks the full comparison.">
+<style>
+*{box-sizing:border-box;}
+body{margin:0;background:radial-gradient(circle at 18% 8%,rgba(0,255,170,0.12),transparent 28%),linear-gradient(135deg,#08111c,#101827);color:#e5edf5;font-family:Arial,sans-serif;min-height:100vh;padding:42px 22px;}
+.wrap{max-width:1120px;margin:0 auto;}
+a{color:#38bdf8;font-weight:900;text-decoration:none;}
+.card{background:linear-gradient(180deg,rgba(18,29,42,0.97),rgba(12,22,33,0.97));border:1px solid rgba(148,163,184,0.16);border-radius:28px;padding:30px;box-shadow:0 24px 70px rgba(0,0,0,0.30);margin-bottom:22px;}
+.kicker{color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;}
+h1{font-size:clamp(38px,6vw,58px);line-height:1.04;margin:0 0 16px 0;letter-spacing:0;}
+h2{margin:0 0 12px 0;color:#f8fafc;}
+h3{margin:0 0 8px 0;color:#f8fafc;}
+p,li,td{color:#cbd5e1;line-height:1.7;}
+.muted{color:#94a3b8;}
+form{display:grid;grid-template-columns:1fr 1fr auto;gap:10px;margin-top:20px;align-items:end;}
+label{display:block;color:#94a3b8;font-size:11px;text-transform:uppercase;letter-spacing:0.12em;font-weight:950;margin-bottom:7px;}
+input{width:100%;border:1px solid rgba(148,163,184,0.24);background:#07111d;color:#e5edf5;border-radius:15px;padding:14px 15px;font-size:16px;font-weight:800;}
+button,.button{border:0;display:inline-block;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#061018;border-radius:15px;padding:14px 18px;font-weight:950;cursor:pointer;text-decoration:none;text-align:center;}
+.ghost-button{display:inline-block;border:1px solid rgba(148,163,184,0.22);background:rgba(148,163,184,0.08);color:#e2e8f0;border-radius:15px;padding:13px 16px;font-weight:950;text-decoration:none;margin:6px 8px 0 0;}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;}
+.three-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:16px;}
+.box{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:20px;padding:18px;line-height:1.6;}
+.box strong{display:block;color:#f8fafc;font-size:18px;margin-bottom:6px;}
+.signal-pill{display:inline-block;border-radius:999px;padding:7px 11px;font-weight:950;font-size:12px;letter-spacing:0.04em;background:rgba(245,158,11,0.13);color:#fde68a;}
+.signal-pill.buy{background:rgba(34,197,94,0.14);color:#bbf7d0;}
+.signal-pill.sell{background:rgba(239,68,68,0.14);color:#fecaca;}
+.signal-pill.hold,.signal-pill.watch{background:rgba(245,158,11,0.14);color:#fde68a;}
+table{width:100%;border-collapse:collapse;margin-top:14px;}
+th,td{text-align:left;padding:13px;border-bottom:1px solid rgba(255,255,255,0.08);vertical-align:top;}
+th{color:#94a3b8;text-transform:uppercase;letter-spacing:0.08em;font-size:12px;}
+.locked{background:rgba(239,68,68,0.09);border:1px solid rgba(239,68,68,0.20);border-radius:20px;padding:18px;color:#fecaca;line-height:1.65;}
+.summary{background:rgba(0,255,170,0.09);border:1px solid rgba(0,255,170,0.18);border-radius:20px;padding:18px;color:#d1fae5;line-height:1.7;}
+.warning{background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.20);border-radius:20px;padding:18px;color:#fde68a;line-height:1.7;}
+ul{padding-left:22px;margin:12px 0 0;}
+@media(max-width:820px){body{padding:24px 16px;}.card{padding:24px 20px;border-radius:24px;}form,.grid,.three-grid{grid-template-columns:1fr;}button,.button,.ghost-button{width:100%;}.ghost-button{margin-right:0;}table{display:block;overflow-x:auto;}th,td{min-width:150px;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+    <a href="/">← Back to dashboard</a>
+    <div class="card">
+        <p class="kicker">Premium Compare Tool</p>
+        <h1>Compare two stocks before choosing what to research next.</h1>
+        <p>Free shows each stock signal. Premium compares the decision: confidence, portfolio role, risk, income context, fit notes and what to watch next.</p>
+        <form method="get" action="/compare">
+            <div>
+                <label for="symbol_a">First ticker</label>
+                <input id="symbol_a" name="symbol_a" value="{{ symbol_a or '' }}" placeholder="MSFT" autocomplete="off">
+            </div>
+            <div>
+                <label for="symbol_b">Second ticker</label>
+                <input id="symbol_b" name="symbol_b" value="{{ symbol_b or '' }}" placeholder="GOOGL" autocomplete="off">
+            </div>
+            <button type="submit">Compare</button>
+        </form>
+        {% if error_message %}<p class="warning">{{ error_message }}</p>{% endif %}
+        {% if not has_pair %}
+        <div class="three-grid">
+            <div class="box"><strong>Signal vs decision</strong><span>Free pages show the signal. Premium explains which decision checks matter before comparing two names.</span></div>
+            <div class="box"><strong>Portfolio fit</strong><span>Compare whether one stock adds growth, defensive balance, income context or duplicate exposure risk.</span></div>
+            <div class="box"><strong>Examples</strong><span><a href="/compare/MSFT/GOOGL">MSFT vs GOOGL</a><br><a href="/compare/KO/MCD">KO vs MCD</a><br><a href="/compare/SPY/QQQ">SPY vs QQQ</a></span></div>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if has_pair and not has_premium_access %}
+    <div class="card">
+        <p class="kicker">Locked Premium Comparison</p>
+        <h2>{{ left.label }} vs {{ right.label }}</h2>
+        <p><strong>Free shows each signal. Premium compares the decision.</strong></p>
+        <div class="grid">
+            <div class="box">
+                <strong>{{ left.label }}</strong>
+                <span class="signal-pill {{ left.ai.signal|lower }}">{{ left.ai.signal }}</span>
+                <p class="muted">Free confidence preview: {{ left.ai.confidence }}</p>
+                <a href="/stock/{{ left.symbol }}">Open free stock page</a>
+            </div>
+            <div class="box">
+                <strong>{{ right.label }}</strong>
+                <span class="signal-pill {{ right.ai.signal|lower }}">{{ right.ai.signal }}</span>
+                <p class="muted">Free confidence preview: {{ right.ai.confidence }}</p>
+                <a href="/stock/{{ right.symbol }}">Open free stock page</a>
+            </div>
+        </div>
+        <div class="locked" style="margin-top:18px;">
+            Premium unlocks the comparison layer: decision score read, portfolio role, risk level, dividend/income context, portfolio-fit notes, watch-next triggers and a before-you-choose checklist.
+        </div>
+        <a class="button" href="/upgrade" style="margin-top:16px;">Unlock Premium - £5/month</a>
+        <p class="muted">Educational research only. No guaranteed winner, no buy/sell instruction and no return promise.</p>
+    </div>
+    {% endif %}
+
+    {% if has_pair and has_premium_access %}
+    <div class="card">
+        <p class="kicker">Premium Comparison</p>
+        <h2>{{ left.label }} vs {{ right.label }}</h2>
+        <div class="summary"><strong>Which looks stronger right now?</strong><br>{{ strength_summary }}</div>
+    </div>
+
+    <div class="card">
+        <h2>Signal and Confidence Comparison</h2>
+        <table>
+            <tr><th>Stock</th><th>Signal</th><th>Confidence</th><th>Signal strength</th><th>Decision score read</th></tr>
+            <tr><td><a href="/stock/{{ left.symbol }}">{{ left.label }}</a></td><td><span class="signal-pill {{ left.ai.signal|lower }}">{{ left.ai.signal }}</span></td><td>{{ left.ai.confidence }}</td><td>{{ left.ai.strength_label }}</td><td>{{ left.report.readiness }}. {{ left.report.action_frame }}</td></tr>
+            <tr><td><a href="/stock/{{ right.symbol }}">{{ right.label }}</a></td><td><span class="signal-pill {{ right.ai.signal|lower }}">{{ right.ai.signal }}</span></td><td>{{ right.ai.confidence }}</td><td>{{ right.ai.strength_label }}</td><td>{{ right.report.readiness }}. {{ right.report.action_frame }}</td></tr>
+        </table>
+    </div>
+
+    <div class="card">
+        <h2>Portfolio Role and Risk</h2>
+        <table>
+            <tr><th>Stock</th><th>Portfolio role</th><th>Risk level</th><th>Watch-next trigger</th></tr>
+            <tr><td>{{ left.label }}</td><td>{{ left.report.portfolio_role }}<br><span class="muted">{{ left.report.decision_use }}</span></td><td>{{ left.report.risk_level }}<br><span class="muted">{{ left.ai.risk_view }}</span></td><td>{{ left.ai.watch_next }}</td></tr>
+            <tr><td>{{ right.label }}</td><td>{{ right.report.portfolio_role }}<br><span class="muted">{{ right.report.decision_use }}</span></td><td>{{ right.report.risk_level }}<br><span class="muted">{{ right.ai.risk_view }}</span></td><td>{{ right.ai.watch_next }}</td></tr>
+        </table>
+    </div>
+
+    <div class="card">
+        <h2>Dividend / Income Context</h2>
+        <div class="grid">
+            <div class="box"><strong>{{ left.label }}</strong><span>{{ left.income_text }}</span><p class="muted">{{ left.dividend.source_note }}</p></div>
+            <div class="box"><strong>{{ right.label }}</strong><span>{{ right.income_text }}</span><p class="muted">{{ right.dividend.source_note }}</p></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Portfolio Fit Notes</h2>
+        <div class="grid">
+            <div class="box">
+                <strong>{{ left.label }}</strong>
+                <ul>{% for item in left.report.portfolio_fit_points %}<li>{{ item }}</li>{% endfor %}</ul>
+                <p class="warning">{{ left.report.concentration_note }}</p>
+            </div>
+            <div class="box">
+                <strong>{{ right.label }}</strong>
+                <ul>{% for item in right.report.portfolio_fit_points %}<li>{{ item }}</li>{% endfor %}</ul>
+                <p class="warning">{{ right.report.concentration_note }}</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Before You Choose</h2>
+        <p>Use this as a research checklist before treating either stock as a stronger candidate.</p>
+        <ul>{% for item in checklist %}<li>{{ item }}</li>{% endfor %}</ul>
+        <p class="muted">StockRadar compares research context only. It does not know your full financial situation and does not provide personal investment advice.</p>
+    </div>
+    {% endif %}
+    {{ disclaimer_footer() | safe }}
+</div>
+</body>
+</html>
+"""
+
+
+def render_compare_page(symbol_a="", symbol_b=""):
+    raw_a = str(symbol_a or "").strip()
+    raw_b = str(symbol_b or "").strip()
+    error_message = ""
+    left = None
+    right = None
+    has_pair = False
+    strength_summary = ""
+    checklist = []
+
+    if raw_a or raw_b:
+        if not raw_a or not raw_b:
+            error_message = "Enter two tickers to compare, for example MSFT and GOOGL."
+        else:
+            left = build_compare_stock_context(raw_a)
+            right = build_compare_stock_context(raw_b)
+            has_pair = True
+            if left["symbol"] == right["symbol"]:
+                error_message = "Choose two different tickers so the comparison is useful."
+                has_pair = False
+            else:
+                strength_summary = compare_strength_summary(left, right)
+                checklist = before_you_choose_checklist(left, right)
+
+    return render_template_string(
+        compare_html,
+        symbol_a=raw_a,
+        symbol_b=raw_b,
+        left=left,
+        right=right,
+        has_pair=has_pair,
+        has_premium_access=premium_has_access(),
+        error_message=error_message,
+        strength_summary=strength_summary,
+        checklist=checklist,
+    )
+
+
+@app.route("/compare")
+def compare():
+    return render_compare_page(
+        request.args.get("symbol_a", ""),
+        request.args.get("symbol_b", ""),
+    )
+
+
+@app.route("/compare/<symbol_a>/<symbol_b>")
+def compare_direct(symbol_a, symbol_b):
+    cleaned_a = canonical_stock_symbol(symbol_a)
+    cleaned_b = canonical_stock_symbol(symbol_b)
+    if cleaned_a != symbol_a.strip().upper() or cleaned_b != symbol_b.strip().upper():
+        return redirect(url_for("compare_direct", symbol_a=cleaned_a, symbol_b=cleaned_b))
+    return render_compare_page(cleaned_a, cleaned_b)
+
+
 @app.route("/universe")
 def stock_universe_page():
     query = request.args.get("q", "").strip()
@@ -2017,6 +2310,7 @@ def premium_watchlist():
                     <li>Caution stock so weaker setups are not ignored</li>
                     <li>Quality, growth and defensive buckets with plain-English purpose</li>
                     <li>Theme concentration read before adding duplicate exposure</li>
+                    <li>Compare Stocks lets Premium users review two tickers side by side before choosing what to research next</li>
                 </ul>
                 <div class="future-feature">
                     <strong>Coming later: Dividend Dip Tracker</strong>
@@ -2071,7 +2365,7 @@ def premium_watchlist():
             <div class="grid">
                 <div class="box"><strong>Strongest signal</strong>{% if strongest %}<span><a href="/stock/{{ strongest.ticker }}">{{ stock_display_label(strongest.ticker) }}</a> — {{ strongest.signal }} • {{ strongest.confidence }}. Start here, then check risk and portfolio overlap before acting.</span>{% else %}<span>No conviction row available.</span>{% endif %}</div>
                 <div class="box"><strong>Caution stock</strong>{% if highest_risk %}<span>{{ caution_label }}: <a href="/stock/{{ highest_risk.ticker }}">{{ stock_display_label(highest_risk.ticker) }}</a> — {{ highest_risk.signal }} • {{ highest_risk.confidence }}. Review what could weaken the thesis before adding exposure.</span>{% else %}<span>No caution row available.</span>{% endif %}</div>
-                <div class="box"><strong>Review habit</strong><span>Use this page before adding more risk: strongest signal first, caution second, portfolio role third.</span></div>
+                <div class="box"><strong>Compare next</strong><span>Use Compare Stocks when two names look interesting and you need the decision context side by side.</span><br><a href="/compare">Open Compare Stocks</a></div>
             </div>
         </div>
 
@@ -4664,6 +4958,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
     <a class="nav-link tab-button {% if active_tab == 'radar' %}active-tab{% endif %}" href="/?tab=radar">🌍 Impact Radar</a>
     <a class="nav-link tab-button {% if active_tab == 'watchlist' %}active-tab{% endif %}" href="/?tab=watchlist">📋 AI Watchlist</a>
     <a class="nav-link" href="/premium-watchlist">🧠 Premium Watchlist</a>
+    <a class="nav-link" href="/compare">⚖️ Compare Stocks <span style="color:#ffb86b;font-size:11px;font-weight:950;">Premium</span></a>
     <div class="nav-section-label">Risk Check</div>
         <a class="nav-link" href="/portfolio-fit">🧩 Portfolio Fit</a>
         <a class="nav-link" href="/universe">🌍 Stock Universe</a>
