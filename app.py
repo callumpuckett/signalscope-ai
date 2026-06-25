@@ -1,6 +1,7 @@
 from flask import Flask, Response, render_template_string, redirect, url_for, request, session, jsonify
 from datetime import datetime, time as dt_time, timedelta, timezone
 from email.utils import format_datetime
+from email.message import EmailMessage
 from xml.sax.saxutils import escape as xml_escape
 from zoneinfo import ZoneInfo
 from urllib.parse import quote, urlencode
@@ -10,6 +11,8 @@ import csv
 import json
 import os
 import pandas as pd
+import re
+import smtplib
 import ssl
 import time
 
@@ -89,6 +92,19 @@ def configured_url(environment_name, default):
 STRIPE_SUCCESS_URL = configured_url("STRIPE_SUCCESS_URL", DEFAULT_STRIPE_SUCCESS_URL)
 NEWSAPI_KEY = os.environ.get("NEWSAPI_KEY", "").strip()
 NEWSLETTER_EMBED_HTML = os.environ.get("NEWSLETTER_EMBED_HTML", "").strip()
+NEWSLETTER_EMAIL_ENABLED = os.environ.get("NEWSLETTER_EMAIL_ENABLED", "").strip().lower() == "true"
+NEWSLETTER_SMTP_HOST = os.environ.get("NEWSLETTER_SMTP_HOST", "").strip()
+NEWSLETTER_SMTP_PORT = int(os.environ.get("NEWSLETTER_SMTP_PORT", "587"))
+NEWSLETTER_SMTP_USERNAME = os.environ.get("NEWSLETTER_SMTP_USERNAME", "").strip()
+NEWSLETTER_SMTP_PASSWORD = os.environ.get("NEWSLETTER_SMTP_PASSWORD", "")
+NEWSLETTER_FROM_EMAIL = (
+    os.environ.get("NEWSLETTER_FROM_EMAIL", "").strip()
+    or SUPPORT_EMAIL
+    or NEWSLETTER_SMTP_USERNAME
+)
+NEWSLETTER_CRON_SECRET = os.environ.get("NEWSLETTER_CRON_SECRET", "").strip()
+NEWSLETTER_SUBSCRIBERS_PATH = os.path.join(APP_ROOT, "newsletter_subscribers.json")
+NEWSLETTER_DELIVERY_LOG_PATH = os.path.join(APP_ROOT, "newsletter_delivery_log.json")
 LAST_NEWS_FETCH_STATUS = {
     "provider": "none",
     "status": "not_started",
@@ -3855,6 +3871,261 @@ def render_newsletter_issue_body(draft):
     )
 
 
+def newsletter_storage_timestamp():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def load_json_storage(path, default):
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except FileNotFoundError:
+        return default
+    except Exception:
+        app.logger.exception("Failed to read JSON storage: %s", path)
+        return default
+
+    return data if isinstance(data, dict) else default
+
+
+def save_json_storage(path, data):
+    try:
+        directory = os.path.dirname(path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        temp_path = f"{path}.tmp"
+        with open(temp_path, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+        os.replace(temp_path, path)
+        return True
+    except Exception:
+        app.logger.exception("Failed to write JSON storage: %s", path)
+        return False
+
+
+def valid_newsletter_email(email):
+    return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", normalize_email(email)))
+
+
+def load_newsletter_subscribers():
+    data = load_json_storage(NEWSLETTER_SUBSCRIBERS_PATH, {"subscribers": []})
+    if not isinstance(data.get("subscribers"), list):
+        data["subscribers"] = []
+    return data
+
+
+def save_newsletter_subscribers(data):
+    return save_json_storage(NEWSLETTER_SUBSCRIBERS_PATH, data)
+
+
+def load_newsletter_delivery_log():
+    data = load_json_storage(NEWSLETTER_DELIVERY_LOG_PATH, {"deliveries": []})
+    if not isinstance(data.get("deliveries"), list):
+        data["deliveries"] = []
+    return data
+
+
+def save_newsletter_delivery_log(data):
+    return save_json_storage(NEWSLETTER_DELIVERY_LOG_PATH, data)
+
+
+def newsletter_email_configured():
+    return bool(
+        NEWSLETTER_EMAIL_ENABLED
+        and NEWSLETTER_SMTP_HOST
+        and NEWSLETTER_FROM_EMAIL
+    )
+
+
+def newsletter_issue_guid(issue):
+    return str(issue.get("metadata", {}).get("guid") or "").strip()
+
+
+def newsletter_already_delivered(email, issue_guid):
+    clean_email = normalize_email(email)
+    if not clean_email or not issue_guid:
+        return False
+
+    data = load_newsletter_delivery_log()
+    return any(
+        normalize_email(item.get("email")) == clean_email
+        and str(item.get("issue_guid") or "") == issue_guid
+        for item in data.get("deliveries", [])
+    )
+
+
+def record_newsletter_delivery(email, issue, delivery_type):
+    clean_email = normalize_email(email)
+    issue_guid = newsletter_issue_guid(issue)
+    if not clean_email or not issue_guid:
+        return False
+
+    data = load_newsletter_delivery_log()
+    if newsletter_already_delivered(clean_email, issue_guid):
+        return True
+
+    data["deliveries"].append({
+        "email": clean_email,
+        "issue_guid": issue_guid,
+        "issue_title": issue.get("metadata", {}).get("title", ""),
+        "delivery_type": delivery_type,
+        "sent_at": newsletter_storage_timestamp(),
+    })
+    return save_newsletter_delivery_log(data)
+
+
+def upsert_newsletter_subscriber(email):
+    clean_email = normalize_email(email)
+    data = load_newsletter_subscribers()
+    now = newsletter_storage_timestamp()
+
+    for subscriber in data["subscribers"]:
+        if normalize_email(subscriber.get("email")) == clean_email:
+            subscriber["active"] = True
+            subscriber["updated_at"] = now
+            save_newsletter_subscribers(data)
+            return subscriber, False
+
+    subscriber = {
+        "email": clean_email,
+        "active": True,
+        "created_at": now,
+        "updated_at": now,
+        "welcome_issue_guid": "",
+        "welcome_sent_at": "",
+    }
+    data["subscribers"].append(subscriber)
+    save_newsletter_subscribers(data)
+    return subscriber, True
+
+
+def mark_subscriber_welcome_sent(email, issue):
+    clean_email = normalize_email(email)
+    issue_guid = newsletter_issue_guid(issue)
+    if not clean_email or not issue_guid:
+        return False
+
+    data = load_newsletter_subscribers()
+    now = newsletter_storage_timestamp()
+    for subscriber in data["subscribers"]:
+        if normalize_email(subscriber.get("email")) == clean_email:
+            subscriber["welcome_issue_guid"] = issue_guid
+            subscriber["welcome_sent_at"] = now
+            subscriber["updated_at"] = now
+            return save_newsletter_subscribers(data)
+    return False
+
+
+def build_newsletter_email_html(issue):
+    draft = issue["draft"]
+    body_html = render_newsletter_issue_body(draft)
+    return f"""<!doctype html>
+<html>
+<body style="margin:0;background:#08111c;color:#dbe4ee;font-family:Arial,sans-serif;padding:24px;">
+<div style="max-width:760px;margin:0 auto;background:#101827;border:1px solid #263344;border-radius:18px;padding:24px;">
+<h1 style="color:#f8fafc;">{xml_escape(str(issue["metadata"]["title"]))}</h1>
+{body_html}
+<p style="color:#94a3b8;font-size:12px;line-height:1.6;">You are receiving this because you subscribed to StockRadar Weekly. Educational research only, not financial advice.</p>
+</div>
+</body>
+</html>"""
+
+
+def send_newsletter_email(email, issue):
+    clean_email = normalize_email(email)
+    if not valid_newsletter_email(clean_email):
+        return {"sent": False, "skipped": True, "reason": "invalid_email"}
+    if not newsletter_email_configured():
+        return {"sent": False, "skipped": True, "reason": "email_not_configured"}
+
+    message = EmailMessage()
+    message["Subject"] = issue["metadata"]["title"]
+    message["From"] = NEWSLETTER_FROM_EMAIL
+    message["To"] = clean_email
+    if SUPPORT_EMAIL:
+        message["Reply-To"] = SUPPORT_EMAIL
+    message.set_content(issue["draft"]["plain_text"])
+    message.add_alternative(build_newsletter_email_html(issue), subtype="html")
+
+    try:
+        if NEWSLETTER_SMTP_PORT == 465:
+            with smtplib.SMTP_SSL(NEWSLETTER_SMTP_HOST, NEWSLETTER_SMTP_PORT, timeout=15) as smtp:
+                if NEWSLETTER_SMTP_USERNAME or NEWSLETTER_SMTP_PASSWORD:
+                    smtp.login(NEWSLETTER_SMTP_USERNAME, NEWSLETTER_SMTP_PASSWORD)
+                smtp.send_message(message)
+        else:
+            with smtplib.SMTP(NEWSLETTER_SMTP_HOST, NEWSLETTER_SMTP_PORT, timeout=15) as smtp:
+                smtp.starttls()
+                if NEWSLETTER_SMTP_USERNAME or NEWSLETTER_SMTP_PASSWORD:
+                    smtp.login(NEWSLETTER_SMTP_USERNAME, NEWSLETTER_SMTP_PASSWORD)
+                smtp.send_message(message)
+        return {"sent": True, "skipped": False, "reason": "sent"}
+    except Exception:
+        app.logger.exception("Newsletter email send failed for %s", clean_email)
+        return {"sent": False, "skipped": False, "reason": "send_failed"}
+
+
+def deliver_newsletter_issue_to_subscriber(email, issue, delivery_type="weekly"):
+    clean_email = normalize_email(email)
+    issue_guid = newsletter_issue_guid(issue)
+    if not valid_newsletter_email(clean_email):
+        return {"email": clean_email, "status": "skipped", "reason": "invalid_email"}
+    if newsletter_already_delivered(clean_email, issue_guid):
+        return {"email": clean_email, "status": "skipped", "reason": "already_sent"}
+
+    result = send_newsletter_email(clean_email, issue)
+    if result["sent"]:
+        record_newsletter_delivery(clean_email, issue, delivery_type)
+        if delivery_type == "welcome_latest":
+            mark_subscriber_welcome_sent(clean_email, issue)
+        return {"email": clean_email, "status": "sent", "reason": "sent"}
+
+    return {
+        "email": clean_email,
+        "status": "skipped" if result.get("skipped") else "failed",
+        "reason": result.get("reason", "unknown"),
+    }
+
+
+def send_weekly_newsletter_to_eligible_subscribers(delivery_type="weekly"):
+    issue = build_weekly_newsletter_issue()
+    subscribers = load_newsletter_subscribers().get("subscribers", [])
+    summary = {
+        "issue_guid": newsletter_issue_guid(issue),
+        "issue_title": issue["metadata"]["title"],
+        "sent": 0,
+        "skipped": 0,
+        "failed": 0,
+        "details": [],
+    }
+
+    for subscriber in subscribers:
+        if subscriber.get("active") is not True:
+            summary["skipped"] += 1
+            summary["details"].append({
+                "email": normalize_email(subscriber.get("email")),
+                "status": "skipped",
+                "reason": "inactive",
+            })
+            continue
+
+        result = deliver_newsletter_issue_to_subscriber(
+            subscriber.get("email"),
+            issue,
+            delivery_type=delivery_type,
+        )
+        summary["details"].append(result)
+        if result["status"] == "sent":
+            summary["sent"] += 1
+        elif result["status"] == "failed":
+            summary["failed"] += 1
+        else:
+            summary["skipped"] += 1
+
+    return summary
+
+
 newsletter_landing_html = """
 <!doctype html>
 <html>
@@ -3875,7 +4146,7 @@ newsletter_landing_html = """
 <style>
 *{box-sizing:border-box;}body{margin:0;min-height:100vh;padding:42px 22px;background:radial-gradient(circle at 18% 8%,rgba(0,255,170,.11),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;}
 .wrap{max-width:900px;margin:0 auto;}.back{color:#69c9f2;text-decoration:none;font-weight:900;}.hero{margin-top:24px;padding:46px;border-radius:30px;background:linear-gradient(180deg,rgba(18,29,42,.97),rgba(12,22,33,.97));border:1px solid rgba(148,163,184,.16);box-shadow:0 24px 70px rgba(0,0,0,.30);}
-.eyebrow{color:#4adea3;font-size:12px;font-weight:950;letter-spacing:.13em;text-transform:uppercase;}h1{color:#f2f5f8;font-size:clamp(38px,7vw,62px);line-height:1.04;margin:14px 0 18px;}p{color:#b9c5d2;line-height:1.75;font-size:18px;}.signup{margin-top:28px;padding:24px;border-radius:22px;background:#0d1826;border:1px solid rgba(74,222,163,.22);}.fallback{color:#f4cf79;font-weight:900;margin:0;}.notes{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:24px;}.note{padding:18px;border-radius:18px;background:rgba(148,163,184,.07);color:#c6d0da;line-height:1.6;}.feed-link{display:inline-block;margin-top:22px;color:#69c9f2;font-size:14px;font-weight:900;text-decoration:none;}@media(max-width:700px){body{padding:24px 16px}.hero{padding:28px}.notes{grid-template-columns:1fr;}}
+.eyebrow{color:#4adea3;font-size:12px;font-weight:950;letter-spacing:.13em;text-transform:uppercase;}h1{color:#f2f5f8;font-size:clamp(38px,7vw,62px);line-height:1.04;margin:14px 0 18px;}p{color:#b9c5d2;line-height:1.75;font-size:18px;}.signup{margin-top:28px;padding:24px;border-radius:22px;background:#0d1826;border:1px solid rgba(74,222,163,.22);}form{display:flex;gap:10px;flex-wrap:wrap;}input{flex:1;min-width:240px;border:1px solid rgba(148,163,184,.24);background:#07111d;color:#e5edf5;border-radius:14px;padding:14px 15px;font-size:16px;}button{border:0;border-radius:14px;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#061018;font-weight:950;padding:14px 18px;cursor:pointer;}.status{margin:0 0 16px;padding:13px 14px;border-radius:14px;background:rgba(74,222,163,.10);border:1px solid rgba(74,222,163,.22);color:#d1fae5;font-size:15px;line-height:1.55;}.status.error{background:rgba(248,113,113,.10);border-color:rgba(248,113,113,.24);color:#fecaca;}.fallback{color:#f4cf79;font-weight:900;margin:18px 0 0;font-size:14px;}.notes{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:24px;}.note{padding:18px;border-radius:18px;background:rgba(148,163,184,.07);color:#c6d0da;line-height:1.6;}.feed-link{display:inline-block;margin-top:22px;color:#69c9f2;font-size:14px;font-weight:900;text-decoration:none;}@media(max-width:700px){body{padding:24px 16px}.hero{padding:28px}.notes{grid-template-columns:1fr;}button,input{width:100%;}}
 </style>
 </head>
 <body>
@@ -3886,10 +4157,19 @@ newsletter_landing_html = """
 <h1>Join the free StockRadar Weekly Brief</h1>
 <p>Get the 5-minute market signal every Sunday — what’s strengthening, what’s weakening, and what may matter next.</p>
 <section class="signup" aria-label="Newsletter signup">
+{% if subscription_message %}
+<p class="status {% if subscription_error %}error{% endif %}">{{ subscription_message }}</p>
+{% endif %}
+<form method="POST" action="/newsletter">
+<input type="email" name="email" placeholder="you@example.com" autocomplete="email" required>
+<button type="submit">Join StockRadar Weekly</button>
+</form>
+<p class="fallback">After signup, the latest issue is emailed automatically if email delivery is configured. The regular weekly issue normally arrives Friday.</p>
 {% if newsletter_embed_html %}
+<details style="margin-top:16px;">
+<summary style="color:#69c9f2;font-weight:900;cursor:pointer;">Use alternate signup form</summary>
 {{ newsletter_embed_html | safe }}
-{% else %}
-<p class="fallback">Newsletter registration is temporarily unavailable. You can still read the latest issue or follow the RSS feed below.</p>
+</details>
 {% endif %}
 </section>
 <div class="notes">
@@ -5186,7 +5466,7 @@ p{color:#cbd5e1;line-height:1.7;font-size:16px;}
 
 owner_html = """
 <!DOCTYPE html>
-<html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Owner Area</title><style>body{background:#020617;color:white;font-family:Arial;margin:0;padding:60px;}.card{background:#0f172a;padding:40px;border-radius:24px;max-width:820px;margin:auto;border:1px solid rgba(255,255,255,0.08);}a{color:#38bdf8;font-weight:bold;}</style></head><body><div class="card"><h1>👑 Owner Area</h1><p>You are logged in as the owner with premium access.</p><p>This confirms login and premium unlocking are working.</p><p><a href="/">Return to Dashboard</a></p><p><a href="/admin/newsletter-preview">Generate Newsletter Draft</a></p><p><a href="/stock/AAPL">Open Premium {{ stock_display_label('AAPL') }} Page</a></p>{{ disclaimer_footer() | safe }}</div></body></html>
+<html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Owner Area</title><style>body{background:#020617;color:white;font-family:Arial;margin:0;padding:60px;}.card{background:#0f172a;padding:40px;border-radius:24px;max-width:820px;margin:auto;border:1px solid rgba(255,255,255,0.08);}a{color:#38bdf8;font-weight:bold;}</style></head><body><div class="card"><h1>👑 Owner Area</h1><p>You are logged in as the owner with premium access.</p><p>This confirms login and premium unlocking are working.</p><p><a href="/">Return to Dashboard</a></p><p><a href="/admin/newsletter-preview">Generate Newsletter Draft</a></p><p><a href="/admin/newsletter-send">Send Newsletter</a></p><p><a href="/stock/AAPL">Open Premium {{ stock_display_label('AAPL') }} Page</a></p>{{ disclaimer_footer() | safe }}</div></body></html>
 """
 
 
@@ -5270,11 +5550,50 @@ if(labels.length>0){
 """
 
 
-@app.route("/newsletter")
+@app.route("/newsletter", methods=["GET", "POST"])
 def newsletter():
+    subscription_message = ""
+    subscription_error = False
+
+    if request.method == "POST":
+        submitted_email = normalize_email(request.form.get("email"))
+        if not valid_newsletter_email(submitted_email):
+            subscription_error = True
+            subscription_message = "Please enter a valid email address."
+        else:
+            subscriber, created = upsert_newsletter_subscriber(submitted_email)
+            if created:
+                issue = build_weekly_newsletter_issue()
+                delivery_result = deliver_newsletter_issue_to_subscriber(
+                    submitted_email,
+                    issue,
+                    delivery_type="welcome_latest",
+                )
+                if delivery_result["status"] == "sent":
+                    subscription_message = (
+                        "Subscribed successfully. The latest StockRadar Weekly issue has been sent. "
+                        "The regular weekly issue normally arrives Friday."
+                    )
+                elif delivery_result["reason"] == "email_not_configured":
+                    subscription_message = (
+                        "Subscribed successfully. The latest issue will be emailed when newsletter "
+                        "delivery is configured. The regular weekly issue normally arrives Friday."
+                    )
+                else:
+                    subscription_message = (
+                        "Subscribed successfully. The latest issue could not be emailed right now, "
+                        "but you can read it below and the regular weekly issue normally arrives Friday."
+                    )
+            else:
+                subscription_message = (
+                    "You are already subscribed to StockRadar Weekly. We have not resent the latest issue."
+                )
+
     return render_template_string(
         newsletter_landing_html,
         newsletter_embed_html=NEWSLETTER_EMBED_HTML,
+        subscription_message=subscription_message,
+        subscription_error=subscription_error,
     )
 
 
@@ -5329,6 +5648,70 @@ def admin_newsletter_preview():
 
     draft = build_free_weekly_newsletter()
     return render_template_string(newsletter_preview_html, draft=draft)
+
+
+newsletter_send_summary_html = """
+<!doctype html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Newsletter Send Summary — StockRadar</title>
+<style>
+*{box-sizing:border-box;}body{margin:0;background:#020617;color:#e5e7eb;font-family:Arial,sans-serif;padding:34px 20px;}.wrap{max-width:920px;margin:0 auto;}.card{background:rgba(15,23,42,.94);border:1px solid rgba(255,255,255,.1);border-radius:24px;padding:26px;margin-bottom:18px;}a{color:#38bdf8;font-weight:900;text-decoration:none;}button{border:0;border-radius:14px;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#020617;font-weight:950;padding:13px 16px;cursor:pointer;}p,li{color:#cbd5e1;line-height:1.65;}table{width:100%;border-collapse:collapse;margin-top:12px;}th,td{text-align:left;padding:10px;border-bottom:1px solid rgba(255,255,255,.08);}th{color:#94a3b8;font-size:12px;text-transform:uppercase;}@media(max-width:700px){table{display:block;overflow-x:auto;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<p><a href="/owner">← Owner area</a></p>
+<div class="card">
+<h1>Newsletter send summary</h1>
+{% if not summary %}
+<p>This sends the current StockRadar Weekly issue only to subscribers who have not already received it.</p>
+<form method="POST" action="/admin/newsletter-send"><button type="submit">Send eligible newsletters</button></form>
+{% else %}
+<p><strong>{{ summary.issue_title }}</strong></p>
+<p>Sent: {{ summary.sent }} · Skipped: {{ summary.skipped }} · Failed: {{ summary.failed }}</p>
+<table>
+<tr><th>Email</th><th>Status</th><th>Reason</th></tr>
+{% for item in summary.details %}
+<tr><td>{{ item.email }}</td><td>{{ item.status }}</td><td>{{ item.reason }}</td></tr>
+{% endfor %}
+</table>
+{% endif %}
+</div>
+{{ disclaimer_footer() | safe }}
+</div>
+</body>
+</html>
+"""
+
+
+@app.route("/admin/newsletter-send", methods=["GET", "POST"])
+def admin_newsletter_send():
+    if not owner_has_access():
+        return redirect(url_for("login", next=request.path))
+
+    summary = None
+    if request.method == "POST":
+        summary = send_weekly_newsletter_to_eligible_subscribers(delivery_type="manual")
+
+    return render_template_string(newsletter_send_summary_html, summary=summary)
+
+
+@app.route("/newsletter/cron/send", methods=["GET", "POST"])
+def newsletter_cron_send():
+    supplied_secret = (
+        request.headers.get("X-Newsletter-Cron-Secret", "")
+        or request.args.get("secret", "")
+    ).strip()
+
+    if not NEWSLETTER_CRON_SECRET:
+        return jsonify({"error": "Newsletter cron secret is not configured."}), 503
+    if supplied_secret != NEWSLETTER_CRON_SECRET:
+        return jsonify({"error": "Forbidden."}), 403
+
+    summary = send_weekly_newsletter_to_eligible_subscribers(delivery_type="cron")
+    return jsonify(summary)
 
 
 # --- Health and diagnostics routes ---
