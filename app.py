@@ -70,9 +70,12 @@ OWNER_PASSWORD = os.environ.get("SIGNALSCOPE_OWNER_PASSWORD", "")
 SUPPORT_EMAIL = os.environ.get("SUPPORT_EMAIL", "").strip()
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_PRICE_ID = os.environ.get("STRIPE_PRICE_ID", "")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 PREMIUM_PAYMENTS_ENABLED = os.environ.get("PREMIUM_PAYMENTS_ENABLED", "").strip().lower() == "true"
 PRODUCTION_BASE_URL = "https://www.stockradarhq.com"
 RENDER_FALLBACK_BASE_URL = "https://signalscope-ai-1-0v3g.onrender.com"
+APP_ROOT = os.path.dirname(os.path.abspath(__file__))
+PREMIUM_ENTITLEMENTS_PATH = os.path.join(APP_ROOT, "premium_entitlements.json")
 DEFAULT_STRIPE_SUCCESS_URL = (
     f"{PRODUCTION_BASE_URL}/checkout-success?session_id={{CHECKOUT_SESSION_ID}}"
 )
@@ -146,12 +149,209 @@ def stripe_credentials_configured():
 def stripe_checkout_configured():
     return bool(PREMIUM_PAYMENTS_ENABLED and stripe_credentials_configured())
 
+
+ACTIVE_SUBSCRIPTION_STATUSES = {"active", "trialing", "paid"}
+INACTIVE_SUBSCRIPTION_STATUSES = {
+    "canceled",
+    "incomplete",
+    "incomplete_expired",
+    "past_due",
+    "payment_failed",
+    "unpaid",
+}
+
+
+def utc_timestamp():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def normalize_email(value):
+    return str(value or "").strip().lower()
+
+
+def stripe_value(obj, key, default=None):
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
+def stripe_nested_value(obj, *keys):
+    current = obj
+    for key in keys:
+        current = stripe_value(current, key)
+        if current in (None, ""):
+            return None
+    return current
+
+
+def stripe_identifier(value):
+    if value in (None, ""):
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    return str(stripe_value(value, "id", "") or "").strip()
+
+
+def subscription_status_is_active(status):
+    cleaned = str(status or "").strip().lower()
+    if cleaned in ACTIVE_SUBSCRIPTION_STATUSES:
+        return True
+    if cleaned in INACTIVE_SUBSCRIPTION_STATUSES:
+        return False
+    return False
+
+
+def load_premium_entitlements():
+    try:
+        with open(PREMIUM_ENTITLEMENTS_PATH, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except FileNotFoundError:
+        return {"records": []}
+    except Exception:
+        app.logger.exception("Failed to read premium entitlement storage.")
+        return {"records": []}
+
+    if isinstance(data, dict) and isinstance(data.get("records"), list):
+        return data
+
+    return {"records": []}
+
+
+def save_premium_entitlements(data):
+    try:
+        directory = os.path.dirname(PREMIUM_ENTITLEMENTS_PATH)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        temp_path = f"{PREMIUM_ENTITLEMENTS_PATH}.tmp"
+        with open(temp_path, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+        os.replace(temp_path, PREMIUM_ENTITLEMENTS_PATH)
+        return True
+    except Exception:
+        app.logger.exception("Failed to write premium entitlement storage.")
+        return False
+
+
+def entitlement_matches(record, customer_id="", subscription_id="", email=""):
+    record_email = normalize_email(record.get("customer_email"))
+    return bool(
+        customer_id and record.get("stripe_customer_id") == customer_id
+        or subscription_id and record.get("stripe_subscription_id") == subscription_id
+        or email and record_email == normalize_email(email)
+    )
+
+
+def update_premium_entitlement(
+    customer_id="",
+    subscription_id="",
+    email="",
+    subscription_status="",
+    premium_active=False,
+    event_type="",
+):
+    customer_id = stripe_identifier(customer_id)
+    subscription_id = stripe_identifier(subscription_id)
+    email = normalize_email(email)
+
+    if not any([customer_id, subscription_id, email]):
+        app.logger.warning("Skipping premium entitlement update without Stripe identifiers.")
+        return None
+
+    data = load_premium_entitlements()
+    records = data.setdefault("records", [])
+    now = utc_timestamp()
+
+    matching_record = None
+    for record in records:
+        if entitlement_matches(record, customer_id, subscription_id, email):
+            matching_record = record
+            break
+
+    if matching_record is None:
+        matching_record = {"created_at": now}
+        records.append(matching_record)
+
+    if email:
+        matching_record["customer_email"] = email
+    if customer_id:
+        matching_record["stripe_customer_id"] = customer_id
+    if subscription_id:
+        matching_record["stripe_subscription_id"] = subscription_id
+
+    matching_record["subscription_status"] = str(subscription_status or "").strip().lower()
+    matching_record["premium_active"] = bool(premium_active)
+    matching_record["updated_at"] = now
+    if event_type:
+        matching_record["last_event"] = event_type
+
+    return matching_record if save_premium_entitlements(data) else None
+
+
+def premium_entitlement_active(customer_id="", subscription_id="", email=""):
+    customer_id = stripe_identifier(customer_id)
+    subscription_id = stripe_identifier(subscription_id)
+    email = normalize_email(email)
+
+    if not any([customer_id, subscription_id, email]):
+        return False
+
+    data = load_premium_entitlements()
+    matches = [
+        record for record in data.get("records", [])
+        if entitlement_matches(record, customer_id, subscription_id, email)
+    ]
+
+    if not matches:
+        return False
+
+    latest = sorted(matches, key=lambda item: item.get("updated_at", ""), reverse=True)[0]
+    return latest.get("premium_active") is True
+
+
+def checkout_session_email(checkout_session):
+    return (
+        stripe_value(checkout_session, "customer_email")
+        or stripe_nested_value(checkout_session, "customer_details", "email")
+        or stripe_nested_value(checkout_session, "metadata", "email")
+        or ""
+    )
+
+
+def checkout_session_payment_verified(checkout_session):
+    payment_status = str(stripe_value(checkout_session, "payment_status", "") or "").lower()
+    checkout_status = str(stripe_value(checkout_session, "status", "") or "").lower()
+    return payment_status == "paid" if payment_status else checkout_status == "complete"
+
+
+def remember_premium_session_identifiers(customer_id="", subscription_id="", email=""):
+    customer_id = stripe_identifier(customer_id)
+    subscription_id = stripe_identifier(subscription_id)
+    email = normalize_email(email)
+
+    if customer_id:
+        session["stripe_customer_id"] = customer_id
+    if subscription_id:
+        session["stripe_subscription_id"] = subscription_id
+    if email:
+        session["premium_email"] = email
+
+
 def owner_has_access():
     return session.get("owner_logged_in") is True
 
 
 def premium_has_access():
-    return owner_has_access() or session.get("premium_active") is True
+    if owner_has_access() or session.get("premium_active") is True:
+        return True
+
+    return premium_entitlement_active(
+        customer_id=session.get("stripe_customer_id"),
+        subscription_id=session.get("stripe_subscription_id"),
+        email=session.get("premium_email"),
+    )
 
 
 def owner_login_configured():
@@ -1379,9 +1579,55 @@ def get_premium_report(symbol, ai_context):
     confidence_value = confidence_number(ai_context.get("confidence", "0%"))
     role_profile = classify_portfolio_role(cleaned_symbol)
 
+    strength = signal_strength_label(ai_context["confidence"])
     portfolio_role = role_profile["label"]
     decision_use = role_profile["decision_use"]
     concentration_note = role_profile["concentration_note"]
+    role_key = role_profile.get("key", "research")
+
+    if signal == "SELL":
+        risk_level = "Higher caution"
+        confidence_read = "The scanner is flagging weakness, so the useful action is risk review rather than chasing upside."
+    elif confidence_value >= 80:
+        risk_level = "Medium risk"
+        confidence_read = "Confidence is strong for the current signal, but it still needs price, news and portfolio-fit confirmation."
+    elif confidence_value >= 60:
+        risk_level = "Medium / watch closely"
+        confidence_read = "Confidence is useful but not decisive, so treat this as a research prompt rather than a conclusion."
+    else:
+        risk_level = "Early / watchlist"
+        confidence_read = "Confidence is not strong enough for a firm read, so the next trigger matters more than the score."
+
+    if role_key == "growth":
+        portfolio_fit_points = [
+            "Adds growth exposure and may increase sensitivity to AI, technology, momentum or crypto-style volatility.",
+            "Check duplicate exposure if you already own Nasdaq-heavy ETFs, mega-cap technology or other high-growth names.",
+            "Best treated as a satellite idea unless it is already part of your deliberate core allocation.",
+        ]
+    elif role_key in {"defensive", "core_etf", "index"}:
+        portfolio_fit_points = [
+            "May add defensive balance or broad market context rather than a narrow growth bet.",
+            "Check whether it overlaps with existing ETFs or defensive holdings before adding more.",
+            "Useful for comparing whether the portfolio is too concentrated in one sector or style.",
+        ]
+    elif role_key in {"cyclical", "industrial"}:
+        portfolio_fit_points = [
+            "Adds cyclical, industrial or macro-sensitive exposure that can behave differently from growth stocks.",
+            "Check whether you already have bank, energy, commodity, defence or economically sensitive holdings.",
+            "Position sizing matters because cycles, policy headlines and commodity moves can drive the thesis.",
+        ]
+    elif role_key == "quality":
+        portfolio_fit_points = [
+            "May add quality or durable business exposure, but quality stocks can still duplicate mega-cap or consumer exposure.",
+            "Check valuation, sector weight and overlap with existing ETFs before increasing exposure.",
+            "Useful as a core-style equity candidate only if the risk and time horizon fit.",
+        ]
+    else:
+        portfolio_fit_points = [
+            "Treat as a research candidate until you can clearly describe its portfolio role.",
+            "Check whether it duplicates a sector, theme, ETF holding or risk you already own.",
+            "Decide whether it is core, satellite, dividend, defensive, cyclical or speculative before acting.",
+        ]
 
     if signal == "BUY" and confidence_value >= 80:
         readiness = "Strong research candidate"
@@ -1396,29 +1642,42 @@ def get_premium_report(symbol, ai_context):
         readiness = "Watch and learn"
         action_frame = "Keep on the watchlist until the signal, confidence or thesis becomes clearer."
 
+    score_breakdown = [
+        {"label": "Signal strength", "text": f"{signal} signal with {strength.lower()} strength based on the current StockRadar confidence input."},
+        {"label": "Confidence", "text": confidence_read},
+        {"label": "Portfolio role", "text": f"{portfolio_role}: {decision_use}"},
+        {"label": "Risk level", "text": f"{risk_level}. {ai_context['risk_view']}"},
+        {"label": "Concentration warning", "text": concentration_note},
+        {"label": "Watch-next trigger", "text": ai_context["watch_next"]},
+    ]
+
     checklist = [
-        "Do I understand how this business, fund, index or asset makes money or moves?",
-        "Does this fit my time horizon and risk tolerance?",
-        "Am I already exposed to the same sector, ETF, theme or mega-cap names?",
-        "What would make this investment thesis wrong?",
-        "Would I still be comfortable holding this if it fell sharply in the short term?",
+        "Similar exposure: do I already own this sector, ETF theme, mega-cap cluster or risk somewhere else?",
+        "Time horizon: would this still make sense for my planned holding period, not just this week's chart?",
+        f"Risk fit: does the {risk_level.lower()} setup match the amount I can tolerate moving up and down?",
+        f"Watch trigger: what should I look for next? {ai_context['watch_next']}",
+        f"Portfolio role: is this core, satellite, dividend/income, defensive, cyclical or speculative? Current read: {portfolio_role}.",
+        "Stop rule: what news, price action or business evidence would make me wait or walk away?",
     ]
 
 
     return {
         "headline": f"{stock_display_label(cleaned_symbol)} Premium Decision Panel",
-        "summary": "Premium view: signal strength, portfolio role, risk fit and what to check before acting.",
+        "summary": "Free shows the current signal. Premium explains what it may mean, why it matters, where it fits and what to check before acting.",
         "confidence": ai_context["confidence"],
         "meter": confidence_meter(ai_context["confidence"]),
-        "strength": signal_strength_label(ai_context["confidence"]),
+        "strength": strength,
         "risk": ai_context["risk_view"],
+        "risk_level": risk_level,
         "next_move": ai_context["watch_next"],
-        "pro_angle": "Premium turns the signal into a structured decision check, not a blind buy/sell instruction.",
+        "pro_angle": "Use Premium as a structured decision check, not as a buy/sell instruction.",
         "portfolio_role": portfolio_role,
         "decision_use": decision_use,
         "concentration_note": concentration_note,
+        "portfolio_fit_points": portfolio_fit_points,
         "readiness": readiness,
         "action_frame": action_frame,
+        "score_breakdown": score_breakdown,
         "checklist": checklist,
     }
 
@@ -1530,15 +1789,20 @@ def premium_decision(symbol):
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Premium Decision Panel — StockRadar</title>
         <style>
+        *{box-sizing:border-box;}
         body{margin:0;background:linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
         .wrap{max-width:920px;margin:0 auto;}
         .card{background:linear-gradient(180deg,rgba(23,23,23,0.96),rgba(14,14,14,0.96));border:1px solid rgba(255,255,255,0.11);border-radius:30px;padding:34px;box-shadow:0 30px 85px rgba(0,0,0,0.42);margin-bottom:22px;}
         .kicker{color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;}
-        h1{font-size:42px;line-height:1.05;margin:0 0 16px 0;letter-spacing:-0.04em;}
+        h1{font-size:42px;line-height:1.08;margin:0 0 16px 0;letter-spacing:0;}
         p{color:#cbd5e1;line-height:1.7;}
         a{color:#38bdf8;font-weight:900;text-decoration:none;}
         .button{display:inline-block;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-radius:15px;padding:14px 18px;font-weight:950;text-decoration:none;margin-top:12px;}
         .locked{background:rgba(239,68,68,0.09);border:1px solid rgba(239,68,68,0.20);border-radius:20px;padding:18px;color:#fecaca;line-height:1.65;}
+        .preview-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:18px 0;}
+        .preview{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:18px;padding:16px;line-height:1.6;color:#cbd5e1;}
+        .preview strong{display:block;color:white;margin-bottom:5px;}
+        @media(max-width:760px){body{padding:24px 16px;}.card{padding:24px 20px;border-radius:24px;}.preview-grid{grid-template-columns:1fr;}h1{font-size:32px;}.button{display:block;text-align:center;}}
         </style>
         </head>
         <body>
@@ -1547,8 +1811,13 @@ def premium_decision(symbol):
             <div class="card">
                 <p class="kicker">Premium Decision Layer</p>
                 <h1>{{ stock_display_label(symbol) }} Decision Panel</h1>
-                <p>This panel turns a stock signal into a structured decision check: portfolio role, concentration risk, readiness, and what to watch before acting.</p>
-                <div class="locked"><strong>Locked:</strong> Upgrade to unlock the full Premium Decision Panel for {{ stock_display_label(symbol) }}.</div>
+                <p>Free shows the current {{ context.signal }} signal and confidence preview. Premium explains how to read that signal before making a decision: what it may mean, why it matters, where it could fit, and what risk to check next.</p>
+                <div class="preview-grid">
+                    <div class="preview"><strong>Signal explanation</strong>Unlock the reasoning behind the confidence meter instead of seeing only the headline signal.</div>
+                    <div class="preview"><strong>Portfolio fit</strong>See whether this looks like core, satellite, defensive, cyclical, income or speculative exposure.</div>
+                    <div class="preview"><strong>Risk check</strong>Review concentration warnings and a practical watch-next trigger before acting.</div>
+                </div>
+                <div class="locked"><strong>Locked preview:</strong> Premium does not promise better returns. It gives you a clearer research checklist for interpreting {{ stock_display_label(symbol) }}.</div>
                 <a class="button" href="/upgrade">Unlock Premium</a>
             </div>
             {{ disclaimer_footer() | safe }}
@@ -1556,7 +1825,7 @@ def premium_decision(symbol):
         </body>
         </html>
         """
-        return render_template_string(locked_html, symbol=cleaned_symbol)
+        return render_template_string(locked_html, symbol=cleaned_symbol, context=ai_context)
 
     panel_html = """
     <!DOCTYPE html>
@@ -1565,6 +1834,7 @@ def premium_decision(symbol):
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ report.headline }} — StockRadar</title>
     <style>
+    *{box-sizing:border-box;}
     body{margin:0;background:linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
     .wrap{max-width:1120px;margin:0 auto;}
     .card{background:linear-gradient(180deg,rgba(23,23,23,0.96),rgba(14,14,14,0.96));border:1px solid rgba(255,255,255,0.11);border-radius:30px;padding:32px;box-shadow:0 30px 85px rgba(0,0,0,0.42);margin-bottom:22px;}
@@ -1572,14 +1842,19 @@ def premium_decision(symbol):
     .box{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:20px;padding:18px;line-height:1.6;}
     .box strong{display:block;color:white;font-size:18px;margin-bottom:6px;}
     .box span,p,li{color:#cbd5e1;line-height:1.7;}
+    ul{padding-left:22px;margin:12px 0 0;}
+    li{margin-bottom:8px;}
+    .breakdown{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-top:16px;}
+    .breakdown-item{background:rgba(255,255,255,0.055);border:1px solid rgba(255,255,255,0.10);border-radius:18px;padding:16px;line-height:1.6;}
+    .breakdown-item strong{display:block;color:#f8fafc;margin-bottom:5px;}
     .kicker{color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;}
-    h1{font-size:44px;line-height:1.04;margin:0 0 16px 0;letter-spacing:-0.04em;}
-    h2{margin:0 0 12px 0;}
+    h1{font-size:44px;line-height:1.08;margin:0 0 16px 0;letter-spacing:0;}
+    h2{margin:0 0 12px 0;color:#f8fafc;}
     a{color:#38bdf8;font-weight:900;text-decoration:none;}
     .meter{font-family:monospace;color:#00ffaa;font-size:20px;letter-spacing:2px;}
     .note{background:rgba(0,255,170,0.09);border:1px solid rgba(0,255,170,0.18);border-radius:20px;padding:18px;color:#d1fae5;line-height:1.7;}
     .button{display:inline-block;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-radius:15px;padding:14px 18px;font-weight:950;text-decoration:none;margin-top:14px;}
-    @media(max-width:900px){body{padding:24px;}.grid{grid-template-columns:1fr;}h1{font-size:34px;}}
+    @media(max-width:900px){body{padding:24px 16px;}.card{padding:24px 20px;border-radius:24px;}.grid,.breakdown{grid-template-columns:1fr;}h1{font-size:32px;}.button{display:block;text-align:center;}}
     </style>
     </head>
     <body>
@@ -1611,6 +1886,16 @@ def premium_decision(symbol):
         </div>
 
         <div class="card">
+            <h2>Decision Score breakdown</h2>
+            <p>This is a structured research read, not a precise prediction. It uses the available signal, confidence, risk and portfolio-role context so you can decide what needs checking next.</p>
+            <div class="breakdown">
+                {% for item in report.score_breakdown %}
+                <div class="breakdown-item"><strong>{{ item.label }}</strong>{{ item.text }}</div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="card">
             <h2>Decision use</h2>
             <p>{{ report.decision_use }}</p>
             <div class="note">{{ report.action_frame }}</div>
@@ -1624,12 +1909,17 @@ def premium_decision(symbol):
 
         <div class="card">
             <h2>Portfolio fit check</h2>
-            <p>Already own other stocks or ETFs? Use the Portfolio Fit Checker before increasing position size or adding a similar theme.</p>
+            <p>Already own other stocks or ETFs? Premium Portfolio Fit helps decide whether {{ stock_display_label(symbol) }} adds useful exposure or just repeats a risk you already have.</p>
+            <ul>
+                {% for item in report.portfolio_fit_points %}
+                <li>{{ item }}</li>
+                {% endfor %}
+            </ul>
             <a class="button" href="/portfolio-fit">Check Portfolio Fit</a>
         </div>
 
         <div class="card">
-            <h2>Before acting, check this</h2>
+            <h2>Before You Act checklist</h2>
             <ul>
                 {% for item in report.checklist %}
                 <li>{{ item }}</li>
@@ -1662,7 +1952,9 @@ def premium_watchlist():
     buy_rows, hold_rows, sell_rows, conviction_rows = split_rows(recommendations)
 
     strongest = conviction_rows[0] if conviction_rows else None
-    highest_risk = sell_rows[0] if sell_rows else None
+    caution_candidates = sell_rows or sorted(hold_rows, key=lambda item: confidence_number(item["confidence"]))
+    highest_risk = caution_candidates[0] if caution_candidates else None
+    caution_label = "Current SELL warning" if sell_rows else "Lowest-confidence HOLD watch"
     quality_names = [item for item in recommendations if item["ticker"] in {"MSFT", "AAPL", "GOOGL", "AMZN", "META", "V", "MA", "COST"}]
     defensive_names = [item for item in recommendations if item["ticker"] in {"KO", "MCD", "JNJ", "PG", "PEP", "WMT", "AZN.L", "GSK.L"}]
     growth_names = [item for item in recommendations if item["ticker"] in {"NVDA", "AMD", "TSLA", "SMH", "QQQ", "BTC-USD", "ETH-USD", "SOL-USD"}]
@@ -1687,13 +1979,14 @@ def premium_watchlist():
         .wrap{max-width:920px;margin:0 auto;}
         .card{background:linear-gradient(180deg,rgba(23,23,23,0.96),rgba(14,14,14,0.96));border:1px solid rgba(255,255,255,0.11);border-radius:30px;padding:34px;box-shadow:0 30px 85px rgba(0,0,0,0.42);margin-bottom:22px;}
         .kicker{color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;}
-        h1{font-size:42px;line-height:1.05;margin:0 0 16px 0;letter-spacing:-0.04em;}
+        h1{font-size:42px;line-height:1.08;margin:0 0 16px 0;letter-spacing:0;}
         p,li{color:#cbd5e1;line-height:1.7;}
         a{color:#38bdf8;font-weight:900;text-decoration:none;}
         .button{display:inline-block;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-radius:15px;padding:14px 18px;font-weight:950;text-decoration:none;margin-top:12px;}
         .locked{background:rgba(239,68,68,0.09);border:1px solid rgba(239,68,68,0.20);border-radius:20px;padding:18px;color:#fecaca;line-height:1.65;}
         .future-feature{margin-top:20px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.22);border-radius:18px;padding:16px;color:#fde68a;line-height:1.65;}
         .future-feature strong{display:block;color:#fbbf24;margin-bottom:5px;}
+        @media(max-width:760px){body{padding:24px 16px;}.card{padding:24px 20px;border-radius:24px;}h1{font-size:32px;}.button{display:block;text-align:center;}}
         </style>
         </head>
         <body>
@@ -1702,12 +1995,12 @@ def premium_watchlist():
             <div class="card">
                 <p class="kicker">Premium Watchlist Intelligence</p>
                 <h1>Turn a list of stocks into a decision review.</h1>
-                <p>Premium Watchlist Intelligence highlights strongest signals, caution names, portfolio roles and theme concentration.</p>
+                <p>Free shows the watchlist signals. Premium turns them into a dashboard: what looks strongest, what needs caution, and whether the list is leaning too heavily into one style of exposure.</p>
                 <ul>
-                    <li>Strongest current signal</li>
-                    <li>Highest caution stock</li>
-                    <li>Quality, growth and defensive buckets</li>
-                    <li>Theme concentration read</li>
+                    <li>Strongest current signal with context for why it deserves review</li>
+                    <li>Caution stock so weaker setups are not ignored</li>
+                    <li>Quality, growth and defensive buckets with plain-English purpose</li>
+                    <li>Theme concentration read before adding duplicate exposure</li>
                 </ul>
                 <div class="future-feature">
                     <strong>Coming later: Dividend Dip Tracker</strong>
@@ -1731,6 +2024,7 @@ def premium_watchlist():
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Premium Watchlist Intelligence — StockRadar</title>
     <style>
+    *{box-sizing:border-box;}
     body{margin:0;background:radial-gradient(circle at 20% 10%,rgba(0,255,170,0.15),transparent 28%),linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
     .wrap{max-width:1180px;margin:0 auto;}
     .card{background:linear-gradient(180deg,rgba(23,23,23,0.96),rgba(14,14,14,0.96));border:1px solid rgba(255,255,255,0.11);border-radius:30px;padding:32px;box-shadow:0 30px 85px rgba(0,0,0,0.42);margin-bottom:22px;}
@@ -1739,8 +2033,8 @@ def premium_watchlist():
     .box strong{display:block;color:white;font-size:18px;margin-bottom:6px;}
     .box span,p,li{color:#cbd5e1;line-height:1.7;}
     .kicker{color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;}
-    h1{font-size:44px;line-height:1.04;margin:0 0 16px 0;letter-spacing:-0.04em;}
-    h2{margin:0 0 12px 0;}
+    h1{font-size:44px;line-height:1.08;margin:0 0 16px 0;letter-spacing:0;}
+    h2{margin:0 0 12px 0;color:#f8fafc;}
     a{color:#38bdf8;font-weight:900;text-decoration:none;}
     table{width:100%;border-collapse:collapse;margin-top:16px;}
     th,td{text-align:left;padding:13px;border-bottom:1px solid rgba(255,255,255,0.08);vertical-align:top;}
@@ -1748,7 +2042,7 @@ def premium_watchlist():
     .note{background:rgba(0,255,170,0.09);border:1px solid rgba(0,255,170,0.18);border-radius:20px;padding:18px;color:#d1fae5;line-height:1.7;}
     .future-feature{background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.22);border-radius:20px;padding:18px;color:#fde68a;line-height:1.7;}
     .future-feature strong{display:block;color:#fbbf24;font-size:18px;margin-bottom:5px;}
-    @media(max-width:900px){body{padding:24px;}.grid{grid-template-columns:1fr;}h1{font-size:34px;}}
+    @media(max-width:900px){body{padding:24px 16px;}.card{padding:24px 20px;border-radius:24px;}.grid{grid-template-columns:1fr;}h1{font-size:32px;}table{display:block;overflow-x:auto;}th,td{min-width:120px;}.button{display:block;text-align:center;}}
     </style>
     </head>
     <body>
@@ -1757,11 +2051,11 @@ def premium_watchlist():
         <div class="card">
             <p class="kicker">Premium Watchlist Intelligence</p>
             <h1>Decision review for the current StockRadar universe.</h1>
-            <p>This turns the signal table into a portfolio-style review: strongest opportunity, caution zones, role buckets and theme concentration.</p>
+            <p>This turns the signal table into a portfolio-style dashboard: strongest signal, caution stock, quality/growth/defensive buckets and theme concentration.</p>
             <div class="grid">
-                <div class="box"><strong>Strongest signal</strong>{% if strongest %}<span><a href="/stock/{{ strongest.ticker }}">{{ stock_display_label(strongest.ticker) }}</a> — {{ strongest.signal }} • {{ strongest.confidence }}</span>{% else %}<span>No conviction row available.</span>{% endif %}</div>
-                <div class="box"><strong>Highest caution</strong>{% if highest_risk %}<span><a href="/stock/{{ highest_risk.ticker }}">{{ stock_display_label(highest_risk.ticker) }}</a> — {{ highest_risk.signal }} • {{ highest_risk.confidence }}</span>{% else %}<span>No current SELL warning.</span>{% endif %}</div>
-                <div class="box"><strong>Review habit</strong><span>Use this page monthly before adding more risk.</span></div>
+                <div class="box"><strong>Strongest signal</strong>{% if strongest %}<span><a href="/stock/{{ strongest.ticker }}">{{ stock_display_label(strongest.ticker) }}</a> — {{ strongest.signal }} • {{ strongest.confidence }}. Start here, then check risk and portfolio overlap before acting.</span>{% else %}<span>No conviction row available.</span>{% endif %}</div>
+                <div class="box"><strong>Caution stock</strong>{% if highest_risk %}<span>{{ caution_label }}: <a href="/stock/{{ highest_risk.ticker }}">{{ stock_display_label(highest_risk.ticker) }}</a> — {{ highest_risk.signal }} • {{ highest_risk.confidence }}. Review what could weaken the thesis before adding exposure.</span>{% else %}<span>No caution row available.</span>{% endif %}</div>
+                <div class="box"><strong>Review habit</strong><span>Use this page before adding more risk: strongest signal first, caution second, portfolio role third.</span></div>
             </div>
         </div>
 
@@ -1777,6 +2071,7 @@ def premium_watchlist():
 
         <div class="card">
             <h2>Quality names to review</h2>
+            <p>Quality buckets matter because durable businesses can still become duplicate exposure if you already own broad ETFs or several mega-cap names.</p>
             <table>
                 <tr><th>Stock</th><th>Signal</th><th>Confidence</th><th>Role</th></tr>
                 {% for item in quality_names[:8] %}
@@ -1787,6 +2082,7 @@ def premium_watchlist():
 
         <div class="card">
             <h2>Growth and AI satellites</h2>
+            <p>Growth buckets matter because the strongest upside stories often share the same risks: valuation, rates, AI spending cycles and momentum reversals.</p>
             <table>
                 <tr><th>Stock</th><th>Signal</th><th>Confidence</th><th>Role</th></tr>
                 {% for item in growth_names[:8] %}
@@ -1797,13 +2093,14 @@ def premium_watchlist():
 
         <div class="card">
             <h2>Defensive balance candidates</h2>
+            <p>Defensive buckets matter because they can reduce dependence on one growth theme, but they still need dividend, debt, valuation and business-quality checks.</p>
             <table>
                 <tr><th>Stock</th><th>Signal</th><th>Confidence</th><th>Role</th></tr>
                 {% for item in defensive_names[:8] %}
                 <tr><td><a href="/stock/{{ item.ticker }}">{{ stock_display_label(item.ticker) }}</a></td><td>{{ item.signal }}</td><td>{{ item.confidence }}</td><td>Defensive balance</td></tr>
                 {% endfor %}
             </table>
-                        <div class="note">Premium read: do not just chase the strongest BUY signal. Review whether your next addition improves the overall mix.</div>
+            <div class="note">Premium read: do not just chase the strongest BUY signal. Review whether your next addition improves the overall mix.</div>
             <a class="button" href="/portfolio-fit">Check Portfolio Fit</a>
         </div>
         <div class="card">
@@ -1822,6 +2119,7 @@ def premium_watchlist():
         watchlist_html,
         strongest=strongest,
         highest_risk=highest_risk,
+        caution_label=caution_label,
         theme_counts=theme_counts,
         quality_names=quality_names,
         growth_names=growth_names,
@@ -1933,11 +2231,12 @@ def portfolio_fit():
         .wrap{max-width:920px;margin:0 auto;}
         .card{background:linear-gradient(180deg,rgba(23,23,23,0.96),rgba(14,14,14,0.96));border:1px solid rgba(255,255,255,0.11);border-radius:30px;padding:34px;box-shadow:0 30px 85px rgba(0,0,0,0.42);margin-bottom:22px;}
         .kicker{color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;}
-        h1{font-size:42px;line-height:1.05;margin:0 0 16px 0;letter-spacing:-0.04em;}
+        h1{font-size:42px;line-height:1.08;margin:0 0 16px 0;letter-spacing:0;}
         p,li{color:#cbd5e1;line-height:1.7;}
         a{color:#38bdf8;font-weight:900;text-decoration:none;}
         .button{display:inline-block;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-radius:15px;padding:14px 18px;font-weight:950;text-decoration:none;margin-top:12px;}
         .locked{background:rgba(239,68,68,0.09);border:1px solid rgba(239,68,68,0.20);border-radius:20px;padding:18px;color:#fecaca;line-height:1.65;}
+        @media(max-width:760px){body{padding:24px 16px;}.card{padding:24px 20px;border-radius:24px;}h1{font-size:32px;}.button{display:block;text-align:center;}}
         </style>
         </head>
         <body>
@@ -1946,12 +2245,13 @@ def portfolio_fit():
             <div class="card">
                 <p class="kicker">Premium Portfolio Fit Checker</p>
                 <h1>Check whether a stock actually fits your portfolio.</h1>
-                <p>Premium Portfolio Fit turns a list of holdings into a structure review: core base, quality compounders, growth satellites, defensive balance and concentration warnings.</p>
+                <p>Premium Portfolio Fit turns a list of holdings into a structure review: growth exposure, defensive balance, dividend or income context, sector concentration and duplicate exposure risk.</p>
                 <ul>
                     <li>Portfolio role split</li>
-                    <li>Growth and AI concentration warnings</li>
+                    <li>Growth, AI and sector concentration warnings</li>
+                    <li>Dividend or income-style context where the role looks defensive or yield-sensitive</li>
                     <li>Core versus satellite balance</li>
-                    <li>Suggested next research direction</li>
+                    <li>Duplicate exposure checks before adding a similar stock or ETF</li>
                 </ul>
                 <div class="locked"><strong>Locked:</strong> Upgrade to unlock portfolio fit reviews.</div>
                 <a class="button" href="/upgrade">Unlock Premium</a>
@@ -1979,14 +2279,14 @@ def portfolio_fit():
     .box strong{display:block;color:white;font-size:18px;margin-bottom:6px;}
     .box span,p,li{color:#cbd5e1;line-height:1.7;}
     .kicker{color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;}
-    h1{font-size:44px;line-height:1.04;margin:0 0 16px 0;letter-spacing:-0.04em;}
-    h2{margin:0 0 12px 0;}
+    h1{font-size:44px;line-height:1.08;margin:0 0 16px 0;letter-spacing:0;}
+    h2{margin:0 0 12px 0;color:#f8fafc;}
     a{color:#38bdf8;font-weight:900;text-decoration:none;}
     textarea{width:100%;min-height:130px;background:#020617;border:1px solid rgba(255,255,255,0.13);border-radius:18px;color:white;padding:16px;font-weight:800;outline:none;line-height:1.6;}
     button,.button{display:inline-block;border:none;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-radius:15px;padding:14px 18px;font-weight:950;cursor:pointer;text-decoration:none;margin-top:16px;}
     .note{background:rgba(0,255,170,0.09);border:1px solid rgba(0,255,170,0.18);border-radius:20px;padding:18px;color:#d1fae5;line-height:1.7;}
     .warning{background:rgba(239,68,68,0.09);border:1px solid rgba(239,68,68,0.20);border-radius:20px;padding:18px;color:#fecaca;line-height:1.7;}
-    @media(max-width:1000px){body{padding:24px;}.grid{grid-template-columns:1fr;}h1{font-size:34px;}}
+    @media(max-width:1000px){body{padding:24px 16px;}.card{padding:24px 20px;border-radius:24px;}.grid{grid-template-columns:1fr;}h1{font-size:32px;}button,.button{width:100%;text-align:center;}}
     </style>
     </head>
     <body>
@@ -1995,7 +2295,7 @@ def portfolio_fit():
         <div class="card">
             <p class="kicker">Premium Portfolio Fit Checker</p>
             <h1>Does the next stock actually fit?</h1>
-            <p>Enter current holdings separated by commas. StockRadar will classify the structure and flag concentration risks before you add more complexity.</p>
+            <p>Enter current holdings separated by commas. StockRadar will classify the structure and flag growth exposure, defensive balance, income-style context, sector concentration and duplicate exposure before you add more complexity.</p>
             <form method="POST" action="/portfolio-fit#portfolio-result">
                 <textarea name="holdings" placeholder="Example: SPY, MSFT, AMZN, GOOGL, NVDA, KO, MCD">{{ holdings_text }}</textarea>
                 <button type="submit">Check portfolio fit</button>
@@ -2009,7 +2309,7 @@ def portfolio_fit():
     <p>{{ result.total }} holdings reviewed.</p>
 
     <div class="note" style="margin-top:18px;">
-        This review breaks your holdings into core ETF base, quality compounders, growth satellites, defensive balance and research/unclassified names.
+        This review groups holdings by role so you can see whether the portfolio leans toward growth, defensive balance, income-style exposure, cyclicals or unclassified research ideas.
     </div>
 
     <h2 style="margin-top:28px;">Portfolio role split</h2>
@@ -2024,6 +2324,17 @@ def portfolio_fit():
         {% endfor %}
     </div>
 </div>
+
+        <div class="card">
+            <h2>How to read the fit</h2>
+            <ul>
+                <li><strong>Growth exposure:</strong> too many technology, AI, crypto or momentum names can make the portfolio move as one trade.</li>
+                <li><strong>Defensive balance:</strong> healthcare, consumer staples, telecom or broad ETFs may reduce dependence on high-growth themes, but still need valuation and debt checks.</li>
+                <li><strong>Dividend or income context:</strong> income-style holdings should be checked for payout sustainability, debt and whether the yield is masking weak growth.</li>
+                <li><strong>Sector concentration:</strong> several different tickers can still point to the same economic driver, such as rates, oil, AI spending or consumer demand.</li>
+                <li><strong>Duplicate exposure:</strong> ETFs may already hold the same mega-cap stocks you are considering as individual positions.</li>
+            </ul>
+        </div>
 
         <div class="card">
             <h2>Concentration warnings</h2>
@@ -4086,7 +4397,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
         <a class="nav-link pro-button" href="/manage-subscription">✅ Premium Active</a>
         <a class="nav-link" href="/logout">🚪 End Premium Session</a>
     {% else %}
-        <a class="nav-link pro-button" href="/upgrade">🚀 Upgrade to Pro — £5/month</a>
+        <a class="nav-link pro-button" href="/upgrade">🚀 Upgrade to Premium — £5/month</a>
         <a class="nav-link" href="/login">🔐 Login</a>
     {% endif %}
     <div class="owner-box">Premium unlocks full AI reasoning, risk reads, next-move analysis and market intelligence.</div>
@@ -4143,10 +4454,10 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
             <form class="smart-search" onsubmit="return runSmartSearch(event)">
                 <label for="smartSearchInput">Quick Search</label>
                 <div class="smart-search-row">
-                    <input id="smartSearchInput" type="search" placeholder="Type a ticker, S&P 500, BUY, AI, Pro..." autocomplete="off" aria-label="Type to search stocks, indexes or dashboard sections">
+                    <input id="smartSearchInput" type="search" placeholder="Type a ticker, S&P 500, BUY, AI, Premium..." autocomplete="off" aria-label="Type to search stocks, indexes or dashboard sections">
                     <button type="submit">Search</button>
                 </div>
-                <div class="search-hint">Type and press Enter or Search. Try: Apple, Tesla, Nvidia, Microsoft, S&P 500, Nasdaq, BUY, AI or Pro.</div>
+                <div class="search-hint">Type and press Enter or Search. Try: Apple, Tesla, Nvidia, Microsoft, S&P 500, Nasdaq, BUY, AI or Premium.</div>
                 <div id="searchMessage" class="search-message" role="status"></div>
             </form>
         </div>
@@ -4278,7 +4589,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
         {% if buy_rows %}
         <table><tr><th>Stock</th><th>Confidence</th><th>AI Reason</th></tr>{% for item in buy_rows %}<tr><td class="buy"><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_display_label(item.ticker) }}</a></td><td>{{ item.confidence }}</td><td>{{ item.reason }}</td></tr>{% endfor %}</table>
         {% else %}<div class="empty-state">No BUY signals are currently active in your latest scanner output.</div>{% endif %}
-        {% if has_premium_access %}<div class="notice"><h3>✅ Premium signal breakdown active</h3><p>You have full premium access. Use the linked tickers above to open the premium stock intelligence pages.</p></div>{% else %}<div class="notice"><h3>🔒 Unlock full AI signal breakdown</h3><p>Pro includes full conviction rankings, live alerts and deeper AI reasoning.</p><a class="upgrade-cta" href="/upgrade">Upgrade to Pro — £5/month</a></div>{% endif %}
+        {% if has_premium_access %}<div class="notice"><h3>✅ Premium signal breakdown active</h3><p>You have full premium access. Use the linked tickers above to open the premium stock intelligence pages.</p></div>{% else %}<div class="notice"><h3>🔒 Unlock full AI signal breakdown</h3><p>Premium adds conviction context, risk reads and deeper signal reasoning.</p><a class="upgrade-cta" href="/upgrade">Upgrade to Premium — £5/month</a></div>{% endif %}
     </div>
 
     <div id="hold-panel" class="card panel">
@@ -4286,7 +4597,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
         {% if hold_rows %}
         <table><tr><th>Stock</th><th>Confidence</th><th>AI Reason</th></tr>{% for item in hold_rows %}<tr><td class="hold"><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_display_label(item.ticker) }}</a></td><td>{{ item.confidence }}</td><td>{{ item.reason }}</td></tr>{% endfor %}</table>
         {% else %}<div class="empty-state">No HOLD signals are currently active.</div>{% endif %}
-        {% if has_premium_access %}<div class="notice"><h3>✅ Premium HOLD analysis active</h3><p>You have full premium access to deeper HOLD interpretation and premium stock pages.</p></div>{% else %}<div class="notice"><h3>🔒 Unlock deeper HOLD analysis</h3><p>Pro shows whether HOLD stocks are preparing to flip into BUY or SELL signals.</p><a class="upgrade-cta" href="/upgrade">Upgrade to Pro — £5/month</a></div>{% endif %}
+        {% if has_premium_access %}<div class="notice"><h3>✅ Premium HOLD analysis active</h3><p>You have full premium access to deeper HOLD interpretation and premium stock pages.</p></div>{% else %}<div class="notice"><h3>🔒 Unlock deeper HOLD analysis</h3><p>Premium explains what would make a HOLD more useful, riskier or worth waiting on.</p><a class="upgrade-cta" href="/upgrade">Upgrade to Premium — £5/month</a></div>{% endif %}
     </div>
 
     <div id="sell-panel" class="card panel">
@@ -4294,13 +4605,13 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
         {% if sell_rows %}
         <table><tr><th>Stock</th><th>Confidence</th><th>AI Reason</th></tr>{% for item in sell_rows %}<tr><td class="sell"><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_display_label(item.ticker) }}</a></td><td>{{ item.confidence }}</td><td>{{ item.reason }}</td></tr>{% endfor %}</table>
         {% else %}<div class="empty-state">No SELL signals are currently active.</div>{% endif %}
-        {% if has_premium_access %}<div class="notice"><h3>✅ Premium downside warnings active</h3><p>You have full premium access to downside warnings and premium risk interpretation.</p></div>{% else %}<div class="notice"><h3>🔒 Unlock full downside warnings</h3><p>Pro includes live bearish alerts and AI-driven risk warnings.</p><a class="upgrade-cta" href="/upgrade">Upgrade to Pro — £5/month</a></div>{% endif %}
+        {% if has_premium_access %}<div class="notice"><h3>✅ Premium downside warnings active</h3><p>You have full premium access to downside warnings and premium risk interpretation.</p></div>{% else %}<div class="notice"><h3>🔒 Unlock full downside warnings</h3><p>Premium adds risk interpretation, concentration checks and watch-next triggers for weaker setups.</p><a class="upgrade-cta" href="/upgrade">Upgrade to Premium — £5/month</a></div>{% endif %}
     </div>
 
     <div id="conviction-panel" class="card panel">
         <h2>Premium Focus — Highest AI Conviction</h2>
         <table><tr><th>Stock</th><th>Conviction</th><th>AI Insight</th></tr>{% for item in conviction_rows %}<tr><td class="buy"><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_display_label(item.ticker) }}</a></td><td>{{ item.confidence }}</td><td>{{ item.reason }}</td></tr>{% endfor %}</table>
-        {% if has_premium_access %}<div class="notice"><h3>✅ Premium AI-ranked opportunities active</h3><p>You have full premium access to the AI watchlist, conviction engine and premium market intelligence.</p></div>{% else %}<div class="notice"><h3>🔒 Unlock premium conviction intelligence</h3><p>Premium turns High Conviction into a research shortlist with deeper AI reasoning, risk read and what-to-watch-next context on each linked stock page.</p><a class="upgrade-cta" href="/upgrade">Upgrade to Pro — £5/month</a></div>{% endif %}
+        {% if has_premium_access %}<div class="notice"><h3>✅ Premium AI-ranked opportunities active</h3><p>You have full premium access to the AI watchlist, conviction engine and premium market intelligence.</p></div>{% else %}<div class="notice"><h3>🔒 Unlock premium conviction intelligence</h3><p>Premium turns High Conviction into a research shortlist with deeper AI reasoning, risk read and what-to-watch-next context on each linked stock page.</p><a class="upgrade-cta" href="/upgrade">Upgrade to Premium — £5/month</a></div>{% endif %}
     </div>
 
     <div id="full-universe-table" class="card">
@@ -4435,7 +4746,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 
     <div class="feature-grid">
         <div class="card"><h2>Free Access</h2><p>Market overview, limited signal previews and AI watchlist snapshots.</p></div>
-        {% if has_premium_access %}<div class="card"><h2>Premium Active</h2><p>Your account has premium access. Upgrade prompts are hidden and premium intelligence is unlocked.</p></div>{% else %}<div class="card"><h2>Pro Preview</h2><p>Live BUY/SELL alerts, conviction scoring and deeper AI explanations.</p></div>{% endif %}
+        {% if has_premium_access %}<div class="card"><h2>Premium Active</h2><p>Your account has premium access. Upgrade prompts are hidden and premium intelligence is unlocked.</p></div>{% else %}<div class="card"><h2>Premium Preview</h2><p>Signal interpretation, decision context and portfolio-fit checks.</p></div>{% endif %}
         <div class="card"><h2>Daily Value</h2><p>Use the dashboard to check what is strengthening, weakening and worth watching.</p></div>
     </div>
     </div>
@@ -4449,7 +4760,7 @@ function flashTarget(element){if(!element){return;}element.classList.remove('hig
 function openPanelAndJump(panelId){var panel=document.getElementById(panelId);var button=document.querySelector('[aria-controls="'+panelId+'"]');if(!panel){return;}panel.classList.add('open');if(button){button.setAttribute('aria-expanded','true');}panel.scrollIntoView({behavior:'smooth',block:'start'});flashTarget(panel);}
 function showSearchMessage(message){var messageBox=document.getElementById('searchMessage');if(!messageBox){return;}messageBox.textContent=message;messageBox.style.display='block';}
 function runSmartSearch(event){event.preventDefault();var input=document.getElementById('smartSearchInput');if(!input){return false;}var query=input.value.trim().toUpperCase();if(!query){showSearchMessage('Type a ticker or section name first.');return false;}var map={'APPLE':'AAPL','AAPL':'AAPL','TESLA':'TSLA','TSLA':'TSLA','NVIDIA':'NVDA','NVDA':'NVDA','MICROSOFT':'MSFT','MSFT':'MSFT','AMAZON':'AMZN','AMZN':'AMZN','GOOGLE':'GOOGL','ALPHABET':'GOOGL','META':'META','FACEBOOK':'META','SPCX':'SPCX','SPACEX':'SPCX','SPACE X':'SPCX','SPAX.PVT':'SPCX','MAERSK':'MAERSK-B.CO','MAERSK B':'MAERSK-B.CO','MAERSK A':'MAERSK-A.CO','A P MOLLER MAERSK':'MAERSK-B.CO','AP MOLLER MAERSK':'MAERSK-B.CO','BAE.L':'BA.L','BAE SYSTEMS':'BA.L','S&P 500':'^GSPC','SP500':'^GSPC','S&P':'^GSPC','NASDAQ':'^IXIC','FTSE':'^FTSE','FTSE 100':'^FTSE','HSBC':'HSBA.L','BP':'BP.L','ASTRAZENECA':'AZN.L','SHELL':'SHEL.L'};if(map[query]){window.location.href='/stock/'+encodeURIComponent(map[query]);return false;}if(['AI','RECOMMENDATIONS','AI RECOMMENDATIONS','WATCHLIST'].includes(query)){window.location.href='/?tab=watchlist';return false;}if(['BUY','BUYS','BUY SIGNALS'].includes(query)){window.location.href='/?tab=signals&open=buy-panel';return false;}if(['HOLD','HOLDS','HOLD SIGNALS'].includes(query)){window.location.href='/?tab=signals&open=hold-panel';return false;}if(['SELL','SELLS','SELL SIGNALS'].includes(query)){window.location.href='/?tab=signals&open=sell-panel';return false;}if(['CONVICTION','HIGH CONVICTION','TOP'].includes(query)){window.location.href='/?tab=signals&open=conviction-panel';return false;}if(['POLITICS','POLITICAL','GEOPOLITICS','GEOPOLITICAL','RADAR','MARKET IMPACT','IMPACT RADAR'].includes(query)){window.location.href='/?tab=radar';return false;}
-if(['PRO','UPGRADE','PAYMENT','SUBSCRIPTION'].includes(query)){window.location.href='/upgrade';return false;}if(/^[A-Z0-9.^-]{1,12}$/.test(query)){window.location.href='/stock/'+encodeURIComponent(query);return false;}showSearchMessage('No matching stock or section found. Try Apple, AAPL, S&P 500, Nasdaq, BUY, SELL, AI or Pro.');return false;}
+if(['PRO','PREMIUM','UPGRADE','PAYMENT','SUBSCRIPTION'].includes(query)){window.location.href='/upgrade';return false;}if(/^[A-Z0-9.^-]{1,12}$/.test(query)){window.location.href='/stock/'+encodeURIComponent(query);return false;}showSearchMessage('No matching stock or section found. Try Apple, AAPL, S&P 500, Nasdaq, BUY, SELL, AI or Premium.');return false;}
 function setSignalFilter(signal){var select=document.getElementById('signalFilterValue');if(select){select.value=signal;}document.querySelectorAll('[data-signal-filter]').forEach(function(button){button.classList.toggle('active-filter',button.getAttribute('data-signal-filter')===signal);});applySignalFilters();}
 function resetSignalFilters(){var tickerInput=document.getElementById('tickerFilterInput');var sectorSelect=document.getElementById('sectorFilterSelect');if(tickerInput){tickerInput.value='';}if(sectorSelect){sectorSelect.value='ALL';}setSignalFilter('ALL');}
 function applySignalFilters(){var tickerInput=document.getElementById('tickerFilterInput');var sectorSelect=document.getElementById('sectorFilterSelect');var signalSelect=document.getElementById('signalFilterValue');var tickerQuery=tickerInput ? tickerInput.value.trim().toUpperCase() : '';var selectedSector=sectorSelect ? sectorSelect.value : 'ALL';var selectedSignal=signalSelect ? signalSelect.value : 'ALL';var rows=document.querySelectorAll('.signal-row');var visibleCount=0;rows.forEach(function(row){var rowTicker=(row.getAttribute('data-ticker')||'').toUpperCase();var rowSignal=row.getAttribute('data-signal')||'';var rowSector=row.getAttribute('data-sector')||'AI Watchlist';var tickerMatch=!tickerQuery || rowTicker.includes(tickerQuery);var signalMatch=selectedSignal==='ALL' || rowSignal===selectedSignal;var sectorMatch=selectedSector==='ALL' || rowSector===selectedSector;var shouldShow=tickerMatch && signalMatch && sectorMatch;row.classList.toggle('hidden-signal-row',!shouldShow);if(shouldShow){visibleCount+=1;}});var status=document.getElementById('signalFilterStatus');if(status){var signalText=selectedSignal==='ALL'?'all signals':selectedSignal+' signals';var sectorText=selectedSector==='ALL'?'all sectors':selectedSector;var tickerText=tickerQuery?(' matching '+tickerQuery):'';status.textContent='Showing '+visibleCount+' stocks for '+signalText+', '+sectorText+tickerText+'.';}}
@@ -4761,16 +5072,16 @@ upgrade_html = """
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>StockRadar Pro — Premium Research Preview</title>
-<meta name="description" content="Preview StockRadar Pro research tools for deeper signal context, watchlist intelligence and portfolio-fit checks.">
+<title>StockRadar Premium — Research Tools</title>
+<meta name="description" content="Preview StockRadar Premium research tools for deeper signal context, watchlist intelligence and portfolio-fit checks.">
 <link rel="canonical" href="https://www.stockradarhq.com/upgrade">
-<meta property="og:title" content="StockRadar Pro — Premium Research Preview">
+<meta property="og:title" content="StockRadar Premium — Research Tools">
 <meta property="og:description" content="Preview deeper StockRadar signal context, watchlist intelligence and portfolio-fit research tools.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://www.stockradarhq.com/upgrade">
 <meta property="og:site_name" content="StockRadar">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="StockRadar Pro — Premium Research Preview">
+<meta name="twitter:title" content="StockRadar Premium — Research Tools">
 <meta name="twitter:description" content="Preview deeper StockRadar signal context, watchlist intelligence and portfolio-fit research tools.">
 <style>
 *{box-sizing:border-box;}
@@ -4780,7 +5091,7 @@ body{background:radial-gradient(circle at 18% 8%,rgba(0,255,170,0.18),transparen
 .hero{display:grid;grid-template-columns:1.15fr 0.85fr;gap:24px;align-items:stretch;}
 .card{background:linear-gradient(180deg,rgba(23,23,23,0.96),rgba(14,14,14,0.96));border:1px solid rgba(255,255,255,0.11);border-radius:30px;padding:34px;box-shadow:0 30px 85px rgba(0,0,0,0.45),inset 0 1px 0 rgba(255,255,255,0.07);}
 .badge{display:inline-block;color:#00ffaa;background:rgba(0,255,170,0.10);border:1px solid rgba(0,255,170,0.22);padding:9px 13px;border-radius:999px;font-weight:950;text-transform:uppercase;letter-spacing:0.1em;font-size:12px;}
-h1{font-size:54px;line-height:0.94;letter-spacing:-0.06em;margin:14px 0 16px 0;background:linear-gradient(135deg,#ffffff,#00ffaa,#ffb86b);-webkit-background-clip:text;color:transparent;}
+h1{font-size:52px;line-height:1.02;letter-spacing:0;margin:14px 0 16px 0;background:linear-gradient(135deg,#ffffff,#00ffaa,#ffb86b);-webkit-background-clip:text;color:transparent;}
 h2{font-size:28px;margin:0 0 12px 0;}
 p{color:#cbd5e1;line-height:1.7;font-size:16px;}
 .feature{display:flex;gap:12px;align-items:flex-start;margin:15px 0;color:#e5e7eb;line-height:1.55;}
@@ -4789,7 +5100,7 @@ p{color:#cbd5e1;line-height:1.7;font-size:16px;}
 .price span{font-size:17px;color:#94a3b8;letter-spacing:0;}
 .pay-box{background:rgba(5,5,5,0.52);border:1px solid rgba(255,255,255,0.13);border-radius:24px;padding:24px;margin-top:20px;}
 .fake-input{width:100%;background:#020617;border:1px solid rgba(255,255,255,0.14);border-radius:16px;padding:15px;color:#94a3b8;margin-bottom:12px;font-weight:800;}
-.button{display:inline-block;text-align:center;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;padding:17px 22px;border-radius:18px;text-decoration:none;font-weight:950;margin-top:12px;margin-right:10px;box-shadow:0 22px 60px rgba(0,255,170,0.20);}
+.button{display:inline-block;text-align:center;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;padding:17px 22px;border-radius:18px;text-decoration:none;font-weight:950;margin-top:12px;margin-right:10px;box-shadow:0 22px 60px rgba(0,255,170,0.20);line-height:1.25;}
 .button.secondary{background:rgba(255,255,255,0.08);color:white;border:1px solid rgba(255,255,255,0.13);box-shadow:none;}
 .note{font-size:13px;color:#94a3b8;margin-top:14px;line-height:1.55;}
 .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:24px;}
@@ -4799,7 +5110,7 @@ p{color:#cbd5e1;line-height:1.7;font-size:16px;}
 .future-card{margin-top:24px;background:linear-gradient(135deg,rgba(245,158,11,0.10),rgba(15,23,42,0.72));border-color:rgba(245,158,11,0.24);}
 .future-card .future-label{color:#fbbf24;font-weight:950;text-transform:uppercase;letter-spacing:0.1em;font-size:12px;margin:0 0 10px;}
 .future-card h2{color:#f8fafc;}
-@media(max-width:850px){body{padding:24px;}.hero,.grid{grid-template-columns:1fr;}h1{font-size:42px;}}
+@media(max-width:850px){body{padding:24px 16px;}.hero,.grid{grid-template-columns:1fr;}.card{padding:24px 20px;border-radius:24px;}h1{font-size:38px;}.button{width:100%;margin-right:0;}.price{font-size:48px;}}
 </style>
 </head>
 <body>
@@ -4810,23 +5121,23 @@ p{color:#cbd5e1;line-height:1.7;font-size:16px;}
     <div class="card active-card">
         <span class="badge">Premium active</span>
         <h1>✅ Premium is already active.</h1>
-        <p>Premium access is active for this session. You do not need to purchase again. Premium stock intelligence, risk reads and next-move analysis are unlocked.</p>
+        <p>Premium access is active for this session. You do not need to purchase again. Premium decision panels, watchlist intelligence and portfolio-fit checks are unlocked.</p>
         <a class="button" href="/stock/AAPL">Open Premium Stock Page</a>
         <a class="button secondary" href="/">Return to Dashboard</a>
     </div>
     {% else %}
     <div class="hero">
         <div class="card">
-            <span class="badge">StockRadar Pro</span>
-            <h1>Unlock Premium research tools.</h1>
-            <p>Get the deeper StockRadar research layer across individual stocks, your watchlist and your current portfolio structure.</p>
-            <div class="feature"><span class="tick">✓</span><span><strong>Premium Decision Panels</strong> — deeper signal context, risk reads, portfolio role and what to watch next.</span></div>
-            <div class="feature"><span class="tick">✓</span><span><strong>Premium Watchlist Intelligence</strong> — review strongest signals, caution names and theme concentration.</span></div>
-            <div class="feature"><span class="tick">✓</span><span><strong>Portfolio Fit Checker</strong> — classify holdings and identify concentration risks before adding more exposure.</span></div>
+            <span class="badge">StockRadar Premium</span>
+            <h1>Understand the signal before you act.</h1>
+            <p>Free shows the signal. Premium explains what it may mean, why it matters, how it fits your portfolio, what risk to check and what trigger to watch next.</p>
+            <div class="feature"><span class="tick">✓</span><span><strong>Premium Decision Panels</strong> — signal strength, confidence, risk level, portfolio role, concentration warning and watch-next trigger.</span></div>
+            <div class="feature"><span class="tick">✓</span><span><strong>Premium Watchlist Intelligence</strong> — strongest signal, caution stock and quality/growth/defensive buckets.</span></div>
+            <div class="feature"><span class="tick">✓</span><span><strong>Portfolio Fit Checker</strong> — classify holdings and spot growth, defensive, income, sector and duplicate-exposure risks.</span></div>
             <div class="grid">
-                <div class="mini"><strong>Individual stocks</strong>Premium Decision Panels.</div>
-                <div class="mini"><strong>Your watchlist</strong>Premium Watchlist Intelligence.</div>
-                <div class="mini"><strong>Your holdings</strong>Portfolio Fit Checker.</div>
+                <div class="mini"><strong>Free</strong>Signal, confidence preview, charts and basic research prompts.</div>
+                <div class="mini"><strong>Premium</strong>Decision context, portfolio fit, risk checks and watch-next prompts.</div>
+                <div class="mini"><strong>Educational only</strong>Research tools, not financial advice or promises of returns.</div>
             </div>
         </div>
         <div class="card">
@@ -4834,14 +5145,14 @@ p{color:#cbd5e1;line-height:1.7;font-size:16px;}
             <div class="price">£5 <span>/ month</span></div>
             <p class="note"><strong style="color:#cbd5e1;">£5/month. Cancel anytime.</strong> Cancellation stops future billing, with access continuing until the end of the current billing period.</p>
             {% if premium_payments_enabled %}
-            <p>One monthly subscription unlocks the full premium research toolkit.</p>
+            <p>One monthly subscription unlocks the Premium research toolkit. It is designed to help you ask better questions, not to tell you what to buy or sell.</p>
             <div class="note" style="padding:12px;border-radius:14px;background:rgba(56,189,248,0.08);border:1px solid rgba(56,189,248,0.16);color:#bae6fd;"><strong>Controlled early access:</strong> Checkout is explicitly enabled for the current environment.</div>
             <p class="note">£5/month early access premium subscription. Cancellation requests are handled through <a href="/manage-subscription">Manage Subscription</a> while self-service billing is being built.</p>
             {% else %}
             <p>Premium subscriptions are not open yet. This page previews the planned £5/month research toolkit while StockRadar completes payment readiness checks.</p>
             <div class="note" style="padding:12px;border-radius:14px;background:rgba(245,158,11,0.09);border:1px solid rgba(245,158,11,0.20);color:#fde68a;"><strong>Soft launch:</strong> No payment can be started from this environment unless checkout is explicitly enabled.</div>
             {% endif %}
-            <p class="note"><strong style="color:#cbd5e1;">Educational only.</strong> Premium provides research tools and analysis—not financial advice or personalised investment recommendations.</p>
+            <p class="note"><strong style="color:#cbd5e1;">Educational only.</strong> Premium provides research tools and analysis, not financial advice, personalised investment recommendations or guaranteed returns.</p>
             <div class="pay-box">
                 <p class="note">Premium access provides research tools and analysis only. StockRadar is not financial advice.</p>
                 {% if premium_payments_enabled %}
@@ -4887,15 +5198,15 @@ stock_detail_html = """
 <title>{{ stock_display_label(symbol) }} Stock Detail</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-*{box-sizing:border-box;}body{background:radial-gradient(circle at 12% 6%,rgba(0,255,170,0.11),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;margin:0;min-height:100vh;padding:48px;}.card{background:linear-gradient(180deg,rgba(18,29,42,0.97),rgba(12,22,33,0.97));padding:30px;border-radius:28px;margin-bottom:22px;border:1px solid rgba(148,163,184,0.16);box-shadow:0 22px 65px rgba(0,0,0,0.30);}h1,h2{color:#f1f5f9;}p{color:#b9c5d2;line-height:1.7;}a{color:#69c9f2;text-decoration:none;font-weight:bold;}.kicker{color:#4adea3;font-weight:950;text-transform:uppercase;letter-spacing:.1em;font-size:12px;margin:0 0 8px;}.muted{color:#91a3b4;font-size:13px;}.range-row{display:flex;gap:12px;flex-wrap:wrap;margin:22px 0;}.range-button{display:inline-block;padding:12px 16px;border-radius:15px;background:#111d2b;color:#dbe4ee;text-decoration:none;border:1px solid rgba(148,163,184,0.14);font-weight:800;}.range-button.active{background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;}.metric-grid,.ai-grid,.example-report-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-bottom:22px;}.metric-grid{grid-template-columns:repeat(4,1fr);}.ai-card,.metric,.example-report-card{background:rgba(14,25,38,0.90);border:1px solid rgba(148,163,184,0.15);border-radius:22px;padding:23px;}.ai-card.warning{background:linear-gradient(145deg,rgba(89,70,28,0.35),rgba(14,25,38,0.94));}.ai-card.risk{background:linear-gradient(145deg,rgba(24,60,78,0.32),rgba(14,25,38,0.94));}.premium-banner,.example-report{background:linear-gradient(135deg,rgba(15,55,50,0.74),rgba(55,42,26,0.60),rgba(20,45,61,0.62));border:1px solid rgba(74,222,163,0.20);border-radius:28px;padding:30px;margin-bottom:22px;}.premium-banner{display:grid;grid-template-columns:1.45fr 0.75fr;gap:24px;align-items:center;}.premium-cta-box{background:rgba(9,18,28,0.80);border:1px solid rgba(148,163,184,0.16);border-radius:22px;padding:22px;text-align:center;}.payment-button{display:inline-block;background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;border-radius:16px;padding:14px 20px;font-size:15px;font-weight:950;text-decoration:none;}.payment-note{color:#91a3b4;font-size:13px;margin-top:12px;line-height:1.55;}.signal-badge,.free-strength,.strength-pill{display:inline-block;margin-top:10px;padding:8px 12px;border-radius:999px;background:rgba(148,163,184,0.09);font-weight:900;font-size:12px;text-transform:uppercase;}.confidence-large,.confidence-score{font-size:40px;font-weight:950;}.free-meter,.confidence-meter{font-size:26px;letter-spacing:2px;color:#4adea3;font-weight:950;margin:8px 0;}.dividend-card{border:1px solid rgba(74,222,163,0.18);}.dividend-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:16px 0;}.dividend-metric{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:16px;padding:14px;line-height:1.45;}.dividend-metric span{display:block;color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:0.07em;font-weight:900;margin-bottom:6px;}.dividend-metric strong{display:block;color:#e5f4ff;font-size:17px;}.dividend-empty{background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.20);border-radius:16px;padding:14px;color:#fde68a;line-height:1.65;}.dividend-note{color:#cbd5e1;background:rgba(148,163,184,0.07);border-radius:14px;padding:12px 14px;}.dividend-risk{color:#fecaca;background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.16);border-radius:14px;padding:12px 14px;}.buy{color:#4ade80;font-weight:bold;}.sell{color:#fb7185;font-weight:bold;}.hold{color:#f4c95d;font-weight:bold;}canvas{background:#0a1420;border-radius:18px;padding:18px;}@media(max-width:900px){body{padding:24px 16px;}.metric-grid,.ai-grid,.premium-banner,.example-report-grid,.dividend-grid{grid-template-columns:1fr;}}
+*{box-sizing:border-box;}body{background:radial-gradient(circle at 12% 6%,rgba(0,255,170,0.11),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;margin:0;min-height:100vh;padding:48px;}.card{background:linear-gradient(180deg,rgba(18,29,42,0.97),rgba(12,22,33,0.97));padding:30px;border-radius:28px;margin-bottom:22px;border:1px solid rgba(148,163,184,0.16);box-shadow:0 22px 65px rgba(0,0,0,0.30);}h1,h2{color:#f1f5f9;line-height:1.12;letter-spacing:0;}p{color:#b9c5d2;line-height:1.7;}a{color:#69c9f2;text-decoration:none;font-weight:bold;}.kicker{color:#4adea3;font-weight:950;text-transform:uppercase;letter-spacing:.1em;font-size:12px;margin:0 0 8px;}.muted{color:#91a3b4;font-size:13px;}.range-row{display:flex;gap:12px;flex-wrap:wrap;margin:22px 0;}.range-button{display:inline-block;padding:12px 16px;border-radius:15px;background:#111d2b;color:#dbe4ee;text-decoration:none;border:1px solid rgba(148,163,184,0.14);font-weight:800;}.range-button.active{background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;}.metric-grid,.ai-grid,.example-report-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-bottom:22px;}.metric-grid{grid-template-columns:repeat(4,1fr);}.ai-card,.metric,.example-report-card{background:rgba(14,25,38,0.90);border:1px solid rgba(148,163,184,0.15);border-radius:22px;padding:23px;}.ai-card.warning{background:linear-gradient(145deg,rgba(89,70,28,0.35),rgba(14,25,38,0.94));}.ai-card.risk{background:linear-gradient(145deg,rgba(24,60,78,0.32),rgba(14,25,38,0.94));}.premium-banner,.example-report{background:linear-gradient(135deg,rgba(15,55,50,0.74),rgba(55,42,26,0.60),rgba(20,45,61,0.62));border:1px solid rgba(74,222,163,0.20);border-radius:28px;padding:30px;margin-bottom:22px;}.premium-banner{display:grid;grid-template-columns:1.45fr 0.75fr;gap:24px;align-items:center;}.premium-banner small,.example-report small{display:block;color:#86efac;font-weight:950;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px;}.premium-cta-box{background:rgba(9,18,28,0.84);border:1px solid rgba(148,163,184,0.18);border-radius:22px;padding:22px;text-align:center;}.premium-cta-box strong{display:block;color:#f8fafc;margin-bottom:8px;}.payment-button{display:inline-block;background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;border-radius:16px;padding:14px 20px;font-size:15px;font-weight:950;text-decoration:none;line-height:1.25;}.payment-note{color:#a8b6c6;font-size:13px;margin-top:12px;line-height:1.55;}.signal-badge,.free-strength,.strength-pill{display:inline-block;margin-top:10px;padding:8px 12px;border-radius:999px;background:rgba(148,163,184,0.09);font-weight:900;font-size:12px;text-transform:uppercase;}.confidence-large,.confidence-score{font-size:40px;font-weight:950;}.free-meter,.confidence-meter{font-size:26px;letter-spacing:2px;color:#4adea3;font-weight:950;margin:8px 0;}.dividend-card{border:1px solid rgba(74,222,163,0.18);}.dividend-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:16px 0;}.dividend-metric{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:16px;padding:14px;line-height:1.45;}.dividend-metric span{display:block;color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:0.07em;font-weight:900;margin-bottom:6px;}.dividend-metric strong{display:block;color:#e5f4ff;font-size:17px;}.dividend-empty{background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.20);border-radius:16px;padding:14px;color:#fde68a;line-height:1.65;}.dividend-note{color:#cbd5e1;background:rgba(148,163,184,0.07);border-radius:14px;padding:12px 14px;}.dividend-risk{color:#fecaca;background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.16);border-radius:14px;padding:12px 14px;}.buy{color:#4ade80;font-weight:bold;}.sell{color:#fb7185;font-weight:bold;}.hold{color:#f4c95d;font-weight:bold;}canvas{background:#0a1420;border-radius:18px;padding:18px;}@media(max-width:900px){body{padding:24px 16px;}.card,.premium-banner,.example-report{padding:24px 20px;border-radius:24px;}.metric-grid,.ai-grid,.premium-banner,.example-report-grid,.dividend-grid{grid-template-columns:1fr;}.payment-button{display:block;text-align:center;}}
 </style>
 </head>
 <body>
 <div class="card"><p><a href="/">← Back to Dashboard</a></p><h1>{{ stock_display_label(symbol) }} Stock Detail</h1><p style="color:#94a3b8;">Live chart view for {{ range_label }}. Use the buttons below to change timeframe.</p></div>
 
-<div class="premium-banner"><div><small>Premium AI Intelligence Preview</small><h2>{{ stock_display_label(symbol) }} intelligence, not just a chart.</h2><p>Every supported stock and index gets the same structure: a useful free preview, then a stronger Premium decision panel with deeper AI explanation, risk read, portfolio role and what to watch next.</p></div><div class="premium-cta-box">{% if has_premium_access %}<strong>✅ Premium Active</strong><p>You have full premium access for {{ stock_display_label(symbol) }}.</p><a class="payment-button" href="/premium-decision/{{ symbol }}">Open Decision Panel</a>{% else %}<strong>Unlock the full {{ stock_display_label(symbol) }} Decision Panel</strong><p>Premium adds portfolio role, concentration risk, readiness and before-acting checks.</p><a class="payment-button" href="/premium-decision/{{ symbol }}">Preview Premium Panel</a><div class="payment-note">Non-premium users see the locked preview and upgrade route.</div>{% endif %}</div></div>
+<div class="premium-banner"><div><small>Premium AI Intelligence Preview</small><h2>{{ stock_display_label(symbol) }} intelligence, not just a chart.</h2><p>Free shows the current signal and confidence preview. Premium explains what the signal may mean, why it matters, how it could fit in a portfolio, what risk to check and what to watch next.</p></div><div class="premium-cta-box">{% if has_premium_access %}<strong>Premium Active</strong><p>You have full premium access for {{ stock_display_label(symbol) }}.</p><a class="payment-button" href="/premium-decision/{{ symbol }}">Open Decision Panel</a>{% else %}<strong>Preview the full {{ stock_display_label(symbol) }} Decision Panel</strong><p>Premium adds signal explanation, portfolio role, concentration risk, decision confidence and before-you-act checks.</p><a class="payment-button" href="/premium-decision/{{ symbol }}">Preview Premium Panel</a><div class="payment-note">Helpful research context only. No investment advice or return promises.</div>{% endif %}</div></div>
 
-<div class="ai-grid"><div class="ai-card"><small>Free Signal Preview</small><h2 class="{% if ai_context.signal == 'BUY' %}buy{% elif ai_context.signal == 'SELL' %}sell{% elif ai_context.signal == 'HOLD' %}hold{% endif %}">{{ ai_context.signal }}</h2><p>Every supported stock page gets the same free AI preview. Current signal for {{ stock_display_label(symbol) }}: {{ ai_context.signal }}.</p><span class="signal-badge">Live stock page: {{ stock_display_label(symbol) }}</span></div><div class="ai-card warning"><small>Free Confidence Preview</small><div class="confidence-large">{{ ai_context.confidence }}</div><div class="free-meter">{{ ai_context.confidence_meter }}</div><span class="free-strength">Signal strength: {{ ai_context.strength_label }}</span><p style="margin-top:12px;">Free shows the basic score and meter. Pro explains what is driving it for {{ stock_display_label(symbol) }}.</p></div><div class="ai-card risk"><small>{% if has_premium_access %}Premium Active{% else %}Pro Preview{% endif %}</small><h2>Next Move</h2>{% if has_premium_access %}<p>{{ ai_context.watch_next }}</p><span class="signal-badge">Premium unlocked</span>{% else %}<p>Pro unlocks the full interpretation behind the meter: why the score matters, what risk is building and what to watch next for {{ stock_display_label(symbol) }}.</p><a class="signal-badge" href="/upgrade">Unlock Premium</a>{% endif %}</div></div>
+<div class="ai-grid"><div class="ai-card"><small>Free Signal Preview</small><h2 class="{% if ai_context.signal == 'BUY' %}buy{% elif ai_context.signal == 'SELL' %}sell{% elif ai_context.signal == 'HOLD' %}hold{% endif %}">{{ ai_context.signal }}</h2><p>Free shows the headline signal for {{ stock_display_label(symbol) }} so you can see what the scanner is flagging.</p><span class="signal-badge">Live stock page: {{ stock_display_label(symbol) }}</span></div><div class="ai-card warning"><small>Free Confidence Preview</small><div class="confidence-large">{{ ai_context.confidence }}</div><div class="free-meter">{{ ai_context.confidence_meter }}</div><span class="free-strength">Signal strength: {{ ai_context.strength_label }}</span><p style="margin-top:12px;">Free shows the basic score and meter. Premium explains whether that confidence is strong enough to research, wait, or apply extra caution.</p></div><div class="ai-card risk"><small>{% if has_premium_access %}Premium Active{% else %}Premium Preview{% endif %}</small><h2>Decision context</h2>{% if has_premium_access %}<p>{{ ai_context.watch_next }}</p><span class="signal-badge">Premium unlocked</span>{% else %}<p>Premium explains the decision layer behind {{ stock_display_label(symbol) }}: risk level, portfolio role, concentration warning and the next trigger to watch.</p><a class="signal-badge" href="/upgrade">Explore Premium</a>{% endif %}</div></div>
 
 {% if dividend_context %}
 <div class="card dividend-card">
@@ -4939,7 +5250,7 @@ stock_detail_html = """
 <div class="card" style="background:linear-gradient(135deg,rgba(0,255,170,0.12),rgba(56,189,248,0.08));border-color:rgba(0,255,170,0.22);"><small style="color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.1em;">StockRadar Weekly</small><h2>Want the weekly market signal?</h2><p style="color:#cbd5e1;line-height:1.7;">Get StockRadar Weekly for market pulse, signal highlights, watchlist moves and risk checks.</p><a class="payment-button" href="/newsletter">Get the Weekly Brief</a></div>
 
 {% if has_premium_access and example_report %}<div class="example-report"><small>Premium Decision Intelligence</small><h2>{{ example_report.headline }}</h2><p>{{ example_report.summary }}</p><div class="example-report-grid"><div class="example-report-card"><strong>AI Confidence</strong><div class="confidence-score">{{ example_report.confidence }}</div><div class="confidence-meter">{{ example_report.meter }}</div><span class="strength-pill">Signal strength: {{ example_report.strength }}</span></div><div class="example-report-card"><strong>Portfolio role</strong><span>{{ example_report.portfolio_role }}</span></div><div class="example-report-card"><strong>Decision readiness</strong><span>{{ example_report.readiness }}</span></div></div><div class="example-report-card" style="margin-top:16px;"><strong>Premium decision use</strong><span>{{ example_report.decision_use }}</span></div><div style="margin-top:18px;"><a class="payment-button" href="/premium-decision/{{ symbol }}">Open Full Premium Decision Panel</a></div></div>{% endif %}
-{% if not has_premium_access %}<div class="example-report"><small>Premium locked</small><h2>Unlock the full {{ stock_display_label(symbol) }} Decision Panel</h2><p>Free shows the basic signal, confidence score and meter. Premium unlocks portfolio role, concentration risk, readiness and before-acting checks.</p><div class="example-report-grid"><div class="example-report-card"><strong>Free preview</strong><div class="confidence-score">{{ ai_context.confidence }}</div><div class="confidence-meter">{{ ai_context.confidence_meter }}</div><span class="strength-pill">Basic signal strength: {{ ai_context.strength_label }}</span></div><div class="example-report-card"><strong>Premium portfolio role</strong><span>Locked until upgrade.</span></div><div class="example-report-card"><strong>Premium decision readiness</strong><span>Locked until upgrade.</span></div></div><a class="payment-button" href="/premium-decision/{{ symbol }}" style="margin-top:18px;">Preview Premium Decision Panel</a><div class="payment-note">The preview opens the locked Premium route and upgrade path.</div></div>{% endif %}
+{% if not has_premium_access %}<div class="example-report"><small>Premium locked</small><h2>Preview the full {{ stock_display_label(symbol) }} Decision Panel</h2><p>Free shows the signal. Premium explains the decision: signal strength, confidence, portfolio role, risk level, concentration warning, watch-next trigger and a beginner-friendly checklist.</p><div class="example-report-grid"><div class="example-report-card"><strong>Free preview</strong><div class="confidence-score">{{ ai_context.confidence }}</div><div class="confidence-meter">{{ ai_context.confidence_meter }}</div><span class="strength-pill">Basic signal strength: {{ ai_context.strength_label }}</span></div><div class="example-report-card"><strong>Why it matters</strong><span>See whether the signal is useful, early, risky or mainly a watchlist prompt.</span></div><div class="example-report-card"><strong>Portfolio fit</strong><span>Review duplicate exposure, concentration risk, time horizon and whether this is core, satellite, dividend, defensive, cyclical or speculative.</span></div></div><a class="payment-button" href="/premium-decision/{{ symbol }}" style="margin-top:18px;">Preview Premium Decision Panel</a><div class="payment-note">Educational research only. Premium does not provide personal investment advice or guaranteed outcomes.</div></div>{% endif %}
 
 <div class="range-row">{% for key, settings in chart_ranges.items() %}<a class="range-button {% if key == active_range %}active{% endif %}" href="/stock/{{ symbol }}?range={{ key }}">{{ settings.label }}</a>{% endfor %}</div>
 <div class="metric-grid"><div class="metric"><small>Range start</small><h2>{{ chart_data.start_price }}</h2></div><div class="metric"><small>Range latest</small><h2>{{ chart_data.end_price }}</h2></div><div class="metric"><small>Range move</small><h2 class="{{ chart_data.direction }}">{{ chart_data.change_amount }}</h2></div><div class="metric"><small>Range % move</small><h2 class="{{ chart_data.direction }}">{{ chart_data.change_percent }}</h2></div></div>
@@ -5288,7 +5599,7 @@ def manage_subscription():
         "Manage Subscription",
         f"""
         <p>StockRadar Premium is a £5/month educational research subscription. You may cancel anytime.</p>
-        <p>If a Stripe self-service billing portal is not available, subscription management and cancellation requests are handled through support.</p>
+        <p>For now, subscription management and cancellation requests are handled through StockRadar support and Stripe records rather than a self-service customer portal.</p>
         <h2>How to cancel</h2>
         <p>Contact {support_contact} using the email address used at checkout and the subject line: <strong>Cancel StockRadar Premium</strong>.</p>
         <p>Cancellation stops future billing. Premium access continues until the end of the current billing period.</p>
@@ -5535,21 +5846,23 @@ def checkout_success():
     else:
         try:
             verified_session = stripe.checkout.Session.retrieve(checkout_session_id)
-            if isinstance(verified_session, dict):
-                payment_status = str(verified_session.get("payment_status") or "").lower()
-                checkout_status = str(verified_session.get("status") or "").lower()
-            else:
-                payment_status = str(getattr(verified_session, "payment_status", "") or "").lower()
-                checkout_status = str(getattr(verified_session, "status", "") or "").lower()
-
-            payment_verified = (
-                payment_status == "paid"
-                if payment_status
-                else checkout_status == "complete"
-            )
+            payment_verified = checkout_session_payment_verified(verified_session)
 
             if payment_verified:
+                customer_id = stripe_identifier(stripe_value(verified_session, "customer"))
+                subscription_id = stripe_identifier(stripe_value(verified_session, "subscription"))
+                premium_email = checkout_session_email(verified_session)
+
                 session["premium_active"] = True
+                remember_premium_session_identifiers(customer_id, subscription_id, premium_email)
+                update_premium_entitlement(
+                    customer_id=customer_id,
+                    subscription_id=subscription_id,
+                    email=premium_email,
+                    subscription_status="active",
+                    premium_active=True,
+                    event_type="checkout-success",
+                )
                 premium_activated = True
                 heading = "✅ Premium activated"
                 message = "Your verified premium dashboard session is now active."
@@ -5588,6 +5901,85 @@ def checkout_success():
         message=message,
         premium_activated=premium_activated,
     ), response_status
+
+
+@app.route("/stripe-webhook", methods=["POST"])
+def stripe_webhook():
+    if not stripe or not STRIPE_WEBHOOK_SECRET:
+        return jsonify({"error": "Stripe webhook is not configured."}), 503
+
+    payload = request.get_data()
+    signature = request.headers.get("Stripe-Signature", "")
+
+    try:
+        event = stripe.Webhook.construct_event(
+            payload,
+            signature,
+            STRIPE_WEBHOOK_SECRET,
+        )
+    except ValueError:
+        return jsonify({"error": "Invalid webhook payload."}), 400
+    except stripe.error.SignatureVerificationError:
+        return jsonify({"error": "Invalid webhook signature."}), 400
+
+    event_type = str(stripe_value(event, "type", "") or "")
+    event_data = stripe_nested_value(event, "data", "object") or {}
+
+    if event_type == "checkout.session.completed":
+        customer_id = stripe_identifier(stripe_value(event_data, "customer"))
+        subscription_id = stripe_identifier(stripe_value(event_data, "subscription"))
+        premium_email = checkout_session_email(event_data)
+        payment_verified = checkout_session_payment_verified(event_data)
+        status = (
+            str(stripe_value(event_data, "payment_status", "") or "").lower()
+            or str(stripe_value(event_data, "status", "") or "").lower()
+        )
+        update_premium_entitlement(
+            customer_id=customer_id,
+            subscription_id=subscription_id,
+            email=premium_email,
+            subscription_status=status,
+            premium_active=payment_verified,
+            event_type=event_type,
+        )
+    elif event_type in {"customer.subscription.updated", "customer.subscription.deleted"}:
+        customer_id = stripe_identifier(stripe_value(event_data, "customer"))
+        subscription_id = stripe_identifier(stripe_value(event_data, "id"))
+        status = str(stripe_value(event_data, "status", "") or "").lower()
+        premium_active = (
+            False
+            if event_type == "customer.subscription.deleted"
+            else subscription_status_is_active(status)
+        )
+        update_premium_entitlement(
+            customer_id=customer_id,
+            subscription_id=subscription_id,
+            subscription_status=status or "canceled",
+            premium_active=premium_active,
+            event_type=event_type,
+        )
+    elif event_type == "invoice.payment_failed":
+        update_premium_entitlement(
+            customer_id=stripe_identifier(stripe_value(event_data, "customer")),
+            subscription_id=stripe_identifier(stripe_value(event_data, "subscription")),
+            email=stripe_value(event_data, "customer_email", ""),
+            subscription_status="payment_failed",
+            premium_active=False,
+            event_type=event_type,
+        )
+    elif event_type == "invoice.payment_succeeded":
+        update_premium_entitlement(
+            customer_id=stripe_identifier(stripe_value(event_data, "customer")),
+            subscription_id=stripe_identifier(stripe_value(event_data, "subscription")),
+            email=stripe_value(event_data, "customer_email", ""),
+            subscription_status="paid",
+            premium_active=True,
+            event_type=event_type,
+        )
+    else:
+        return jsonify({"received": True, "ignored": event_type}), 200
+
+    return jsonify({"received": True}), 200
 
 
 @app.route("/login", methods=["GET", "POST"])

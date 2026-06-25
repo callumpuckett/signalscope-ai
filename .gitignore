@@ -4,3 +4,5 @@ __pycache__/
 .DS_Store
 app_backup_before_5b.py
 app_broken_backup.py
+premium_entitlements.json
+premium_entitlements.json.tmp
