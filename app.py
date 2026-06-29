@@ -379,7 +379,7 @@ def disclaimer_footer():
     <footer style="margin:32px auto 0;padding:18px 0 0;border-top:1px solid rgba(255,255,255,0.10);color:#94a3b8;font-size:12px;line-height:1.65;max-width:1180px;">
         <div>
             <strong style="color:#cbd5e1;">Educational only.</strong>
-            StockRadar provides educational market information and research tools only. It does not provide personal financial, investment, tax, or legal advice. BUY, HOLD, and SELL signals are research prompts—not instructions or guarantees. Investments can fall as well as rise, and you may lose money. Consider your circumstances and seek advice from a regulated professional where appropriate.
+            StockRadar provides educational market information and research tools only. It does not provide personal financial, investment, tax, or legal advice. BUY, HOLD, and SELL signals are research prompts—not instructions or promises. Investments can fall as well as rise, and you may lose money. Consider your circumstances and seek advice from a regulated professional where appropriate.
         </div>
         <nav aria-label="Legal and support links" style="display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;">
             <a href="/newsletter" style="color:#94a3b8;">Newsletter</a>
@@ -3815,7 +3815,7 @@ def build_free_weekly_newsletter():
         "disclaimer": (
             "StockRadar provides educational market information and research tools only. "
             "It is not personal financial advice. BUY, HOLD, and SELL signals are research "
-            "prompts, not instructions or guarantees."
+            "prompts, not instructions or promises."
         ),
     }
     draft["plain_text"] = build_newsletter_plain_text(draft)
@@ -4078,7 +4078,7 @@ def build_weekly_newsletter_issue(now=None, force_refresh=False):
     draft["disclaimer"] = (
         "StockRadar provides educational market information and research tools only. "
         "It is not personal financial advice. BUY, HOLD, and SELL signals are research "
-        "prompts, not buy/sell instructions or guarantees."
+        "prompts, not buy/sell instructions or promises."
     )
     draft["plain_text"] = build_newsletter_plain_text(draft)
 
@@ -4444,7 +4444,7 @@ newsletter_landing_html = """
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>StockRadar Weekly — Free Market Newsletter</title>
-<meta name="description" content="Join StockRadar Weekly for a concise Sunday market brief covering market pulse, signal highlights, watchlist moves and risk checks.">
+<meta name="description" content="Join StockRadar Weekly for a concise weekly market brief covering market pulse, signal highlights, watchlist moves and risk checks.">
 <link rel="canonical" href="https://www.stockradarhq.com/newsletter">
 <meta property="og:title" content="StockRadar Weekly — Free Market Newsletter">
 <meta property="og:description" content="The 5-minute market signal: what is strengthening, what is weakening and what may matter next.">
@@ -4458,25 +4458,26 @@ newsletter_landing_html = """
 <style>
 *{box-sizing:border-box;}body{margin:0;min-height:100vh;padding:42px 22px;background:radial-gradient(circle at 18% 8%,rgba(0,255,170,.11),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;}
 .wrap{max-width:900px;margin:0 auto;}.back{color:#69c9f2;text-decoration:none;font-weight:900;}.hero{margin-top:24px;padding:46px;border-radius:30px;background:linear-gradient(180deg,rgba(18,29,42,.97),rgba(12,22,33,.97));border:1px solid rgba(148,163,184,.16);box-shadow:0 24px 70px rgba(0,0,0,.30);}
-.eyebrow{color:#4adea3;font-size:12px;font-weight:950;letter-spacing:.13em;text-transform:uppercase;}h1{color:#f2f5f8;font-size:clamp(38px,7vw,62px);line-height:1.04;margin:14px 0 18px;}p{color:#b9c5d2;line-height:1.75;font-size:18px;}.signup{margin-top:28px;padding:24px;border-radius:22px;background:#0d1826;border:1px solid rgba(74,222,163,.22);}form{display:flex;gap:10px;flex-wrap:wrap;}input{flex:1;min-width:240px;border:1px solid rgba(148,163,184,.24);background:#07111d;color:#e5edf5;border-radius:14px;padding:14px 15px;font-size:16px;}button{border:0;border-radius:14px;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#061018;font-weight:950;padding:14px 18px;cursor:pointer;}.status{margin:0 0 16px;padding:13px 14px;border-radius:14px;background:rgba(74,222,163,.10);border:1px solid rgba(74,222,163,.22);color:#d1fae5;font-size:15px;line-height:1.55;}.status.error{background:rgba(248,113,113,.10);border-color:rgba(248,113,113,.24);color:#fecaca;}.fallback{color:#f4cf79;font-weight:900;margin:18px 0 0;font-size:14px;}.notes{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:24px;}.note{padding:18px;border-radius:18px;background:rgba(148,163,184,.07);color:#c6d0da;line-height:1.6;}.feed-link{display:inline-block;margin-top:22px;color:#69c9f2;font-size:14px;font-weight:900;text-decoration:none;}@media(max-width:700px){body{padding:24px 16px}.hero{padding:28px}.notes{grid-template-columns:1fr;}button,input{width:100%;}}
+.eyebrow{color:#4adea3;font-size:12px;font-weight:950;letter-spacing:.13em;text-transform:uppercase;}h1{color:#f2f5f8;font-size:clamp(38px,7vw,62px);line-height:1.04;margin:14px 0 18px;}p{color:#b9c5d2;line-height:1.75;font-size:18px;}.signup{margin-top:28px;padding:24px;border-radius:22px;background:#0d1826;border:1px solid rgba(74,222,163,.22);}form{display:flex;gap:10px;flex-wrap:wrap;}input{flex:1;min-width:240px;border:1px solid rgba(148,163,184,.24);background:#07111d;color:#e5edf5;border-radius:14px;padding:14px 15px;font-size:16px;}button{border:0;border-radius:14px;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#061018;font-weight:950;padding:14px 18px;cursor:pointer;}.status{margin:0 0 16px;padding:13px 14px;border-radius:14px;background:rgba(74,222,163,.10);border:1px solid rgba(74,222,163,.22);color:#d1fae5;font-size:15px;line-height:1.55;}.status.error{background:rgba(248,113,113,.10);border-color:rgba(248,113,113,.24);color:#fecaca;}.fallback{color:#f4cf79;font-weight:900;margin:18px 0 0;font-size:14px;}.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-top:24px;}.note{padding:18px;border-radius:18px;background:rgba(148,163,184,.07);color:#c6d0da;line-height:1.6;}.bridge{margin-top:22px;padding:18px;border-radius:18px;background:linear-gradient(135deg,rgba(74,222,163,.10),rgba(56,189,248,.08));border:1px solid rgba(74,222,163,.18);color:#d1fae5;}.feed-link{display:inline-block;margin-top:22px;color:#69c9f2;font-size:14px;font-weight:900;text-decoration:none;}@media(max-width:700px){body{padding:24px 16px}.hero{padding:28px}.notes{grid-template-columns:1fr;}button,input{width:100%;}}
 </style>
 </head>
 <body>
 <div class="wrap">
 <a class="back" href="/">← Back to StockRadar</a>
 <main class="hero">
-<div class="eyebrow">Free Sunday market briefing</div>
-<h1>Join the free StockRadar Weekly Brief</h1>
-<p>Get the 5-minute market signal every Sunday — what’s strengthening, what’s weakening, and what may matter next.</p>
+<div class="eyebrow">Free weekly market signal</div>
+<h1>StockRadar Weekly</h1>
+<p><strong>The 5-minute market signal for investors who want clarity without noise.</strong></p>
+<p>Free market context, signal highlights and risk prompts for everyday investors.</p>
 <section class="signup" aria-label="Newsletter signup">
 {% if subscription_message %}
 <p class="status {% if subscription_error %}error{% endif %}">{{ subscription_message }}</p>
 {% endif %}
 <form method="POST" action="/newsletter">
 <input type="email" name="email" placeholder="you@example.com" autocomplete="email" required>
-<button type="submit">Join StockRadar Weekly</button>
+<button type="submit">Join Free</button>
 </form>
-<p class="fallback">After signup, the latest issue is emailed automatically if email delivery is configured. The regular weekly issue normally arrives Friday.</p>
+<p class="fallback">Free to join. After signup, the latest issue is emailed automatically if email delivery is configured. The regular weekly issue normally arrives Friday.</p>
 {% if newsletter_embed_html %}
 <details style="margin-top:16px;">
 <summary style="color:#69c9f2;font-weight:900;cursor:pointer;">Use alternate signup form</summary>
@@ -4485,10 +4486,13 @@ newsletter_landing_html = """
 {% endif %}
 </section>
 <div class="notes">
-<div class="note"><strong>Short.</strong><br>Designed to be read in about five minutes.</div>
-<div class="note"><strong>Plain English.</strong><br>Signals explain why they appear.</div>
-<div class="note"><strong>Research-first.</strong><br>No trade instructions or guarantees.</div>
+<div class="note"><strong>What strengthened</strong><br>A concise recap of areas showing stronger signals.</div>
+<div class="note"><strong>What weakened</strong><br>Plain-English notes on caution areas and risk context.</div>
+<div class="note"><strong>BUY/HOLD/SELL prompts</strong><br>Key research prompts from the StockRadar signal table.</div>
+<div class="note"><strong>Market mood</strong><br>Context on what may matter next for everyday investors.</div>
+<div class="note"><strong>Premium preview</strong><br>Where useful, a bridge to deeper decision context.</div>
 </div>
+<p class="bridge">StockRadar Weekly gives you the market signal. Premium gives you the decision layer.</p>
 <a class="feed-link" href="/newsletter/latest">Read the latest issue</a>
 <span aria-hidden="true"> · </span>
 <a class="feed-link" href="/newsletter/rss">RSS feed</a>
@@ -5071,9 +5075,11 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
         <p style="color:#4adea3;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 12px;">AI-assisted market research</p>
         <h1>AI-assisted market signals for clearer investing research.</h1>
         <p class="hero-subtitle">StockRadar turns market data, watchlists and signal patterns into plain-English research prompts — so investors can see what’s strengthening, what’s weakening and what deserves attention.</p>
+        <p style="color:#91a3b4;font-size:14px;line-height:1.6;margin:18px 0 0;">Start free with StockRadar Weekly — then upgrade when you want full decision context.</p>
         <div class="hero-actions">
-            <a class="cta-primary" href="/?tab=signals">Explore Signals</a>
-            <a class="cta-secondary" href="/newsletter">Join StockRadar Weekly</a>
+            <a class="cta-primary" href="/newsletter">Join Free</a>
+            <a class="cta-secondary" href="/upgrade">Upgrade to Premium — £5/month</a>
+            <a class="cta-secondary" href="/?tab=signals">Explore Signals</a>
         </div>
         <p style="color:#91a3b4;font-size:13px;line-height:1.6;margin:18px 0 0;">Signals are research prompts, not financial advice. <a href="/how-it-works">How it works</a></p>
     </div>
@@ -5117,9 +5123,9 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 
     <div class="card newsletter-cta-card" id="newsletter-cta">
         <div>
-            <p style="color:#4adea3;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 8px;">Free Sunday briefing</p>
+            <p style="color:#4adea3;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 8px;">Free weekly market signal</p>
             <h2 style="color:#eef2f6;margin:0 0 8px;">StockRadar Weekly</h2>
-            <p>Get the 5-minute market signal every Sunday — what’s strengthening, what’s weakening, and what may matter next.</p>
+            <p>Get the 5-minute market signal every week — what’s strengthening, what’s weakening, and what may matter next. Free market context, signal highlights and risk prompts for everyday investors.</p>
         </div>
         <a class="cta-primary" href="/newsletter">Join Free</a>
     </div>
@@ -5781,7 +5787,7 @@ p{color:#cbd5e1;line-height:1.7;font-size:16px;}
             <p>Premium subscriptions are not open yet. This page previews the planned £5/month research toolkit while StockRadar completes payment readiness checks.</p>
             <div class="note" style="padding:12px;border-radius:14px;background:rgba(245,158,11,0.09);border:1px solid rgba(245,158,11,0.20);color:#fde68a;"><strong>Soft launch:</strong> No payment can be started from this environment unless checkout is explicitly enabled.</div>
             {% endif %}
-            <p class="note"><strong style="color:#cbd5e1;">Educational only.</strong> Premium provides research tools and analysis, not financial advice, personalised investment recommendations or guaranteed returns.</p>
+            <p class="note"><strong style="color:#cbd5e1;">Educational only.</strong> Premium provides research tools and analysis, not financial advice, personalised investment recommendations or return promises.</p>
             <div class="pay-box">
                 <p class="note">Premium access provides research tools and analysis only. StockRadar is not financial advice.</p>
                 {% if premium_payments_enabled %}
@@ -5797,6 +5803,15 @@ p{color:#cbd5e1;line-height:1.7;font-size:16px;}
                 <div class="note"><a href="/feedback">Send Feedback</a> about the upgrade experience while StockRadar is in early access.</div>
             </div>
         </div>
+    </div>
+    {% endif %}
+    {% if not has_premium_access %}
+    <div class="card" style="margin-top:24px;background:linear-gradient(135deg,rgba(56,189,248,0.10),rgba(15,23,42,0.78));border-color:rgba(56,189,248,0.22);">
+        <span class="badge">Free first step</span>
+        <h2>Not ready for Premium yet?</h2>
+        <p>Join StockRadar Weekly free and follow the market signal before upgrading.</p>
+        <p class="note">Start with the free weekly signal. Upgrade when you want risk read, portfolio fit and full AI reasoning.</p>
+        <a class="button secondary" href="/newsletter">Join Free</a>
     </div>
     {% endif %}
     <div class="card future-card">
@@ -5878,7 +5893,7 @@ stock_detail_html = """
 </div>
 {% endif %}
 
-<div class="card" style="background:linear-gradient(135deg,rgba(0,255,170,0.12),rgba(56,189,248,0.08));border-color:rgba(0,255,170,0.22);"><small style="color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.1em;">StockRadar Weekly</small><h2>Want the weekly market signal?</h2><p style="color:#cbd5e1;line-height:1.7;">Get StockRadar Weekly for market pulse, signal highlights, watchlist moves and risk checks.</p><a class="payment-button" href="/newsletter">Get the Weekly Brief</a></div>
+<div class="card" style="background:linear-gradient(135deg,rgba(0,255,170,0.12),rgba(56,189,248,0.08));border-color:rgba(0,255,170,0.22);"><small style="color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.1em;">StockRadar Weekly</small><h2>Get weekly signal highlights</h2><p style="color:#cbd5e1;line-height:1.7;">StockRadar Weekly sends a plain-English market signal recap, including what’s strengthening, what’s weakening and what deserves attention next.</p><a class="payment-button" href="/newsletter">Join StockRadar Weekly</a></div>
 
 	{% if has_premium_access and example_report %}<div class="example-report"><small>Premium Decision Intelligence</small><h2>{{ example_report.headline }}</h2><p>{{ example_report.summary }}</p><div class="example-report-grid"><div class="example-report-card"><span class="premium-card-label">AI Confidence</span><div class="confidence-score">{{ example_report.confidence }}</div><div class="confidence-meter">{{ example_report.meter }}</div><span class="strength-pill">Signal strength: {{ example_report.strength }}</span><span class="premium-card-support">Confidence and signal strength shown as decision context, not a prediction.</span></div><div class="example-report-card"><span class="premium-card-label">Portfolio role</span><span class="premium-card-value">{{ example_report.portfolio_role }}</span><span class="premium-card-support">How this stock is framed inside a portfolio research view.</span></div><div class="example-report-card"><span class="premium-card-label">Decision readiness</span><span class="premium-card-value">{{ example_report.readiness }}</span><span class="premium-card-support">How ready the current signal looks for further research.</span></div></div><div class="example-report-card premium-decision-use"><span class="premium-card-label">Premium decision use</span><span class="premium-card-value">{{ example_report.decision_use }}</span><span class="premium-card-support">Use this as a plain-English research frame before deciding what to check next.</span></div><div class="example-report-actions"><a class="payment-button" href="/premium-decision/{{ symbol }}">Open Full Premium Decision Panel</a></div></div>{% endif %}
 
@@ -6219,7 +6234,7 @@ def how_it_works():
 
         <section class="info-section">
             <h2>What StockRadar is not</h2>
-            <p>StockRadar is not personal financial advice. It does not know your full portfolio, income, goals, tax position or risk tolerance. Signals are educational research prompts, not personalised instructions or guarantees.</p>
+            <p>StockRadar is not personal financial advice. It does not know your full portfolio, income, goals, tax position or risk tolerance. Signals are educational research prompts, not personalised instructions or promises.</p>
         </section>
 
         <section class="weekly-cta">
