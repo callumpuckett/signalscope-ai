@@ -2332,7 +2332,7 @@ def premium_watchlist():
                 </ul>
                 <div class="future-feature">
                     <strong>Coming later: Dividend Dip Tracker</strong>
-                    Track dividend-related watchlist moves, ex-dividend effects, income dips, and possible yield-trap risks as a future Premium research feature.
+                    Dividend/distribution snapshots are already live on stock detail pages where data is available. Dividend Dip Tracker is still planned as a future scanner for dividend-related watchlist moves, ex-dividend effects and possible yield-trap risks.
                     <small style="display:block;margin-top:7px;color:#cbd5e1;">Future Premium research feature · Not live yet · Not financial advice</small>
                 </div>
                 <div class="locked"><strong>Premium Watchlist is locked</strong>Upgrade to turn the watchlist into a clearer decision review: strongest signal, caution names, style buckets and concentration context.</div>
@@ -2434,7 +2434,7 @@ def premium_watchlist():
         <div class="card">
             <div class="future-feature">
                 <strong>Coming later: Dividend Dip Tracker</strong>
-                Track dividend-related watchlist moves, ex-dividend effects, income dips, and possible yield-trap risks as a future Premium research feature.
+                Dividend/distribution snapshots are already live on stock detail pages where data is available. Dividend Dip Tracker is still planned as a future scanner for dividend-related watchlist moves, ex-dividend effects and possible yield-trap risks.
                 <small style="display:block;margin-top:7px;color:#cbd5e1;">Future Premium research feature · Not live yet · Not financial advice</small>
             </div>
         </div>
@@ -4072,8 +4072,8 @@ def build_weekly_newsletter_issue(now=None, force_refresh=False):
         "highest_conviction": issue_signal_rows(conviction_rows, 3),
     }
     draft["premium_note"] = (
-        "Premium adds decision checks, portfolio-fit prompts and future research "
-        "tools such as the Dividend Dip Tracker."
+        "Stock detail pages already show dividend/distribution snapshots where data is available. "
+        "Dividend Dip Tracker remains a future scanner for dividend-related watchlist moves."
     )
     draft["disclaimer"] = (
         "StockRadar provides educational market information and research tools only. "
@@ -5802,8 +5802,9 @@ p{color:#cbd5e1;line-height:1.7;font-size:16px;}
     <div class="card future-card">
         <p class="future-label">Coming later · Future Premium research feature · Not live yet</p>
         <h2>Coming later: Dividend Dip Tracker</h2>
-        <p>Track dividend-related watchlist moves, ex-dividend effects, income dips, and possible yield-trap risks as a future Premium research feature.</p>
-        <p>This will be a research prompt tool only. It will not be financial advice, a buy signal, or a recommendation to trade around dividends.</p>
+        <p>Dividend/distribution snapshots are already live on stock detail pages where data is available.</p>
+        <p>Dividend Dip Tracker is still planned as a future scanner for dividend-related watchlist moves, ex-dividend effects, income dips and possible yield-trap risks.</p>
+        <p>This future tracker will be a research prompt tool only. It will not be financial advice, a buy signal, or a recommendation to trade around dividends.</p>
         <p class="note"><strong style="color:#fde68a;">Future Premium research feature · Not live yet · Not financial advice</strong></p>
     </div>
     {{ disclaimer_footer() | safe }}
