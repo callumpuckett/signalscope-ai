@@ -4902,20 +4902,22 @@ a:hover{text-decoration:underline;}
 .cta-primary,.cta-secondary{display:inline-block;padding:14px 18px;border-radius:15px;text-decoration:none;font-weight:950;font-size:var(--font-cta);line-height:1.1;}
 .cta-primary{background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;box-shadow:0 14px 34px rgba(0,255,170,0.12);}
 .cta-secondary{background:rgba(148,163,184,0.09);border:1px solid rgba(148,163,184,0.20);color:#e2e8f0;}
-.premium-home-card{display:grid;grid-template-columns:minmax(0,0.82fr) minmax(0,1.18fr);gap:18px;align-items:start;padding:24px 26px;background:linear-gradient(135deg,rgba(14,44,50,0.96),rgba(34,29,38,0.90));border-color:rgba(255,184,107,0.22);}
-.premium-home-card h2{font-size:var(--font-section);line-height:1.12;margin:0 0 10px;color:#f8fafc;letter-spacing:0;}
-.premium-home-card p{color:#cbd5e1;line-height:1.58;margin:0;font-size:15px;}
-.premium-home-kicker{color:#fbbf24;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:11px;margin:0 0 8px;}
-.premium-home-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;}
-.premium-home-feature{background:rgba(7,17,28,0.58);border:1px solid rgba(255,255,255,0.09);border-radius:14px;padding:12px;min-height:0;}
-.premium-home-feature strong{display:block;color:#f8fafc;margin-bottom:4px;font-size:15px;line-height:1.25;}
-.premium-home-feature span{color:#aebdca;font-size:12px;line-height:1.42;}
-.premium-compare-strip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px;}
-.premium-compare-item{background:rgba(7,17,28,0.38);border:1px solid rgba(148,163,184,0.12);border-radius:14px;padding:12px;}
+.premium-home-card{display:block;padding:20px 22px;background:linear-gradient(135deg,rgba(14,44,50,0.96),rgba(34,29,38,0.90));border-color:rgba(255,184,107,0.22);}
+.premium-home-header{max-width:860px;margin:0 auto 14px;text-align:left;}
+.premium-home-card h2{font-size:clamp(30px,2.4vw,38px);line-height:1.08;margin:0 0 8px;color:#f8fafc;letter-spacing:0;}
+.premium-home-card p{color:#cbd5e1;line-height:1.55;margin:0;font-size:15px;}
+.premium-home-kicker{color:#fbbf24;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:11px;margin:0 0 7px;}
+.premium-home-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:stretch;max-width:980px;margin:16px auto 0;}
+.premium-home-feature{background:rgba(7,17,28,0.58);border:1px solid rgba(255,255,255,0.09);border-radius:18px;padding:18px;min-height:124px;}
+.premium-home-feature:nth-child(7){grid-column:2;}
+.premium-home-feature strong{display:block;color:#f8fafc;margin-bottom:5px;font-size:18px;line-height:1.2;}
+.premium-home-feature span{color:#aebdca;font-size:14px;line-height:1.45;}
+.premium-compare-strip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:stretch;max-width:760px;margin:12px auto 0;}
+.premium-compare-item{background:rgba(7,17,28,0.38);border:1px solid rgba(148,163,184,0.12);border-radius:16px;padding:12px 14px;}
 .premium-compare-item strong{display:block;color:#f8fafc;font-size:14px;margin-bottom:4px;}
-.premium-compare-item span{display:block;color:#aebdca;font-size:12px;line-height:1.45;}
-.premium-home-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px;}
-.premium-home-actions .cta-primary,.premium-home-actions .cta-secondary{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;min-height:40px;padding:11px 16px;border-radius:14px;line-height:1.1;text-align:center;}
+.premium-compare-item span{display:block;color:#aebdca;font-size:13px;line-height:1.42;}
+.premium-home-actions{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:10px;}
+.premium-home-actions .cta-primary,.premium-home-actions .cta-secondary{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;min-height:38px;padding:10px 16px;border-radius:14px;line-height:1.1;text-align:center;}
 .trust-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:0 0 22px;}
 .trust-item{padding:15px 17px;border-radius:17px;background:rgba(14,25,37,0.90);border:1px solid rgba(148,163,184,0.13);color:#aebdca;line-height:1.5;font-size:13px;}
 .trust-item strong{display:block;color:#dce6ef;margin-bottom:3px;}
@@ -4988,7 +4990,8 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 .filter-button.active-filter{background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-color:transparent;}
 .filter-status{margin-top:12px;color:#94a3b8;font-size:13px;font-weight:800;}
 .hidden-signal-row{display:none;}
-@media(max-width:900px){:root{--font-hero:clamp(32px,9vw,38px);--font-section:clamp(24px,6vw,28px);}body{flex-direction:column;}.sidebar{width:100%;min-height:auto;position:relative;top:auto;padding:18px 16px;overflow-x:auto;white-space:nowrap;border-right:0;border-bottom:1px solid rgba(148,163,184,0.12);}.sidebar .logo{display:inline-block;max-width:170px;margin-bottom:12px;vertical-align:middle;}.sidebar .logo-img{max-width:170px;max-height:46px;}.sidebar .nav-section-label,.sidebar .menu-help,.sidebar .menu-divider,.sidebar .owner-box{display:none;}.sidebar .nav-link{display:inline-block;width:auto;padding:10px 12px;margin:0 6px 0 0;font-size:13px;}.main{padding:20px 16px;width:100%;}.top-bar{position:relative;justify-content:stretch;}.smart-search{width:100%;}.live-alert-strip{width:100%;}.live-alert-header{padding:8px 11px;font-size:11px;}.live-alert-track{padding:5px 0;}.live-alert-loop{gap:14px;animation-duration:48s;}.live-headline{flex-basis:540px;min-height:28px;padding:3px 14px 3px 0;gap:6px;}.live-news-title{font-size:12px;max-width:225px;}.market-news-stocks{display:inline-flex;}.market-news-stocks .live-affected-label{font-size:9px;}.market-news-impact .live-meta{display:none;}.market-news-impact .live-score{font-size:9px;}.summary-grid,.market-grid,.feature-grid,.impact-grid,.radar-summary,.signal-guide-grid,.filter-grid,.trust-strip,.signal-snapshot-grid,.premium-home-card,.premium-home-grid,.premium-compare-strip{grid-template-columns:1fr;}.newsletter-cta-card{align-items:flex-start;flex-direction:column;}.hero-card{padding:28px 22px}.hero-card h1{font-size:var(--font-hero);line-height:1.05;}.hero-card .hero-subtitle{font-size:15px;}.hero-actions a,.premium-price-row a{width:100%;text-align:center;}}
+@media(max-width:900px){:root{--font-hero:clamp(32px,9vw,38px);--font-section:clamp(24px,6vw,28px);}body{flex-direction:column;}.sidebar{width:100%;min-height:auto;position:relative;top:auto;padding:18px 16px;overflow-x:auto;white-space:nowrap;border-right:0;border-bottom:1px solid rgba(148,163,184,0.12);}.sidebar .logo{display:inline-block;max-width:170px;margin-bottom:12px;vertical-align:middle;}.sidebar .logo-img{max-width:170px;max-height:46px;}.sidebar .nav-section-label,.sidebar .menu-help,.sidebar .menu-divider,.sidebar .owner-box{display:none;}.sidebar .nav-link{display:inline-block;width:auto;padding:10px 12px;margin:0 6px 0 0;font-size:13px;}.main{padding:20px 16px;width:100%;}.top-bar{position:relative;justify-content:stretch;}.smart-search{width:100%;}.live-alert-strip{width:100%;}.live-alert-header{padding:8px 11px;font-size:11px;}.live-alert-track{padding:5px 0;}.live-alert-loop{gap:14px;animation-duration:48s;}.live-headline{flex-basis:540px;min-height:28px;padding:3px 14px 3px 0;gap:6px;}.live-news-title{font-size:12px;max-width:225px;}.market-news-stocks{display:inline-flex;}.market-news-stocks .live-affected-label{font-size:9px;}.market-news-impact .live-meta{display:none;}.market-news-impact .live-score{font-size:9px;}.summary-grid,.market-grid,.feature-grid,.impact-grid,.radar-summary,.signal-guide-grid,.filter-grid,.trust-strip,.signal-snapshot-grid{grid-template-columns:1fr;}.premium-home-grid{grid-template-columns:repeat(2,minmax(0,1fr));max-width:720px;}.premium-home-feature,.premium-home-feature:nth-child(7){grid-column:auto;}.premium-compare-strip{grid-template-columns:repeat(2,minmax(0,1fr));max-width:720px;}.newsletter-cta-card{align-items:flex-start;flex-direction:column;}.hero-card{padding:28px 22px}.hero-card h1{font-size:var(--font-hero);line-height:1.05;}.hero-card .hero-subtitle{font-size:15px;}.hero-actions a,.premium-price-row a{width:100%;text-align:center;}}
+@media(max-width:640px){.premium-home-card{padding:20px 18px;}.premium-home-header{text-align:left;margin-bottom:14px;}.premium-home-card h2{font-size:clamp(28px,7vw,34px);}.premium-home-grid,.premium-compare-strip{grid-template-columns:1fr;max-width:none;}.premium-home-feature{min-height:0;padding:16px;}.premium-home-actions .cta-primary,.premium-home-actions .cta-secondary{width:100%;}}
 </style>
 </head>
 <body>
@@ -5096,21 +5099,10 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
     </div>
 
     <div class="card premium-home-card" id="premium-decision-section">
-        <div>
-            <p class="premium-home-kicker">Premium decision layer</p>
+        <div class="premium-home-header">
+            <p class="premium-home-kicker">Premium Decision Layer</p>
             <h2>Free shows the signal. Premium explains the decision.</h2>
             <p>Premium adds the decision context behind each signal — confidence, risk, portfolio fit, comparison tools and before-you-act checks.</p>
-            <div class="premium-compare-strip" aria-label="Free versus Premium">
-                <div class="premium-compare-item"><strong>Free</strong><span>Signal preview, market news, basic research prompts and StockRadar Weekly.</span></div>
-                <div class="premium-compare-item"><strong>Premium</strong><span>Full reasoning, risk read, portfolio fit, comparisons and before-you-act checks.</span></div>
-            </div>
-            <div class="premium-home-actions">
-                {% if has_premium_access %}
-                <a class="cta-secondary" href="/premium-watchlist">Open Premium Watchlist</a>
-                {% else %}
-                <a class="cta-primary" href="/upgrade">Upgrade to Premium — £5/month</a>
-                {% endif %}
-            </div>
         </div>
         <div class="premium-home-grid" aria-label="Premium features">
             <div class="premium-home-feature"><strong>Decision Score</strong><span>See how strong the signal looks as a research prompt.</span></div>
@@ -5120,6 +5112,17 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
             <div class="premium-home-feature"><strong>Compare Stocks</strong><span>Review two tickers side by side before choosing.</span></div>
             <div class="premium-home-feature"><strong>Premium Watchlist</strong><span>Turn signals into strongest, caution and theme views.</span></div>
             <div class="premium-home-feature"><strong>Before You Act</strong><span>Use a checklist before treating a signal as actionable research.</span></div>
+        </div>
+        <div class="premium-compare-strip" aria-label="Free versus Premium">
+            <div class="premium-compare-item"><strong>Free</strong><span>Signal preview, market news, basic research prompts and StockRadar Weekly.</span></div>
+            <div class="premium-compare-item"><strong>Premium</strong><span>Full reasoning, risk read, portfolio fit, comparisons and before-you-act checks.</span></div>
+        </div>
+        <div class="premium-home-actions">
+            {% if has_premium_access %}
+            <a class="cta-secondary" href="/premium-watchlist">Open Premium Watchlist</a>
+            {% else %}
+            <a class="cta-primary" href="/upgrade">Upgrade to Premium — £5/month</a>
+            {% endif %}
         </div>
     </div>
 
