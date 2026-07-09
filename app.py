@@ -3570,57 +3570,190 @@ def newsletter_headline_is_relevant(article):
     return False
 
 
-def build_newsletter_signal_highlights(recommendations, limit=5):
-    usable_rows = [
+NEWSLETTER_MEGA_CAP_TECH_TICKERS = {"AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA"}
+NEWSLETTER_MARKET_TRACKER_TICKERS = ("SPY", "^GSPC", "VUSA.L", "QQQ", "DIA", "IWM", "SMH", "^FTSE")
+
+
+def newsletter_item_sector(item, ticker=""):
+    ticker = str(ticker or item.get("ticker") or "").strip().upper()
+    sector = str(item.get("sector") or SECTOR_MAP.get(ticker) or "").strip()
+    if ticker.startswith("^"):
+        return "Market Index"
+    return sector or "Diversified"
+
+
+def newsletter_is_market_proxy(item, ticker=""):
+    ticker = str(ticker or item.get("ticker") or "").strip().upper()
+    sector = newsletter_item_sector(item, ticker).lower()
+    return (
+        ticker in NEWSLETTER_MARKET_TRACKER_TICKERS
+        or ticker.startswith("^")
+        or "etf" in sector
+        or "index" in sector
+    )
+
+
+def newsletter_is_uk_or_non_us(item, ticker=""):
+    ticker = str(ticker or item.get("ticker") or "").strip().upper()
+    country = str(item.get("country") or item.get("region") or "").strip().upper()
+    sector = newsletter_item_sector(item, ticker).lower()
+    return ticker.endswith(".L") or ticker == "^FTSE" or country in {"UK", "GB"} or sector.startswith("uk ")
+
+
+def newsletter_signal_item(item):
+    ticker = str(item.get("ticker") or "").strip().upper()
+    signal = clean_signal(item.get("signal"), item.get("confidence"))
+    return {
+        "ticker": ticker,
+        "name": stock_display_label(ticker),
+        "signal": signal,
+        "confidence": normalise_confidence(item.get("confidence")),
+        "badge": "WATCH" if ticker == "SPCX" else f"{signal} pattern",
+        "status": newsletter_status(signal, ticker),
+        "reason": newsletter_reader_safe_reason(item, ticker),
+        "plain_english_takeaway": newsletter_plain_english_takeaway(signal, ticker),
+        "data_confidence": newsletter_data_confidence(item),
+        "sector": newsletter_item_sector(item, ticker),
+        "is_market_proxy": newsletter_is_market_proxy(item, ticker),
+        "is_uk_or_non_us": newsletter_is_uk_or_non_us(item, ticker),
+    }
+
+
+def newsletter_ranked_signal_candidates(recommendations, signals):
+    desired = {signal.upper() for signal in signals}
+    candidates = [
         item for item in recommendations
         if str(item.get("ticker") or "").strip()
-        and "included in the 100-stock stockradar universe"
-        not in str(item.get("reason") or "").strip().lower()
+        and clean_signal(item.get("signal"), item.get("confidence")) in desired
     ]
-    ranked_rows = sorted(
-        usable_rows,
+    return sorted(
+        candidates,
         key=lambda item: confidence_number(item.get("confidence")),
         reverse=True,
     )
 
+
+def build_balanced_newsletter_items(recommendations, signals, limit=4, max_market_proxies=2):
+    ranked_rows = newsletter_ranked_signal_candidates(recommendations, signals)
     selected = []
-    selected_tickers = set()
+    seen = set()
+    mega_cap_count = 0
+    market_proxy_count = 0
 
-    for desired_signal in ("BUY", "HOLD", "SELL"):
-        match = next(
-            (
-                item for item in ranked_rows
-                if clean_signal(item.get("signal"), item.get("confidence")) == desired_signal
-                and str(item.get("ticker") or "").strip().upper() not in selected_tickers
-            ),
-            None,
-        )
-        if match:
-            selected.append(match)
-            selected_tickers.add(str(match.get("ticker") or "").strip().upper())
-
-    for item in ranked_rows:
+    def add_item(item):
+        nonlocal mega_cap_count, market_proxy_count
         ticker = str(item.get("ticker") or "").strip().upper()
-        if ticker and ticker not in selected_tickers:
-            selected.append(item)
-            selected_tickers.add(ticker)
+        if not ticker or ticker in seen:
+            return False
+        is_market_proxy = newsletter_is_market_proxy(item, ticker)
+        if is_market_proxy and market_proxy_count >= max_market_proxies:
+            return False
+        if ticker in NEWSLETTER_MEGA_CAP_TECH_TICKERS and mega_cap_count >= 1:
+            return False
+        selected.append(item)
+        seen.add(ticker)
+        if is_market_proxy:
+            market_proxy_count += 1
+        if ticker in NEWSLETTER_MEGA_CAP_TECH_TICKERS:
+            mega_cap_count += 1
+        return True
+
+    priority_groups = (
+        lambda item: newsletter_is_market_proxy(item),
+        lambda item: newsletter_is_uk_or_non_us(item),
+        lambda item: str(item.get("ticker") or "").strip().upper() not in NEWSLETTER_MEGA_CAP_TECH_TICKERS,
+        lambda item: True,
+    )
+    for matcher in priority_groups:
+        for item in ranked_rows:
+            if len(selected) >= limit:
+                break
+            if matcher(item):
+                add_item(item)
         if len(selected) >= limit:
             break
 
-    highlights = []
-    for item in selected[:limit]:
-        ticker = str(item.get("ticker") or "").strip().upper()
-        signal = clean_signal(item.get("signal"), item.get("confidence"))
-        highlights.append({
-            "ticker": ticker,
-            "name": stock_display_label(ticker),
-            "badge": "WATCH" if ticker == "SPCX" else f"{signal} pattern",
-            "status": newsletter_status(signal, ticker),
-            "reason": newsletter_reader_safe_reason(item, ticker),
-            "plain_english_takeaway": newsletter_plain_english_takeaway(signal, ticker),
-            "data_confidence": newsletter_data_confidence(item),
-        })
+    return [newsletter_signal_item(item) for item in selected[:limit]]
 
+
+def build_newsletter_caution_items(recommendations, limit=4, max_market_proxies=2):
+    caution = build_balanced_newsletter_items(
+        recommendations,
+        ("SELL",),
+        limit,
+        max_market_proxies=max_market_proxies,
+    )
+    if len(caution) >= limit:
+        return caution
+
+    seen = {item["ticker"] for item in caution}
+    hold_rows = sorted(
+        newsletter_ranked_signal_candidates(recommendations, ("HOLD",)),
+        key=lambda item: confidence_number(item.get("confidence")),
+    )
+    for item in hold_rows:
+        ticker = str(item.get("ticker") or "").strip().upper()
+        if not ticker or ticker in seen:
+            continue
+        if ticker in NEWSLETTER_MEGA_CAP_TECH_TICKERS and any(
+            row["ticker"] in NEWSLETTER_MEGA_CAP_TECH_TICKERS for row in caution
+        ):
+            continue
+        caution.append(newsletter_signal_item(item))
+        seen.add(ticker)
+        if len(caution) >= limit:
+            break
+    return caution
+
+
+def build_newsletter_market_tracker(recommendations, limit=6):
+    by_ticker = {
+        str(item.get("ticker") or "").strip().upper(): item
+        for item in recommendations
+        if item.get("ticker")
+    }
+    tracker = []
+    for ticker in NEWSLETTER_MARKET_TRACKER_TICKERS:
+        item = by_ticker.get(ticker)
+        if not item:
+            continue
+        tracker.append(newsletter_signal_item(item))
+        if len(tracker) >= limit:
+            break
+    return tracker
+
+
+def build_newsletter_market_week_summary(trending, best_area, risk_area):
+    if trending and trending[0].get("headline") != "No relevant market headlines are available":
+        headlines = [item["headline"] for item in trending[:3] if item.get("headline")]
+        if headlines:
+            return (
+                "This week, the visible news feed centred on: "
+                + "; ".join(headlines)
+                + ". StockRadar treats these as context, then checks whether the signal table confirms or challenges the mood."
+            )
+
+    return (
+        f"With limited relevant headlines available, the weekly read leans on StockRadar signals. "
+        f"{best_area} showed the clearest constructive cluster, while {risk_area} is the main area to review for caution."
+    )
+
+
+def build_newsletter_signal_highlights(recommendations, limit=5):
+    highlights = []
+    seen = set()
+    for group in (
+        build_balanced_newsletter_items(recommendations, ("BUY",), 2, max_market_proxies=1),
+        build_balanced_newsletter_items(recommendations, ("HOLD",), 2, max_market_proxies=1),
+        build_newsletter_caution_items(recommendations, 2, max_market_proxies=1),
+    ):
+        for item in group:
+            if item["ticker"] in seen:
+                continue
+            highlights.append(item)
+            seen.add(item["ticker"])
+            if len(highlights) >= limit:
+                return highlights
     return highlights
 
 
@@ -3668,33 +3801,19 @@ def build_newsletter_recommendation_universe():
 
 
 def build_newsletter_watchlist(recommendations, limit=8):
-    ranked_rows = sorted(
-        recommendations,
-        key=lambda item: confidence_number(item.get("confidence")),
-        reverse=True,
-    )
     watchlist = []
     seen = set()
-
-    for desired_signal in ("BUY", "HOLD", "SELL"):
-        candidates = [
-            item for item in ranked_rows
-            if clean_signal(item.get("signal"), item.get("confidence")) == desired_signal
-        ]
-        for item in candidates[:3]:
-            ticker = str(item.get("ticker") or "").strip().upper()
-            if not ticker or ticker in seen:
+    for group in (
+        build_newsletter_market_tracker(recommendations, 2),
+        build_balanced_newsletter_items(recommendations, ("BUY",), 3, max_market_proxies=1),
+        build_balanced_newsletter_items(recommendations, ("HOLD",), 3, max_market_proxies=1),
+        build_newsletter_caution_items(recommendations, 3, max_market_proxies=1),
+    ):
+        for item in group:
+            if item["ticker"] in seen:
                 continue
-            signal = clean_signal(item.get("signal"), item.get("confidence"))
-            watchlist.append({
-                "ticker": ticker,
-                "name": stock_display_label(ticker),
-                "badge": "WATCH" if ticker == "SPCX" else f"{signal} pattern",
-                "status": newsletter_status(signal, ticker),
-                "reason": newsletter_reader_safe_reason(item, ticker),
-                "data_confidence": newsletter_data_confidence(item),
-            })
-            seen.add(ticker)
+            watchlist.append(item)
+            seen.add(item["ticker"])
             if len(watchlist) >= limit:
                 return watchlist
 
@@ -3774,6 +3893,11 @@ def build_free_weekly_newsletter():
             "source": "StockRadar feed check",
         }]
 
+    market_week_summary = build_newsletter_market_week_summary(trending, best_area, risk_area)
+    market_tracker = build_newsletter_market_tracker(recommendations)
+    what_looked_strong = build_balanced_newsletter_items(recommendations, ("BUY",), 4)
+    what_looked_weak = build_newsletter_caution_items(recommendations, 4)
+
     forecasting = []
     if best_area != "Signal pending":
         forecasting.append(
@@ -3814,6 +3938,11 @@ def build_free_weekly_newsletter():
     draft = {
         "title": "StockRadar Weekly Brief",
         "generated_at": datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC"),
+        "opening_line": "Your Friday market brief is ready.",
+        "opening_note": (
+            "StockRadar turns market noise into plain-English signal checks across stocks, "
+            "ETFs and index-style market proxies where supported."
+        ),
         "market_mood": market_mood,
         "main_theme": (
             trending[0]["headline"]
@@ -3823,7 +3952,11 @@ def build_free_weekly_newsletter():
         "best_looking_area": best_area,
         "risk_area": risk_area,
         "market_pulse": market_pulse,
+        "market_week_summary": market_week_summary,
         "tracked_universe_count": total_count,
+        "market_tracker": market_tracker,
+        "what_looked_strong": what_looked_strong,
+        "what_looked_weak": what_looked_weak,
         "signal_highlights": highlights,
         "trending_vs_forecasting": {
             "trending": trending,
@@ -3848,18 +3981,24 @@ def build_newsletter_plain_text(draft):
         f"Issue status: {draft.get('issue_status', 'Preview')}",
         f"Last refreshed: {draft.get('last_refreshed', draft['generated_at'])}",
         "",
-        "MARKET PULSE",
+        "OPENING",
+        draft.get("opening_line", "Your Friday market brief is ready."),
+        draft.get("opening_note", ""),
+        "",
+        "THIS WEEK IN THE MARKET",
         f"Mood: {draft['market_mood']}",
         draft["market_pulse"],
+        draft.get("market_week_summary", ""),
         f"Main theme: {draft['main_theme']}",
         f"Best-looking area: {draft['best_looking_area']}",
         f"Risk area: {draft['risk_area']}",
         "",
-        "SIGNAL HIGHLIGHTS",
+        "WHAT LOOKED STRONG",
     ]
 
-    if draft["signal_highlights"]:
-        for item in draft["signal_highlights"]:
+    strong_items = draft.get("what_looked_strong") or draft.get("signal_highlights") or []
+    if strong_items:
+        for item in strong_items:
             lines.extend([
                 f"- {item['name']} — {item['badge']} · {item['status']} · confidence: {item['data_confidence']}",
                 f"  Why: {item['reason']}",
@@ -3868,7 +4007,24 @@ def build_newsletter_plain_text(draft):
     else:
         lines.append("- Signal data unavailable.")
 
-    lines.extend(["", "TRENDING NOW"])
+    lines.extend(["", "WHAT LOOKED WEAK / CAUTION ZONE"])
+    caution_items = draft.get("what_looked_weak") or []
+    if caution_items:
+        for item in caution_items:
+            lines.extend([
+                f"- {item['name']} — {item['badge']} · {item['status']} · confidence: {item['data_confidence']}",
+                f"  Review: {item['reason']}",
+            ])
+    else:
+        lines.append("- No caution examples are available in the current signal set.")
+
+    lines.extend(["", "MARKET TRACKER"])
+    for item in draft.get("market_tracker", []):
+        lines.append(
+            f"- {item['name']} — {item['signal']} · {item['confidence']}: {item['reason']}"
+        )
+
+    lines.extend(["", "NEWS-FEED THEMES"])
     for item in draft["trending_vs_forecasting"]["trending"]:
         lines.append(f"- {item['headline']} ({item['source']})")
 
@@ -3876,7 +4032,7 @@ def build_newsletter_plain_text(draft):
     for item in draft["trending_vs_forecasting"]["forecasting"]:
         lines.append(f"- {item}")
 
-    lines.extend(["", "WATCHLIST"])
+    lines.extend(["", "STOCKRADAR SIGNAL WATCHLIST"])
     for item in draft["watchlist"]:
         lines.append(
             f"- {item['name']} — {item['badge']} · {item['status']}: {item['reason']}"
@@ -3938,7 +4094,7 @@ def get_weekly_newsletter_status(now=None):
             "rss_label": "Preview issue",
             "is_final": False,
         }
-    if weekday == 4 and london_now.time() < dt_time(hour=17):
+    if weekday == 4 and london_now.time() < newsletter_auto_send_time():
         return {
             "key": "friday_preview",
             "label": "Friday preview",
@@ -4084,15 +4240,19 @@ def build_weekly_newsletter_issue(now=None, force_refresh=False):
         if not metadata["is_final"]
         else ""
     )
+    draft["market_tracker"] = build_newsletter_market_tracker(recommendations)
+    draft["what_looked_strong"] = build_balanced_newsletter_items(recommendations, ("BUY",), 4)
+    draft["what_looked_weak"] = build_newsletter_caution_items(recommendations, 4)
     draft["signal_watch"] = {
-        "strongest_buy": issue_signal_rows(full_signal_rows["BUY"] or buy_rows, 3),
-        "notable_hold": issue_signal_rows(full_signal_rows["HOLD"] or hold_rows, 3),
-        "caution_sell": issue_signal_rows(full_signal_rows["SELL"] or sell_rows, 3),
+        "strongest_buy": build_balanced_newsletter_items(full_signal_rows["BUY"] or buy_rows, ("BUY",), 3),
+        "notable_hold": build_balanced_newsletter_items(full_signal_rows["HOLD"] or hold_rows, ("HOLD",), 3),
+        "caution_sell": build_newsletter_caution_items(full_signal_rows["SELL"] or sell_rows, 3),
         "highest_conviction": issue_signal_rows(conviction_rows, 3),
     }
     draft["premium_note"] = (
-        "Stock detail pages already show dividend/distribution snapshots where data is available. "
-        "Dividend Dip Tracker remains a future scanner for dividend-related watchlist moves."
+        "Premium adds the reasoning layer behind these signals: risk read, decision context, "
+        "portfolio-fit checks and what to review before acting. It does not provide personal "
+        "financial advice or guaranteed outcomes."
     )
     draft["disclaimer"] = (
         "StockRadar provides educational market information and research tools only. "
@@ -4120,14 +4280,57 @@ newsletter_issue_body_html = """
 <p><strong>{{ draft.issue_status_message }}</strong></p>
 <p><strong>Last refreshed:</strong> {{ draft.last_refreshed }}</p>
 {% if draft.preview_refresh_note %}<p>{{ draft.preview_refresh_note }}</p>{% endif %}
+<p><strong>{{ draft.opening_line }}</strong></p>
+<p>{{ draft.opening_note }}</p>
 </section>
 <section>
-<h2>Market pulse</h2>
+<h2>This week in the market</h2>
 <p style="margin-bottom:16px;"><strong>Market mood:</strong> {{ draft.market_mood }}.</p>
 <p style="margin-top:0;">{{ draft.market_pulse }}</p>
+<p>{{ draft.market_week_summary }}</p>
 </section>
 <section>
-<h2>Signal Watch</h2>
+<h2>What looked strong</h2>
+{% if draft.what_looked_strong %}
+{% for item in draft.what_looked_strong %}
+<article>
+<h3>{{ item.name }}</h3>
+<p><strong>{{ item.signal }} research prompt</strong> · Confidence: {{ item.confidence }} · {{ item.sector }}</p>
+<p><strong>Why it appears:</strong> {{ item.reason }}</p>
+</article>
+{% endfor %}
+{% else %}
+<p>Strong-signal examples are unavailable in the current feed.</p>
+{% endif %}
+</section>
+<section>
+<h2>What looked weak / caution zone</h2>
+{% if draft.what_looked_weak %}
+{% for item in draft.what_looked_weak %}
+<article>
+<h3>{{ item.name }}</h3>
+<p><strong>{{ item.signal }} research prompt</strong> · Confidence: {{ item.confidence }} · {{ item.sector }}</p>
+<p><strong>Review risk:</strong> {{ item.reason }}</p>
+</article>
+{% endfor %}
+{% else %}
+<p>Caution examples are unavailable in the current feed.</p>
+{% endif %}
+</section>
+<section>
+<h2>Market tracker</h2>
+{% if draft.market_tracker %}
+<ul>
+{% for item in draft.market_tracker %}
+<li><strong>{{ item.name }}</strong> — {{ item.signal }} · {{ item.confidence }}: {{ item.reason }}</li>
+{% endfor %}
+</ul>
+{% else %}
+<p>Broad market proxy data is unavailable in the current feed.</p>
+{% endif %}
+</section>
+<section>
+<h2>StockRadar signal watchlist</h2>
 {% set signal_groups = [
     ("Stronger BUY research prompts", draft.signal_watch.strongest_buy),
     ("Notable HOLD / watchlist names", draft.signal_watch.notable_hold),
@@ -4150,8 +4353,7 @@ newsletter_issue_body_html = """
 {% endif %}
 </section>
 <section>
-<h2>Trending vs forecasting</h2>
-<h3>Trending now</h3>
+<h2>News-feed themes</h2>
 <ul>
 {% for item in draft.trending_vs_forecasting.trending %}
 <li>{{ item.headline }} — {{ item.source }}</li>
@@ -4165,7 +4367,7 @@ newsletter_issue_body_html = """
 </ul>
 </section>
 <section>
-<h2>Stocks to Watch Next Week</h2>
+<h2>Balanced signal examples</h2>
 <ul>
 {% for item in draft.watchlist %}
 <li><strong>{{ item.name }}</strong> — {{ item.badge }} · {{ item.status }}: {{ item.reason }}</li>
@@ -4771,11 +4973,59 @@ newsletter_latest_html = """
 <p><strong>{{ issue.issue_status_message }}</strong></p>
 <p class="meta">Last refreshed: {{ issue.generated_at_label }}</p>
 {% if draft.preview_refresh_note %}<p>{{ draft.preview_refresh_note }}</p>{% endif %}
+<p><strong>{{ draft.opening_line }}</strong></p>
+<p>{{ draft.opening_note }}</p>
 <p style="margin-bottom:16px;"><strong>Market mood:</strong> {{ draft.market_mood }}.</p>
 <p style="margin-top:0;">{{ draft.market_pulse }}</p>
+<p>{{ draft.market_week_summary }}</p>
 </header>
 <section class="section">
-<h2>Signal Watch</h2>
+<h2>This Week in the Market</h2>
+<h3>News-feed themes</h3>
+<ul>{% for item in draft.trending_vs_forecasting.trending %}<li>{{ item.headline }} — {{ item.source }}</li>{% endfor %}</ul>
+<h3>What may matter next</h3>
+<ul>{% for item in draft.trending_vs_forecasting.forecasting %}<li>{{ item }}</li>{% endfor %}</ul>
+</section>
+<section class="section">
+<h2>What Looked Strong</h2>
+{% if draft.what_looked_strong %}
+{% for item in draft.what_looked_strong %}
+<article class="signal">
+<h3>{{ item.name }}</h3>
+<p><strong>{{ item.signal }} research prompt · {{ item.confidence }}</strong></p>
+<p><strong>Area:</strong> {{ item.sector }}</p>
+<p><strong>Why it appears:</strong> {{ item.reason }}</p>
+</article>
+{% endfor %}
+{% else %}
+<p>Strong-signal examples are unavailable in the current feed.</p>
+{% endif %}
+</section>
+<section class="section">
+<h2>What Looked Weak / Caution Zone</h2>
+{% if draft.what_looked_weak %}
+{% for item in draft.what_looked_weak %}
+<article class="signal">
+<h3>{{ item.name }}</h3>
+<p><strong>{{ item.signal }} research prompt · {{ item.confidence }}</strong></p>
+<p><strong>Area:</strong> {{ item.sector }}</p>
+<p><strong>Review risk:</strong> {{ item.reason }}</p>
+</article>
+{% endfor %}
+{% else %}
+<p>Caution examples are unavailable in the current feed.</p>
+{% endif %}
+</section>
+<section class="section">
+<h2>Market Tracker</h2>
+{% if draft.market_tracker %}
+<ul>{% for item in draft.market_tracker %}<li><strong>{{ item.name }}</strong> — {{ item.signal }} · {{ item.confidence }}: {{ item.reason }}</li>{% endfor %}</ul>
+{% else %}
+<p>Broad market proxy data is unavailable in the current feed.</p>
+{% endif %}
+</section>
+<section class="section">
+<h2>StockRadar Signal Watchlist</h2>
 {% set signal_groups = [
     ("Stronger BUY research prompts", draft.signal_watch.strongest_buy),
     ("Notable HOLD / watchlist names", draft.signal_watch.notable_hold),
@@ -4798,14 +5048,7 @@ newsletter_latest_html = """
 {% endif %}
 </section>
 <section class="section">
-<h2>Trending vs forecasting</h2>
-<h3>Trending now</h3>
-<ul>{% for item in draft.trending_vs_forecasting.trending %}<li>{{ item.headline }} — {{ item.source }}</li>{% endfor %}</ul>
-<h3>What may matter next</h3>
-<ul>{% for item in draft.trending_vs_forecasting.forecasting %}<li>{{ item }}</li>{% endfor %}</ul>
-</section>
-<section class="section">
-<h2>Stocks to Watch Next Week</h2>
+<h2>Balanced Signal Examples</h2>
 <ul>{% for item in draft.watchlist %}<li><strong>{{ item.name }}</strong> — {{ item.badge }} · {{ item.status }}: {{ item.reason }}</li>{% endfor %}</ul>
 </section>
 <section class="section">
