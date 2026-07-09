@@ -14,6 +14,7 @@ import pandas as pd
 import re
 import smtplib
 import ssl
+import threading
 import time
 
 
@@ -105,6 +106,23 @@ NEWSLETTER_FROM_EMAIL = (
 NEWSLETTER_CRON_SECRET = os.environ.get("NEWSLETTER_CRON_SECRET", "").strip()
 NEWSLETTER_SUBSCRIBERS_PATH = os.path.join(APP_ROOT, "newsletter_subscribers.json")
 NEWSLETTER_DELIVERY_LOG_PATH = os.path.join(APP_ROOT, "newsletter_delivery_log.json")
+NEWSLETTER_SEND_LOCK_DIR = os.path.join(APP_ROOT, ".newsletter_locks")
+NEWSLETTER_AUTO_SEND_ENABLED = (
+    os.environ.get(
+        "NEWSLETTER_AUTO_SEND_ENABLED",
+        "true" if IS_PRODUCTION else "false",
+    )
+    .strip()
+    .lower()
+    in {"1", "true", "yes", "on"}
+)
+NEWSLETTER_AUTO_SEND_HOUR_LONDON = int(os.environ.get("NEWSLETTER_AUTO_SEND_HOUR_LONDON", "17"))
+NEWSLETTER_AUTO_SEND_MINUTE_LONDON = int(os.environ.get("NEWSLETTER_AUTO_SEND_MINUTE_LONDON", "0"))
+NEWSLETTER_AUTO_SEND_CHECK_INTERVAL_SECONDS = int(
+    os.environ.get("NEWSLETTER_AUTO_SEND_CHECK_INTERVAL_SECONDS", "300")
+)
+NEWSLETTER_SEND_LOCK_STALE_SECONDS = 60 * 60
+NEWSLETTER_AUTO_SEND_THREAD_STARTED = False
 LAST_NEWS_FETCH_STATUS = {
     "provider": "none",
     "status": "not_started",
@@ -4236,6 +4254,8 @@ def load_newsletter_delivery_log():
     data = load_json_storage(NEWSLETTER_DELIVERY_LOG_PATH, {"deliveries": []})
     if not isinstance(data.get("deliveries"), list):
         data["deliveries"] = []
+    if not isinstance(data.get("runs"), list):
+        data["runs"] = []
     return data
 
 
@@ -4253,6 +4273,146 @@ def newsletter_email_configured():
 
 def newsletter_issue_guid(issue):
     return str(issue.get("metadata", {}).get("guid") or "").strip()
+
+
+def newsletter_issue_lock_path(issue_guid):
+    safe_guid = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(issue_guid or "").strip())
+    return os.path.join(NEWSLETTER_SEND_LOCK_DIR, f"{safe_guid or 'unknown'}.lock")
+
+
+def acquire_newsletter_issue_lock(issue_guid):
+    lock_path = newsletter_issue_lock_path(issue_guid)
+    os.makedirs(NEWSLETTER_SEND_LOCK_DIR, exist_ok=True)
+
+    try:
+        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        try:
+            lock_age = time.time() - os.path.getmtime(lock_path)
+            if lock_age > NEWSLETTER_SEND_LOCK_STALE_SECONDS:
+                os.remove(lock_path)
+                fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            else:
+                return None
+        except FileExistsError:
+            return None
+        except Exception:
+            app.logger.exception("Failed to inspect newsletter send lock: %s", lock_path)
+            return None
+
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(newsletter_storage_timestamp())
+        handle.write("\n")
+    return lock_path
+
+
+def release_newsletter_issue_lock(lock_path):
+    if not lock_path:
+        return
+    try:
+        os.remove(lock_path)
+    except FileNotFoundError:
+        return
+    except Exception:
+        app.logger.exception("Failed to release newsletter send lock: %s", lock_path)
+
+
+def record_newsletter_run(summary, delivery_type, status=None):
+    data = load_newsletter_delivery_log()
+    run_status = status
+    if not run_status:
+        run_status = "completed_with_failures" if summary.get("failed") else "completed"
+
+    data["runs"].append({
+        "issue_guid": summary.get("issue_guid", ""),
+        "issue_title": summary.get("issue_title", ""),
+        "delivery_type": delivery_type,
+        "status": run_status,
+        "sent": int(summary.get("sent") or 0),
+        "skipped": int(summary.get("skipped") or 0),
+        "failed": int(summary.get("failed") or 0),
+        "completed_at": newsletter_storage_timestamp(),
+    })
+    return save_newsletter_delivery_log(data)
+
+
+def newsletter_london_now(now=None):
+    london_timezone = ZoneInfo("Europe/London")
+    london_now = now or datetime.now(london_timezone)
+    if london_now.tzinfo is None:
+        return london_now.replace(tzinfo=london_timezone)
+    return london_now.astimezone(london_timezone)
+
+
+def newsletter_auto_send_time():
+    return dt_time(
+        hour=NEWSLETTER_AUTO_SEND_HOUR_LONDON,
+        minute=NEWSLETTER_AUTO_SEND_MINUTE_LONDON,
+    )
+
+
+def newsletter_auto_send_due(now=None):
+    london_now = newsletter_london_now(now)
+    status = get_weekly_newsletter_status(london_now)
+    return (
+        london_now.weekday() == 4
+        and london_now.time() >= newsletter_auto_send_time()
+        and status["is_final"]
+    )
+
+
+def next_newsletter_auto_send_at(now=None):
+    london_now = newsletter_london_now(now)
+    days_until_friday = (4 - london_now.weekday()) % 7
+    candidate_date = london_now.date() + timedelta(days=days_until_friday)
+    candidate = datetime.combine(
+        candidate_date,
+        newsletter_auto_send_time(),
+        tzinfo=ZoneInfo("Europe/London"),
+    )
+    if candidate <= london_now:
+        candidate += timedelta(days=7)
+    return candidate
+
+
+def newsletter_status_snapshot(now=None):
+    london_now = newsletter_london_now(now)
+    issue_status = get_weekly_newsletter_status(london_now)
+    metadata = newsletter_issue_metadata(london_now, issue_status=issue_status)
+    delivery_log = load_newsletter_delivery_log()
+    deliveries = delivery_log.get("deliveries", [])
+    runs = delivery_log.get("runs", [])
+    current_issue_deliveries = [
+        item for item in deliveries
+        if str(item.get("issue_guid") or "") == metadata["guid"]
+    ]
+    last_delivery = max(
+        deliveries,
+        key=lambda item: str(item.get("sent_at") or ""),
+        default={},
+    )
+    last_run = max(
+        runs,
+        key=lambda item: str(item.get("completed_at") or ""),
+        default={},
+    )
+
+    return {
+        "email_configured": newsletter_email_configured(),
+        "auto_send_enabled": NEWSLETTER_AUTO_SEND_ENABLED,
+        "cron_secret_configured": bool(NEWSLETTER_CRON_SECRET),
+        "current_issue_guid": metadata["guid"],
+        "current_issue_status": issue_status["key"],
+        "current_issue_is_final": issue_status["is_final"],
+        "current_issue_delivery_count": len(current_issue_deliveries),
+        "last_delivery_at": last_delivery.get("sent_at", ""),
+        "last_delivery_issue_guid": last_delivery.get("issue_guid", ""),
+        "last_run_at": last_run.get("completed_at", ""),
+        "last_run_issue_guid": last_run.get("issue_guid", ""),
+        "last_run_delivery_type": last_run.get("delivery_type", ""),
+        "last_run_status": last_run.get("status", ""),
+        "next_expected_friday_send_at": next_newsletter_auto_send_at(london_now).isoformat(),
+    }
 
 
 def newsletter_already_delivered(email, issue_guid):
@@ -4404,8 +4564,9 @@ def deliver_newsletter_issue_to_subscriber(email, issue, delivery_type="weekly")
 def send_weekly_newsletter_to_eligible_subscribers(delivery_type="weekly"):
     issue = build_weekly_newsletter_issue()
     subscribers = load_newsletter_subscribers().get("subscribers", [])
+    issue_guid = newsletter_issue_guid(issue)
     summary = {
-        "issue_guid": newsletter_issue_guid(issue),
+        "issue_guid": issue_guid,
         "issue_title": issue["metadata"]["title"],
         "sent": 0,
         "skipped": 0,
@@ -4413,30 +4574,113 @@ def send_weekly_newsletter_to_eligible_subscribers(delivery_type="weekly"):
         "details": [],
     }
 
-    for subscriber in subscribers:
-        if subscriber.get("active") is not True:
-            summary["skipped"] += 1
-            summary["details"].append({
-                "email": normalize_email(subscriber.get("email")),
-                "status": "skipped",
-                "reason": "inactive",
-            })
-            continue
+    lock_path = acquire_newsletter_issue_lock(issue_guid)
+    if lock_path is None:
+        active_count = sum(1 for subscriber in subscribers if subscriber.get("active") is True)
+        summary["skipped"] = active_count
+        summary["details"].append({
+            "email": "",
+            "status": "skipped",
+            "reason": "send_in_progress",
+        })
+        record_newsletter_run(summary, delivery_type, status="send_in_progress")
+        return summary
 
-        result = deliver_newsletter_issue_to_subscriber(
-            subscriber.get("email"),
-            issue,
-            delivery_type=delivery_type,
-        )
-        summary["details"].append(result)
-        if result["status"] == "sent":
-            summary["sent"] += 1
-        elif result["status"] == "failed":
-            summary["failed"] += 1
-        else:
-            summary["skipped"] += 1
+    try:
+        for subscriber in subscribers:
+            if subscriber.get("active") is not True:
+                summary["skipped"] += 1
+                summary["details"].append({
+                    "email": normalize_email(subscriber.get("email")),
+                    "status": "skipped",
+                    "reason": "inactive",
+                })
+                continue
 
+            result = deliver_newsletter_issue_to_subscriber(
+                subscriber.get("email"),
+                issue,
+                delivery_type=delivery_type,
+            )
+            summary["details"].append(result)
+            if result["status"] == "sent":
+                summary["sent"] += 1
+            elif result["status"] == "failed":
+                summary["failed"] += 1
+            else:
+                summary["skipped"] += 1
+    finally:
+        release_newsletter_issue_lock(lock_path)
+
+    record_newsletter_run(summary, delivery_type)
     return summary
+
+
+def newsletter_automation_not_due_summary(reason, now=None):
+    london_now = newsletter_london_now(now)
+    issue_status = get_weekly_newsletter_status(london_now)
+    metadata = newsletter_issue_metadata(london_now, issue_status=issue_status)
+    return {
+        "issue_guid": metadata["guid"],
+        "issue_title": metadata["title"],
+        "sent": 0,
+        "skipped": 0,
+        "failed": 0,
+        "automation_due": False,
+        "reason": reason,
+        "details": [{
+            "email": "",
+            "status": "skipped",
+            "reason": reason,
+        }],
+    }
+
+
+def run_due_newsletter_automation(delivery_type="auto", now=None):
+    if not newsletter_email_configured():
+        return newsletter_automation_not_due_summary("email_not_configured", now)
+    if not newsletter_auto_send_due(now):
+        return newsletter_automation_not_due_summary("not_due", now)
+
+    summary = send_weekly_newsletter_to_eligible_subscribers(delivery_type=delivery_type)
+    summary["automation_due"] = True
+    return summary
+
+
+def newsletter_auto_send_loop():
+    while True:
+        try:
+            summary = run_due_newsletter_automation(delivery_type="auto")
+            if summary.get("automation_due"):
+                app.logger.info(
+                    "Newsletter auto-send checked issue %s: sent=%s skipped=%s failed=%s",
+                    summary.get("issue_guid"),
+                    summary.get("sent"),
+                    summary.get("skipped"),
+                    summary.get("failed"),
+                )
+        except Exception:
+            app.logger.exception("Newsletter auto-send scheduler failed")
+        time.sleep(max(60, NEWSLETTER_AUTO_SEND_CHECK_INTERVAL_SECONDS))
+
+
+def start_newsletter_auto_send_scheduler():
+    global NEWSLETTER_AUTO_SEND_THREAD_STARTED
+    if NEWSLETTER_AUTO_SEND_THREAD_STARTED or not NEWSLETTER_AUTO_SEND_ENABLED:
+        return False
+
+    thread = threading.Thread(
+        target=newsletter_auto_send_loop,
+        name="stockradar-newsletter-auto-send",
+        daemon=True,
+    )
+    thread.start()
+    NEWSLETTER_AUTO_SEND_THREAD_STARTED = True
+    app.logger.info(
+        "Newsletter auto-send scheduler started; next expected Friday send at %s",
+        next_newsletter_auto_send_at().isoformat(),
+    )
+    return True
 
 
 newsletter_landing_html = """
@@ -6045,6 +6289,10 @@ newsletter_send_summary_html = """
 <p><a href="/owner">← Owner area</a></p>
 <div class="card">
 <h1>Newsletter send summary</h1>
+<p><strong>Current issue:</strong> {{ newsletter_status.current_issue_guid }} · {{ newsletter_status.current_issue_status }}</p>
+<p>Email configured: {{ "yes" if newsletter_status.email_configured else "no" }} · Auto-send enabled: {{ "yes" if newsletter_status.auto_send_enabled else "no" }} · Cron secret configured: {{ "yes" if newsletter_status.cron_secret_configured else "no" }}</p>
+<p>Current issue deliveries recorded: {{ newsletter_status.current_issue_delivery_count }} · Last run: {{ newsletter_status.last_run_at or "none" }} {{ newsletter_status.last_run_delivery_type }}</p>
+<p>Next expected Friday auto-send: {{ newsletter_status.next_expected_friday_send_at }}</p>
 {% if not summary %}
 <p>This sends the current StockRadar Weekly issue only to subscribers who have not already received it.</p>
 <form method="POST" action="/admin/newsletter-send"><button type="submit">Send eligible newsletters</button></form>
@@ -6075,7 +6323,11 @@ def admin_newsletter_send():
     if request.method == "POST":
         summary = send_weekly_newsletter_to_eligible_subscribers(delivery_type="manual")
 
-    return render_template_string(newsletter_send_summary_html, summary=summary)
+    return render_template_string(
+        newsletter_send_summary_html,
+        summary=summary,
+        newsletter_status=newsletter_status_snapshot(),
+    )
 
 
 @app.route("/newsletter/cron/send", methods=["GET", "POST"])
@@ -6090,7 +6342,7 @@ def newsletter_cron_send():
     if supplied_secret != NEWSLETTER_CRON_SECRET:
         return jsonify({"error": "Forbidden."}), 403
 
-    summary = send_weekly_newsletter_to_eligible_subscribers(delivery_type="cron")
+    summary = run_due_newsletter_automation(delivery_type="cron")
     return jsonify(summary)
 
 
@@ -6118,6 +6370,7 @@ def health():
         "stock_universe_csv": STOCK_UNIVERSE_CSV,
         "stock_universe_cache_ttl_seconds": STOCK_UNIVERSE_CACHE_TTL_SECONDS,
         "dashboard_cache_ttl_seconds": DASHBOARD_CACHE_TTL_SECONDS,
+        "newsletter": newsletter_status_snapshot(),
     })
 
 
@@ -6776,6 +7029,9 @@ def logout():
     session.pop("owner_logged_in", None)
     session.pop("premium_active", None)
     return redirect(url_for("dashboard"))
+
+
+start_newsletter_auto_send_scheduler()
 
 
 if __name__ == "__main__":
