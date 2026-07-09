@@ -399,6 +399,10 @@ def disclaimer_footer():
             <strong style="color:#cbd5e1;">Educational only.</strong>
             StockRadar provides educational market information and research tools only. It does not provide personal financial, investment, tax, or legal advice. BUY, HOLD, and SELL signals are research prompts—not instructions or promises. Investments can fall as well as rise, and you may lose money. Consider your circumstances and seek advice from a regulated professional where appropriate.
         </div>
+        <div style="margin-top:10px;">
+            <strong style="color:#cbd5e1;">Trust basics.</strong>
+            Payments are handled securely by Stripe when Premium checkout is available. StockRadar does not store your full card details. Newsletter emails are used to send StockRadar updates and market briefs.
+        </div>
         <nav aria-label="Legal and support links" style="display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;">
             <a href="/newsletter" style="color:#94a3b8;">Newsletter</a>
             <a href="/how-it-works" style="color:#94a3b8;">How It Works</a>
@@ -1116,6 +1120,53 @@ def calculate_counts(recommendations):
     sell_count = sum(1 for r in recommendations if r["signal"] == "SELL")
     high_conviction_count = sum(1 for r in recommendations if confidence_number(r["confidence"]) >= 80)
     return buy_count, hold_count, sell_count, high_conviction_count
+
+
+def build_premium_decision_brief(recommendations=None):
+    rows = list(recommendations or get_recommendations())
+    buy_rows, hold_rows, sell_rows, conviction_rows = split_rows(rows)
+    signal_rank = {"BUY": 3, "HOLD": 2, "WATCH": 2, "SELL": 1}
+
+    def ranked(candidates):
+        if not candidates:
+            return None
+        return sorted(
+            candidates,
+            key=lambda item: (
+                signal_rank.get(str(item.get("signal", "")).upper(), 2),
+                confidence_number(item.get("confidence", "0%")),
+            ),
+            reverse=True,
+        )[0]
+
+    def brief_item(item):
+        if not item:
+            return None
+        ticker = str(item.get("ticker", "")).strip().upper()
+        return {
+            "ticker": ticker,
+            "label": stock_display_label(ticker),
+            "signal": item.get("signal", "HOLD"),
+            "confidence": item.get("confidence", "50%"),
+            "sector": item.get("sector") or SECTOR_MAP.get(ticker, "AI Watchlist"),
+            "reason": item.get("reason") or "Current StockRadar research context is available.",
+        }
+
+    etf_tickers = {"SPY", "QQQ", "DIA", "IWM", "SMH", "GLD", "SLV", "TLT", "HYG", "VUSA.L", "^GSPC", "^IXIC", "^FTSE"}
+    non_us_candidates = [
+        item for item in rows
+        if "." in str(item.get("ticker", "")) or str(item.get("ticker", "")).startswith("^FTSE")
+    ]
+    caution_candidates = sell_rows or sorted(hold_rows, key=lambda item: confidence_number(item.get("confidence", "0%")))
+    watch_candidates = [item for item in hold_rows if item not in caution_candidates[:1]]
+
+    return {
+        "strongest": brief_item((conviction_rows or buy_rows or rows or [None])[0]),
+        "caution": brief_item(caution_candidates[0] if caution_candidates else None),
+        "market_setup": brief_item(ranked([item for item in rows if str(item.get("ticker", "")).upper() in etf_tickers])),
+        "non_us": brief_item(ranked(non_us_candidates)),
+        "watchlist": brief_item((watch_candidates or hold_rows or rows or [None])[0]),
+    }
 
 def build_signal_lookup(recommendations):
     return {
@@ -4925,6 +4976,7 @@ newsletter_landing_html = """
 <button type="submit">Join Free</button>
 </form>
 <p class="fallback">Free to join. After signup, the latest issue is emailed automatically if email delivery is configured. The regular weekly issue normally arrives Friday.</p>
+<p class="fallback">Your email is used to send StockRadar Weekly, StockRadar updates and market briefs. Signals are educational research prompts, not personalised financial advice.</p>
 {% if newsletter_embed_html %}
 <details style="margin-top:16px;">
 <summary style="color:#69c9f2;font-weight:900;cursor:pointer;">Use alternate signup form</summary>
@@ -5211,6 +5263,7 @@ def prepare_dashboard_data():
         "total_count": len(recommendations),
         "sectors": sorted({item.get("sector") or "AI Watchlist" for item in recommendations}),
         "high_conviction_count": high_conviction_count,
+        "premium_decision_brief": build_premium_decision_brief(recommendations),
         "market_snapshot": market_snapshot,
         "market_status": market_status(),
         "last_updated": datetime.now().strftime("%d %b %Y, %H:%M"),
@@ -6267,6 +6320,9 @@ p{color:#cbd5e1;line-height:1.68;font-size:var(--font-body);}
 .button{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;text-align:center;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;padding:15px 20px;border-radius:16px;text-decoration:none;font-weight:950;font-size:var(--font-cta);margin-top:12px;margin-right:10px;box-shadow:0 22px 60px rgba(0,255,170,0.20);line-height:1.1;}
 .button.secondary{background:rgba(255,255,255,0.08);color:white;border:1px solid rgba(255,255,255,0.13);box-shadow:none;}
 .note{font-size:13px;color:#94a3b8;margin-top:14px;line-height:1.55;}
+.trust-points{display:grid;gap:10px;margin-top:16px;}
+.trust-point{padding:12px 13px;border-radius:14px;background:rgba(148,163,184,0.07);border:1px solid rgba(148,163,184,0.12);color:#b9c5d2;font-size:13px;line-height:1.5;}
+.trust-point strong{display:block;color:#e5edf5;margin-bottom:3px;}
 .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:24px;}
 .mini{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:20px;padding:18px;color:#e5e7eb;line-height:1.55;}
 .mini strong{display:block;color:white;margin-bottom:6px;font-size:var(--font-card-title);line-height:1.25;}
@@ -6323,11 +6379,21 @@ p{color:#cbd5e1;line-height:1.68;font-size:var(--font-body);}
                 <form method="POST" action="/create-checkout-session">
                     <button class="button" type="submit" style="border:none;cursor:pointer;width:100%;">Start Premium with Stripe Checkout</button>
                 </form>
-                <div class="note">Secure payment is handled by Stripe Checkout.</div>
+                <div class="trust-points" aria-label="Payment and subscription trust notes">
+                    <div class="trust-point"><strong>Secure Stripe checkout</strong>Payments are handled by Stripe. StockRadar does not store your full card details.</div>
+                    <div class="trust-point"><strong>Cancel anytime</strong>Premium is £5/month. Cancellation stops future billing, with access continuing until the end of the current billing period.</div>
+                    <div class="trust-point"><strong>Email-linked access</strong>Your Premium access is linked to the email used at checkout. For help, use <a href="/contact">Contact</a>.</div>
+                </div>
                 <div class="note">Need to cancel later? Visit <a href="/manage-subscription">Manage Subscription</a>. Early access cancellations are handled through support until self-service billing management is added.</div>
                 {% else %}
                 <a class="button secondary" href="/feedback" style="width:100%;margin-right:0;">Join the testing feedback loop</a>
                 <div class="note">Checkout remains disabled during soft launch. No payment details are collected on this page.</div>
+                <div class="trust-points" aria-label="Premium trust notes">
+                    <div class="trust-point"><strong>Secure Stripe checkout</strong>When Premium checkout is available, payment is handled by Stripe and StockRadar does not store full card details.</div>
+                    <div class="trust-point"><strong>Simple pricing</strong>Premium is planned at £5/month with cancel-anytime support.</div>
+                    <div class="trust-point"><strong>Email-linked access</strong>Premium access is linked to the email used at checkout. For help, use <a href="/contact">Contact</a>.</div>
+                    <div class="trust-point"><strong>Educational only</strong>Signals are research prompts, not instructions, guarantees or personalised financial advice.</div>
+                </div>
                 {% endif %}
                 <div class="note"><a href="/feedback">Send Feedback</a> about the upgrade experience while StockRadar is in early access.</div>
             </div>
@@ -6794,9 +6860,11 @@ def privacy():
         """
         <p>StockRadar uses the minimum information needed to operate the service, provide requested features, maintain security, and support customers.</p>
         <h2>Information we may process</h2>
-        <p>This may include account or support details you provide, session information needed for login and premium access, and technical logs used to keep the service reliable and secure.</p>
+        <p>This may include account, newsletter or support details you provide, session information needed for login and premium access, and technical logs used to keep the service reliable and secure.</p>
+        <h2>Email and newsletters</h2>
+        <p>If you join StockRadar Weekly, your email is used to send newsletter issues, StockRadar updates and market briefs. You can contact support if you need help with newsletter or account information.</p>
         <h2>Payments</h2>
-        <p>Payments are handled by Stripe. StockRadar does not store full payment-card details.</p>
+        <p>Payment processing is handled by Stripe when Premium checkout is available. StockRadar does not store full payment-card details.</p>
         <h2>Your choices</h2>
         <p>You may contact support to ask about personal information associated with your use of StockRadar, subject to applicable legal requirements.</p>
         """,
@@ -6812,7 +6880,8 @@ def terms():
         <h2>No investment advice</h2>
         <p>StockRadar does not provide regulated financial advice or guarantee investment outcomes. Market information can be delayed, incomplete, or unavailable.</p>
         <h2>Subscriptions</h2>
-        <p>Premium features require an active subscription. You are responsible for providing accurate payment and contact information.</p>
+        <p>Premium features require an active subscription. Premium is £5/month where checkout is enabled, unless the upgrade page clearly states otherwise. Your account or subscription access is linked to the email you provide, so you are responsible for providing accurate payment and contact information.</p>
+        <p>Payments are handled by Stripe. StockRadar does not store full payment-card details.</p>
         <h2>Service availability</h2>
         <p>Features and data providers may change, pause, or become unavailable. We may update these terms as the service develops.</p>
         """,
@@ -6886,7 +6955,8 @@ def manage_subscription():
         "Manage Subscription",
         f"""
         <p>StockRadar Premium is a £5/month educational research subscription. You may cancel anytime.</p>
-        <p>For now, subscription management and cancellation requests are handled through StockRadar support and Stripe records rather than a self-service customer portal.</p>
+        <p>Payments are handled by Stripe. StockRadar does not store your full card details.</p>
+        <p>Your subscription access is linked to the email used at checkout. For now, subscription management and cancellation requests are handled through StockRadar support and Stripe records rather than a self-service customer portal.</p>
         <h2>How to cancel</h2>
         <p>Contact {support_contact} using the email address used at checkout and the subject line: <strong>Cancel StockRadar Premium</strong>.</p>
         <p>Cancellation stops future billing. Premium access continues until the end of the current billing period.</p>
@@ -6949,6 +7019,7 @@ def dashboard():
     data.setdefault("total_count", 0)
     data.setdefault("sectors", [])
     data.setdefault("high_conviction_count", 0)
+    data.setdefault("premium_decision_brief", build_premium_decision_brief(data.get("recommendations", [])))
     data.setdefault("market_snapshot", [])
     data.setdefault("market_status", market_status())
     data.setdefault("last_updated", datetime.now().strftime("%d %b %Y, %H:%M"))
