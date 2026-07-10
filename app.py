@@ -135,6 +135,14 @@ BEEHIIV_AUTOSEND_ENABLED = (
 BEEHIIV_API_BASE_URL = "https://api.beehiiv.com/v2"
 BEEHIIV_REQUEST_TIMEOUT_SECONDS = 20
 NEWSLETTER_BEEHIIV_STATE_PATH = os.path.join(APP_ROOT, "newsletter_beehiiv_state.json")
+BEEHIIV_WEEKLY_BULK_SENDER = "beehiiv_manual"
+BEEHIIV_CREATE_POST_BLOCKED = True
+BEEHIIV_EXPORT_SUBJECT = "StockRadar Weekly: This week’s market signals"
+BEEHIIV_EXPORT_PREVIEW = "Your 5-minute plain-English market brief is ready."
+BEEHIIV_EXPORT_DISCLAIMER = (
+    "StockRadar provides educational market information and research tools only. "
+    "It is not personal financial advice."
+)
 LAST_NEWS_FETCH_STATUS = {
     "provider": "none",
     "status": "not_started",
@@ -4656,8 +4664,21 @@ def build_beehiiv_post_payload(issue):
 def create_beehiiv_issue(issue):
     issue_key = newsletter_issue_key(issue)
     local_state = load_newsletter_beehiiv_state()["issues"].get(issue_key, {})
-    if local_state.get("status") in {"beehiiv_draft_created", "beehiiv_scheduled", "beehiiv_published"}:
+    if local_state.get("status") in {
+        "beehiiv_api_post_blocked",
+        "beehiiv_draft_created",
+        "beehiiv_scheduled",
+        "beehiiv_published",
+    }:
         return dict(local_state, duplicate=True)
+
+    if BEEHIIV_CREATE_POST_BLOCKED:
+        return record_beehiiv_issue_state(
+            issue_key,
+            status="beehiiv_api_post_blocked",
+            content_generation_status="generated",
+            failure_reason="beehiiv_http_403",
+        )
 
     existing = find_existing_beehiiv_issue(issue)
     if existing:
@@ -4671,11 +4692,21 @@ def create_beehiiv_issue(issue):
             failure_reason="",
         ), duplicate=True)
 
-    response = beehiiv_api_request(
-        "POST",
-        f"/publications/{urllib.parse.quote(BEEHIIV_PUBLICATION_ID)}/posts",
-        payload=build_beehiiv_post_payload(issue),
-    )
+    try:
+        response = beehiiv_api_request(
+            "POST",
+            f"/publications/{urllib.parse.quote(BEEHIIV_PUBLICATION_ID)}/posts",
+            payload=build_beehiiv_post_payload(issue),
+        )
+    except RuntimeError as error:
+        if str(error) == "beehiiv_http_403":
+            return record_beehiiv_issue_state(
+                issue_key,
+                status="beehiiv_api_post_blocked",
+                content_generation_status="generated",
+                failure_reason="beehiiv_http_403",
+            )
+        raise
     post = response.get("data") or {}
     post_id = str(post.get("id") or "")
     if not post_id:
@@ -4692,6 +4723,61 @@ def create_beehiiv_issue(issue):
         ),
         failure_reason="",
     )
+
+
+def build_beehiiv_manual_export(issue):
+    draft = issue.get("draft", {})
+    metadata = issue.get("metadata", {})
+    bullet_candidates = [
+        draft.get("market_week_summary"),
+        draft.get("market_pulse"),
+    ]
+    strong = (draft.get("what_looked_strong") or [])[:1]
+    weak = (draft.get("what_looked_weak") or [])[:1]
+    if strong:
+        bullet_candidates.append(
+            f"Strength to review: {strong[0].get('name', 'current leaders')} — {strong[0].get('reason', 'see the full issue for context')}"
+        )
+    if weak:
+        bullet_candidates.append(
+            f"Risk to review: {weak[0].get('name', 'current caution signals')} — {weak[0].get('reason', 'see the full issue for context')}"
+        )
+    bullets = []
+    for candidate in bullet_candidates:
+        clean = re.sub(r"\s+", " ", str(candidate or "")).strip()
+        if clean and clean not in bullets:
+            bullets.append(clean)
+        if len(bullets) == 4:
+            break
+    if len(bullets) < 2:
+        bullets.extend([
+            "This week’s StockRadar market signal summary is ready.",
+            "Review the full issue for strength, caution and risk context.",
+        ][len(bullets):])
+
+    issue_url = f"{PRODUCTION_BASE_URL}/newsletter/latest"
+    body_lines = [
+        "Welcome to StockRadar Weekly.",
+        "",
+        *[f"• {item}" for item in bullets],
+        "",
+        "Read the full issue:",
+        issue_url,
+        "",
+        BEEHIIV_EXPORT_DISCLAIMER,
+        "",
+        "StockRadar Team",
+    ]
+    return {
+        "issue_date": metadata.get("issue_date", ""),
+        "issue_key": newsletter_issue_key(issue),
+        "issue_status": metadata.get("issue_status_key", ""),
+        "subject": BEEHIIV_EXPORT_SUBJECT,
+        "preview_text": BEEHIIV_EXPORT_PREVIEW,
+        "email_body": "\n".join(body_lines),
+        "issue_url": issue_url,
+        "disclaimer": BEEHIIV_EXPORT_DISCLAIMER,
+    }
 
 
 def create_beehiiv_subscription(email):
@@ -4867,12 +4953,17 @@ def newsletter_status_snapshot(now=None):
     )
 
     return {
-        "email_configured": newsletter_email_configured(),
+        "weekly_bulk_sender": BEEHIIV_WEEKLY_BULK_SENDER,
         "content_generation_status": current_beehiiv.get("content_generation_status", "not_due"),
         "beehiiv_configured": beehiiv_configured(),
-        "beehiiv_autosend_enabled": BEEHIIV_AUTOSEND_ENABLED,
-        "beehiiv_campaign_status": current_beehiiv.get("status", "not_due"),
-        "beehiiv_post_id": current_beehiiv.get("beehiiv_post_id", ""),
+        "beehiiv_create_post_blocked": (
+            BEEHIIV_CREATE_POST_BLOCKED
+            or current_beehiiv.get("status") == "beehiiv_api_post_blocked"
+        ),
+        "beehiiv_campaign_status": current_beehiiv.get(
+            "status",
+            "beehiiv_api_post_blocked" if BEEHIIV_CREATE_POST_BLOCKED else "not_due",
+        ),
         "transactional_smtp_configured": newsletter_email_configured(),
         "last_successful_beehiiv_publish_at": last_published.get("last_successful_publish_at", ""),
         "last_failure_reason": sanitise_newsletter_error(current_beehiiv.get("failure_reason", "")),
@@ -4881,13 +4972,6 @@ def newsletter_status_snapshot(now=None):
         "current_issue_guid": metadata["guid"],
         "current_issue_status": issue_status["key"],
         "current_issue_is_final": issue_status["is_final"],
-        "current_issue_delivery_count": len(current_issue_deliveries),
-        "last_delivery_at": last_delivery.get("sent_at", ""),
-        "last_delivery_issue_guid": last_delivery.get("issue_guid", ""),
-        "last_run_at": last_run.get("completed_at", ""),
-        "last_run_issue_guid": last_run.get("issue_guid", ""),
-        "last_run_delivery_type": last_run.get("delivery_type", ""),
-        "last_run_status": last_run.get("status", ""),
         "next_expected_friday_send_at": next_newsletter_auto_send_at(london_now).isoformat(),
     }
 
@@ -5119,6 +5203,17 @@ def run_due_newsletter_automation(delivery_type="auto", now=None):
     london_now = newsletter_london_now(now)
     metadata = newsletter_issue_metadata(london_now)
     issue_key = f"newsletter:{metadata['issue_date']}"
+    existing_state = load_newsletter_beehiiv_state()["issues"].get(issue_key, {})
+    if (
+        existing_state.get("status") == "beehiiv_api_post_blocked"
+        and existing_state.get("content_generation_status") == "generated"
+    ):
+        return dict(
+            existing_state,
+            automation_due=True,
+            duplicate=True,
+            reason="manual_beehiiv_handoff_required",
+        )
     if not beehiiv_configured():
         state = record_beehiiv_issue_state(
             issue_key,
@@ -5152,7 +5247,15 @@ def run_due_newsletter_automation(delivery_type="auto", now=None):
             status="generated",
             content_generation_status="generated",
         )
-        result = create_beehiiv_issue(issue)
+        if BEEHIIV_CREATE_POST_BLOCKED:
+            result = record_beehiiv_issue_state(
+                issue_key,
+                status="beehiiv_api_post_blocked",
+                content_generation_status="generated",
+                failure_reason="beehiiv_http_403",
+            )
+        else:
+            result = create_beehiiv_issue(issue)
         result["automation_due"] = True
         result["content_generation_status"] = "generated"
         return result
@@ -6760,7 +6863,7 @@ p{color:#cbd5e1;line-height:1.68;font-size:var(--font-body);}
 
 owner_html = """
 <!DOCTYPE html>
-<html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Owner Area</title><style>body{background:#020617;color:white;font-family:Arial;margin:0;padding:60px;}.card{background:#0f172a;padding:40px;border-radius:24px;max-width:820px;margin:auto;border:1px solid rgba(255,255,255,0.08);}a{color:#38bdf8;font-weight:bold;}</style></head><body><div class="card"><h1>👑 Owner Area</h1><p>You are logged in as the owner with premium access.</p><p>This confirms login and premium unlocking are working.</p><p><a href="/">Return to Dashboard</a></p><p><a href="/admin/newsletter-preview">Generate Newsletter Draft</a></p><p><a href="/admin/newsletter-send">Send Newsletter</a></p><p><a href="/stock/AAPL">Open Premium {{ stock_display_label('AAPL') }} Page</a></p>{{ disclaimer_footer() | safe }}</div></body></html>
+<html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Owner Area</title><style>body{background:#020617;color:white;font-family:Arial;margin:0;padding:60px;}.card{background:#0f172a;padding:40px;border-radius:24px;max-width:820px;margin:auto;border:1px solid rgba(255,255,255,0.08);}a{color:#38bdf8;font-weight:bold;}</style></head><body><div class="card"><h1>👑 Owner Area</h1><p>You are logged in as the owner with premium access.</p><p>This confirms login and premium unlocking are working.</p><p><a href="/">Return to Dashboard</a></p><p><a href="/admin/newsletter-preview">Generate Newsletter Draft</a></p><p><a href="/admin/newsletter/beehiiv-copy">Copy Newsletter for Beehiiv</a></p><p><a href="/stock/AAPL">Open Premium {{ stock_display_label('AAPL') }} Page</a></p>{{ disclaimer_footer() | safe }}</div></body></html>
 """
 
 
@@ -6932,6 +7035,57 @@ def admin_newsletter_preview():
     return render_template_string(newsletter_preview_html, draft=draft)
 
 
+newsletter_beehiiv_copy_html = """
+<!doctype html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Beehiiv Newsletter Copy — StockRadar</title>
+<style>
+*{box-sizing:border-box;}body{margin:0;background:#020617;color:#e5e7eb;font-family:Arial,sans-serif;padding:34px 20px;}.wrap{max-width:920px;margin:0 auto;}.card{background:#0f172a;border:1px solid rgba(255,255,255,.1);border-radius:22px;padding:26px;margin-bottom:18px;}h1,h2{color:#f8fafc;}p{color:#cbd5e1;line-height:1.65;}a{color:#38bdf8;font-weight:900;text-decoration:none;}.instruction{padding:16px;border-radius:14px;background:rgba(74,222,163,.1);border:1px solid rgba(74,222,163,.25);color:#d1fae5;font-weight:900;}label{display:block;margin:20px 0 8px;color:#94a3b8;font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.08em;}textarea,input{width:100%;border:1px solid #334155;border-radius:12px;background:#07111d;color:#f8fafc;padding:13px;font:14px/1.55 Arial,sans-serif;}textarea{min-height:90px;resize:vertical;}textarea.body{min-height:320px;}button{margin-top:8px;border:0;border-radius:10px;background:#38bdf8;color:#02111f;font-weight:900;padding:9px 12px;cursor:pointer;}.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}.meta div{background:#07111d;border-radius:12px;padding:13px;color:#cbd5e1}.meta strong{display:block;color:#94a3b8;font-size:11px;text-transform:uppercase;margin-bottom:5px;}
+</style>
+</head>
+<body><main class="wrap">
+<p><a href="/owner">← Owner area</a></p>
+<section class="card">
+<h1>Beehiiv-ready newsletter copy</h1>
+<p class="instruction">Copy this into Beehiiv and send from Beehiiv.</p>
+<div class="meta">
+<div><strong>Issue date</strong>{{ export.issue_date }}</div>
+<div><strong>Issue key</strong>{{ export.issue_key }}</div>
+<div><strong>Current issue status</strong>{{ export.issue_status }}</div>
+<div><strong>Beehiiv status</strong>{{ beehiiv_status }}</div>
+</div>
+<label for="subject">Subject</label><input id="subject" readonly value="{{ export.subject }}"><button type="button" onclick="copyField('subject',this)">Copy subject</button>
+<label for="preview">Preview text</label><textarea id="preview" readonly>{{ export.preview_text }}</textarea><button type="button" onclick="copyField('preview',this)">Copy preview</button>
+<label for="body">Email body</label><textarea class="body" id="body" readonly>{{ export.email_body }}</textarea><button type="button" onclick="copyField('body',this)">Copy email body</button>
+<label for="issue-url">Read online URL</label><input id="issue-url" readonly value="{{ export.issue_url }}"><button type="button" onclick="copyField('issue-url',this)">Copy URL</button>
+<label for="disclaimer">Disclaimer</label><textarea id="disclaimer" readonly>{{ export.disclaimer }}</textarea><button type="button" onclick="copyField('disclaimer',this)">Copy disclaimer</button>
+</section>
+</main>
+<script>
+function copyField(id,button){var field=document.getElementById(id);field.select();field.setSelectionRange(0,field.value.length);navigator.clipboard.writeText(field.value).then(function(){var old=button.textContent;button.textContent='Copied';setTimeout(function(){button.textContent=old;},1200);});}
+</script>
+</body></html>
+"""
+
+
+@app.route("/admin/newsletter/beehiiv-copy")
+def admin_newsletter_beehiiv_copy():
+    if not owner_has_access():
+        return redirect(url_for("login", next=request.path))
+
+    issue = build_weekly_newsletter_issue()
+    export = build_beehiiv_manual_export(issue)
+    state = load_newsletter_beehiiv_state()["issues"].get(export["issue_key"], {})
+    beehiiv_status = state.get("status", "beehiiv_api_post_blocked")
+    return render_template_string(
+        newsletter_beehiiv_copy_html,
+        export=export,
+        beehiiv_status=beehiiv_status,
+    )
+
+
 newsletter_send_summary_html = """
 <!doctype html>
 <html>
@@ -6948,12 +7102,11 @@ newsletter_send_summary_html = """
 <div class="card">
 <h1>Newsletter send summary</h1>
 <p><strong>Current issue:</strong> {{ newsletter_status.current_issue_guid }} · {{ newsletter_status.current_issue_status }}</p>
-<p>Email configured: {{ "yes" if newsletter_status.email_configured else "no" }} · Auto-send enabled: {{ "yes" if newsletter_status.auto_send_enabled else "no" }} · Cron secret configured: {{ "yes" if newsletter_status.cron_secret_configured else "no" }}</p>
-<p>Current issue deliveries recorded: {{ newsletter_status.current_issue_delivery_count }} · Last run: {{ newsletter_status.last_run_at or "none" }} {{ newsletter_status.last_run_delivery_type }}</p>
+<p>Weekly bulk sender: {{ newsletter_status.weekly_bulk_sender }} · Beehiiv configured: {{ "yes" if newsletter_status.beehiiv_configured else "no" }} · Create Post blocked: {{ "yes" if newsletter_status.beehiiv_create_post_blocked else "no" }}</p>
 <p>Next expected Friday auto-send: {{ newsletter_status.next_expected_friday_send_at }}</p>
 {% if not summary %}
-<p>This creates the current StockRadar Weekly issue in Beehiiv. Draft mode requires approval in Beehiiv; autosend mode publishes to Beehiiv's audience.</p>
-<form method="POST" action="/admin/newsletter-send"><button type="submit">Run Beehiiv workflow</button></form>
+<p>Beehiiv Create Post access is blocked. Use the copy/export page and send the campaign manually from Beehiiv.</p>
+<p><a href="/admin/newsletter/beehiiv-copy">Open Beehiiv copy/export page</a></p>
 {% else %}
 <p><strong>Issue:</strong> {{ summary.issue_key or summary.issue_guid }}</p>
 <p><strong>Beehiiv status:</strong> {{ summary.status or summary.reason }}</p>
@@ -6975,7 +7128,7 @@ def admin_newsletter_send():
 
     summary = None
     if request.method == "POST":
-        summary = run_due_newsletter_automation(delivery_type="manual")
+        return redirect(url_for("admin_newsletter_beehiiv_copy"))
 
     return render_template_string(
         newsletter_send_summary_html,

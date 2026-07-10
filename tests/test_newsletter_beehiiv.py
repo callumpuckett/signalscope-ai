@@ -14,9 +14,16 @@ def issue_for(date_string="2026-07-10"):
             "issue_date": date_string,
             "guid": f"stockradar-weekly-{date_string}",
             "title": "StockRadar Weekly — Friday 10 July 2026",
+            "issue_status_key": "final",
         },
         "summary": "Weekly market brief.",
-        "draft": {"plain_text": "Weekly market brief."},
+        "draft": {
+            "plain_text": "Weekly market brief.",
+            "market_week_summary": "Markets were mixed as investors reviewed the latest signals.",
+            "market_pulse": "Constructive and caution signals remain balanced.",
+            "what_looked_strong": [{"name": "Example strength", "reason": "Momentum improved."}],
+            "what_looked_weak": [{"name": "Example risk", "reason": "Momentum weakened."}],
+        },
     }
 
 
@@ -67,6 +74,7 @@ def test_successful_draft_records_post_id(monkeypatch, tmp_path):
     monkeypatch.setattr(app, "BEEHIIV_API_KEY", "secret")
     monkeypatch.setattr(app, "BEEHIIV_PUBLICATION_ID", "pub_123")
     monkeypatch.setattr(app, "BEEHIIV_AUTOSEND_ENABLED", False)
+    monkeypatch.setattr(app, "BEEHIIV_CREATE_POST_BLOCKED", False)
     responses = [{"data": []}, {"data": {"id": "post_123", "preview_url": "https://example.test/preview"}}]
     with patch.object(app, "beehiiv_api_request", side_effect=responses):
         result = app.create_beehiiv_issue(issue_for())
@@ -78,6 +86,7 @@ def test_existing_beehiiv_issue_skips_duplicate(monkeypatch, tmp_path):
     configure_state(monkeypatch, tmp_path)
     monkeypatch.setattr(app, "BEEHIIV_API_KEY", "secret")
     monkeypatch.setattr(app, "BEEHIIV_PUBLICATION_ID", "pub_123")
+    monkeypatch.setattr(app, "BEEHIIV_CREATE_POST_BLOCKED", False)
     existing = {"id": "post_existing", "status": "confirmed", "title": issue_for()["metadata"]["title"]}
     with patch.object(app, "beehiiv_api_request", return_value={"data": [existing]}) as api_call:
         result = app.create_beehiiv_issue(issue_for())
@@ -104,6 +113,7 @@ def test_beehiiv_error_is_sanitised(monkeypatch, tmp_path):
     configure_state(monkeypatch, tmp_path)
     monkeypatch.setattr(app, "BEEHIIV_API_KEY", "top-secret")
     monkeypatch.setattr(app, "BEEHIIV_PUBLICATION_ID", "pub_123")
+    monkeypatch.setattr(app, "BEEHIIV_CREATE_POST_BLOCKED", False)
     with (
         patch.object(app, "build_weekly_newsletter_issue", return_value=issue_for()),
         patch.object(app, "create_beehiiv_issue", side_effect=RuntimeError("top-secret user@example.com")),
@@ -169,3 +179,87 @@ def test_subscription_api_error_does_not_store_locally(monkeypatch):
     assert response.status_code == 200
     assert b"temporarily unavailable" in response.data
     local_subscribe.assert_not_called()
+
+
+def test_beehiiv_post_403_records_manual_block_without_smtp(monkeypatch, tmp_path):
+    configure_state(monkeypatch, tmp_path)
+    monkeypatch.setattr(app, "BEEHIIV_API_KEY", "secret")
+    monkeypatch.setattr(app, "BEEHIIV_PUBLICATION_ID", "pub_123")
+    monkeypatch.setattr(app, "BEEHIIV_CREATE_POST_BLOCKED", False)
+    responses = [{"data": []}, RuntimeError("beehiiv_http_403")]
+    with (
+        patch.object(app, "beehiiv_api_request", side_effect=responses),
+        patch.object(app, "send_newsletter_email") as smtp_send,
+    ):
+        result = app.create_beehiiv_issue(issue_for())
+    assert result["status"] == "beehiiv_api_post_blocked"
+    assert result["content_generation_status"] == "generated"
+    assert result["failure_reason"] == "beehiiv_http_403"
+    smtp_send.assert_not_called()
+
+
+def test_manual_scheduler_does_not_call_post_api_or_smtp(monkeypatch, tmp_path):
+    configure_state(monkeypatch, tmp_path)
+    monkeypatch.setattr(app, "BEEHIIV_API_KEY", "secret")
+    monkeypatch.setattr(app, "BEEHIIV_PUBLICATION_ID", "pub_123")
+    monkeypatch.setattr(app, "BEEHIIV_CREATE_POST_BLOCKED", True)
+    with (
+        patch.object(app, "build_weekly_newsletter_issue", return_value=issue_for()),
+        patch.object(app, "beehiiv_api_request") as api_call,
+        patch.object(app, "send_newsletter_email") as smtp_send,
+    ):
+        result = app.run_due_newsletter_automation(
+            now=datetime(2026, 7, 10, 9, 0, tzinfo=LONDON)
+        )
+    assert result["status"] == "beehiiv_api_post_blocked"
+    assert result["content_generation_status"] == "generated"
+    api_call.assert_not_called()
+    smtp_send.assert_not_called()
+
+
+def test_health_uses_manual_beehiiv_status_without_sent(monkeypatch, tmp_path):
+    configure_state(monkeypatch, tmp_path)
+    monkeypatch.setattr(app, "BEEHIIV_API_KEY", "secret")
+    monkeypatch.setattr(app, "BEEHIIV_PUBLICATION_ID", "pub_123")
+    monkeypatch.setattr(app, "BEEHIIV_CREATE_POST_BLOCKED", True)
+    app.record_beehiiv_issue_state(
+        "newsletter:2026-07-10",
+        status="beehiiv_api_post_blocked",
+        content_generation_status="generated",
+        failure_reason="beehiiv_http_403",
+    )
+    with patch.object(
+        app,
+        "newsletter_london_now",
+        return_value=datetime(2026, 7, 10, 9, 0, tzinfo=LONDON),
+    ):
+        newsletter = app.app.test_client().get("/health").get_json()["newsletter"]
+    assert newsletter["weekly_bulk_sender"] == "beehiiv_manual"
+    assert newsletter["beehiiv_configured"] is True
+    assert newsletter["beehiiv_create_post_blocked"] is True
+    assert newsletter["beehiiv_campaign_status"] == "beehiiv_api_post_blocked"
+    assert newsletter["content_generation_status"] == "generated"
+    assert "sent" not in str(newsletter).lower()
+
+
+def test_beehiiv_copy_route_requires_owner_login():
+    response = app.app.test_client().get("/admin/newsletter/beehiiv-copy")
+    assert response.status_code == 302
+    assert response.headers["Location"].startswith("/login")
+
+
+def test_beehiiv_copy_route_contains_export_fields(monkeypatch, tmp_path):
+    configure_state(monkeypatch, tmp_path)
+    with patch.object(app, "build_weekly_newsletter_issue", return_value=issue_for()):
+        client = app.app.test_client()
+        with client.session_transaction() as current_session:
+            current_session["owner_logged_in"] = True
+        response = client.get("/admin/newsletter/beehiiv-copy")
+    page = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "StockRadar Weekly: This week’s market signals" in page
+    assert "Your 5-minute plain-English market brief is ready." in page
+    assert "Copy this into Beehiiv and send from Beehiiv." in page
+    assert "https://www.stockradarhq.com/newsletter/latest" in page
+    assert "educational market information" in page
+    assert "StockRadar Team" in page
