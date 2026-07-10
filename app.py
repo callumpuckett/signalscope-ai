@@ -6798,7 +6798,7 @@ p{color:#cbd5e1;line-height:1.68;font-size:var(--font-body);}
     {% if has_premium_access %}
     <div class="card active-card">
         <span class="badge">Premium active</span>
-        <h1>✅ Premium is already active.</h1>
+<h1><span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:999px;background:#45e6a8;color:#071018;font-weight:950;font-size:13px;margin-right:7px;vertical-align:middle;" aria-hidden="true">✓</span> Premium is already active.</h1>
         <p>Premium access is active for this session. You do not need to purchase again. Premium decision panels, watchlist intelligence and portfolio-fit checks are unlocked.</p>
         <a class="button" href="/stock/AAPL">Open Premium Stock Page</a>
         <a class="button secondary" href="/">Return to Dashboard</a>
