@@ -1738,15 +1738,31 @@ def get_premium_report(symbol, ai_context):
     if signal == "BUY" and confidence_value >= 80:
         readiness = "Strong research candidate"
         action_frame = "Research further before buying; the signal is strong, but still needs risk and portfolio-fit checks."
+        signal_meaning = "The current StockRadar inputs lean constructive with stronger confidence. That makes this a research priority, not an instruction to buy."
+        stronger_evidence = "Confidence stays above 80% while price action, company news and fundamentals continue to support the constructive setup."
+        weaker_evidence = "Confidence falls, momentum fades or new business information challenges the reason behind the signal."
+        common_mistake = "Chasing a strong BUY label without checking valuation, overlap, risk tolerance or what would invalidate the research case."
     elif signal == "BUY":
         readiness = "Positive but not automatic"
         action_frame = "Worth researching, but wait for stronger evidence if risk or valuation feels stretched."
+        signal_meaning = "The current inputs lean constructive, but confidence is not strong enough to treat the signal as a conclusion."
+        stronger_evidence = "Confidence improves, price strength holds and relevant news or fundamentals support the same direction."
+        weaker_evidence = "Confidence weakens, price strength fades or the supporting business context becomes less convincing."
+        common_mistake = "Treating an early BUY prompt as certainty instead of waiting for confirmation and checking portfolio fit."
     elif signal == "SELL":
         readiness = "Caution zone"
         action_frame = "Avoid rushing in. Understand why the scanner is flagging weakness before considering exposure."
+        signal_meaning = "The scanner is highlighting weakness or downside pressure. Use it to review risk, not to assume the stock must fall."
+        stronger_evidence = "The stock stabilises, relative strength improves and new evidence weakens the current caution case."
+        weaker_evidence = "Lower highs, weaker confidence or negative business evidence continue to reinforce the cautious setup."
+        common_mistake = "Assuming SELL guarantees a collapse, or reacting without checking the time horizon and the evidence behind the warning."
     else:
         readiness = "Watch and learn"
         action_frame = "Keep on the watchlist until the signal, confidence or thesis becomes clearer."
+        signal_meaning = "The current inputs do not show a clear constructive or caution direction. The useful decision is what evidence to wait for."
+        stronger_evidence = "A clearer trend, confidence upgrade or supportive company evidence turns the balanced setup into a stronger research case."
+        weaker_evidence = "Confidence deteriorates, price action weakens or new information increases uncertainty around the setup."
+        common_mistake = "Reading HOLD or WATCH as ‘do nothing forever’ instead of defining the trigger that would prompt another review."
 
     score_breakdown = [
         {"label": "Signal strength", "text": f"{signal} signal with {strength.lower()} strength based on the current StockRadar confidence input."},
@@ -1783,6 +1799,12 @@ def get_premium_report(symbol, ai_context):
         "portfolio_fit_points": portfolio_fit_points,
         "readiness": readiness,
         "action_frame": action_frame,
+        "signal_reason": ai_context["reason"],
+        "momentum_view": ai_context["momentum_view"],
+        "signal_meaning": signal_meaning,
+        "stronger_evidence": stronger_evidence,
+        "weaker_evidence": weaker_evidence,
+        "common_mistake": common_mistake,
         "score_breakdown": score_breakdown,
         "checklist": checklist,
     }
@@ -1978,7 +2000,7 @@ ul{padding-left:22px;margin:12px 0 0;}
     <div class="card">
         <p class="kicker">Premium Comparison</p>
         <h2>{{ left.label }} vs {{ right.label }}</h2>
-        <div class="summary"><strong>Which looks stronger right now?</strong><br>{{ strength_summary }}</div>
+        <div class="summary"><strong>Key difference to research first</strong><br>{{ strength_summary }}</div>
     </div>
 
     <div class="card">
@@ -2227,14 +2249,14 @@ def premium_decision(symbol):
             <div class="card">
                 <p class="kicker">Premium Decision Layer</p>
                 <h1>{{ stock_display_label(symbol) }} Decision Panel</h1>
-                <p>Free shows the current {{ context.signal }} signal and confidence preview. Premium explains how to read that signal before making a decision: what it may mean, why it matters, where it could fit, and what risk to check next.</p>
+                <p><strong>Free shows the signal. Premium explains the decision.</strong> It helps you ask better questions before acting without revealing the full Premium answer in this preview.</p>
                 <div class="preview-grid">
-                    <div class="preview"><strong>Signal explanation</strong>Unlock the reasoning behind the confidence meter instead of seeing only the headline signal.</div>
-                    <div class="preview"><strong>Risk read</strong>See what could weaken the research case or make the setup less useful.</div>
-                    <div class="preview"><strong>Portfolio fit</strong>See whether this looks like core, satellite, defensive, cyclical, income or speculative exposure.</div>
-                    <div class="preview"><strong>Concentration warning</strong>Check whether this may duplicate sector, ETF, theme or mega-cap exposure.</div>
-                    <div class="preview"><strong>Watch-next trigger</strong>Review the next signal, price or business evidence worth checking.</div>
-                    <div class="preview"><strong>Decision checklist</strong>Use plain-English questions before treating any signal as actionable research.</div>
+                    <div class="preview"><strong>Why is this signal showing?</strong>Unlock the plain-English reasoning behind the headline prompt.</div>
+                    <div class="preview"><strong>What could weaken it?</strong>See the risk evidence that would make the setup less useful.</div>
+                    <div class="preview"><strong>Could it duplicate exposure?</strong>Check possible sector, ETF, theme or mega-cap overlap.</div>
+                    <div class="preview"><strong>Where might it fit?</strong>Review core, satellite, defensive, cyclical, income or speculative context.</div>
+                    <div class="preview"><strong>What should I watch next?</strong>Define the next signal, price or business evidence to review.</div>
+                    <div class="preview"><strong>What mistake should I avoid?</strong>See the common beginner trap linked to this type of signal.</div>
                 </div>
                 <div class="locked"><strong>Locked preview:</strong> Premium does not promise better returns. It gives you a clearer decision-support checklist for interpreting {{ stock_display_label(symbol) }}.</div>
                 <a class="button" href="/upgrade">Unlock Premium</a>
@@ -2305,6 +2327,17 @@ def premium_decision(symbol):
         </div>
 
         <div class="card">
+            <p class="kicker">Simple answer first</p>
+            <h2>What this signal means</h2>
+            <div class="grid">
+                <div class="box"><strong>Why this signal is showing</strong><span>{{ report.signal_reason }}</span></div>
+                <div class="box"><strong>Plain-English meaning</strong><span>{{ report.signal_meaning }}</span></div>
+                <div class="box"><strong>Risk to check</strong><span>{{ report.risk }}</span></div>
+                <div class="box"><strong>Common mistake to avoid</strong><span>{{ report.common_mistake }}</span></div>
+            </div>
+        </div>
+
+        <div class="card">
             <h2>Decision Score breakdown</h2>
             <p>This is a structured research read, not a precise prediction. It uses the available signal, confidence, risk and portfolio-role context so you can decide what needs checking next.</p>
             <div class="breakdown">
@@ -2324,6 +2357,14 @@ def premium_decision(symbol):
             <h2>Risk and concentration check</h2>
             <p>{{ report.risk }}</p>
             <p>{{ report.concentration_note }}</p>
+        </div>
+
+        <div class="card">
+            <h2>What could strengthen or weaken the research case?</h2>
+            <div class="breakdown">
+                <div class="breakdown-item"><strong>Stronger evidence</strong>{{ report.stronger_evidence }}</div>
+                <div class="breakdown-item"><strong>Weaker evidence</strong>{{ report.weaker_evidence }}</div>
+            </div>
         </div>
 
         <div class="card">
@@ -6029,8 +6070,8 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 	    <div class="card premium-home-card" id="premium-decision-section">
 	        <div class="premium-home-header">
 	            <p class="premium-home-kicker">Premium preview</p>
-	            <h2>See the reasoning behind the signal.</h2>
-	            <p>Premium turns a headline signal into a fuller research view: AI reasoning, risk read, decision context, portfolio fit and clearer signal explanation.</p>
+	            <h2>Trading apps show you the market. Premium helps you understand the signal.</h2>
+	            <p>Free tells you what the scanner is flagging. Premium is the calm decision-support layer: why it matters, what risk to check, where it may fit and what to research next.</p>
 	        </div>
 	        <div class="premium-example-card" aria-label="Static Premium example preview">
 	            <div class="premium-example-header">
@@ -6053,6 +6094,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 	            <h3 style="color:#f8fafc;margin:0 0 6px;font-size:22px;line-height:1.2;">What Premium helps you sort first.</h3>
 	            <p>{% if has_premium_access %}A quick decision-support scan from the current StockRadar universe.{% else %}Premium turns the signal table into a practical review of strongest setups, caution names and portfolio role.{% endif %}</p>
 	            <div class="premium-brief-grid">
+	                {% if has_premium_access %}
 	                {% if premium_decision_brief.strongest %}
 	                <div class="premium-brief-item"><small>Strongest setup</small><strong>{{ premium_decision_brief.strongest.label }}</strong><span>{{ premium_decision_brief.strongest.signal }} • {{ premium_decision_brief.strongest.confidence }} research prompt</span></div>
 	                {% endif %}
@@ -6067,6 +6109,12 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 	                {% endif %}
 	                {% if premium_decision_brief.watchlist %}
 	                <div class="premium-brief-item"><small>Watchlist idea</small><strong>{{ premium_decision_brief.watchlist.label }}</strong><span>Review what would make the setup stronger or weaker.</span></div>
+	                {% endif %}
+	                {% else %}
+	                <div class="premium-brief-item"><small>Strongest setup</small><strong>Locked</strong><span>See which current signal deserves research first — and why.</span></div>
+	                <div class="premium-brief-item"><small>Caution zone</small><strong>Locked</strong><span>Keep the main risk prompt visible before acting.</span></div>
+	                <div class="premium-brief-item"><small>Portfolio context</small><strong>Locked</strong><span>Review role and possible duplicate exposure.</span></div>
+	                <div class="premium-brief-item"><small>Watch next</small><strong>Locked</strong><span>Know what evidence should trigger another review.</span></div>
 	                {% endif %}
 	            </div>
 	            <p class="premium-example-note">Preview uses existing StockRadar signals only. It is educational research context, not a personal recommendation.</p>
@@ -6729,6 +6777,8 @@ p{color:#cbd5e1;line-height:1.68;font-size:var(--font-body);}
 .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:24px;}
 .mini{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:20px;padding:18px;color:#e5e7eb;line-height:1.55;}
 .mini strong{display:block;color:white;margin-bottom:6px;font-size:var(--font-card-title);line-height:1.25;}
+.difference-card{margin-top:24px;background:linear-gradient(135deg,rgba(9,36,42,0.95),rgba(22,24,35,0.94));border-color:rgba(56,189,248,0.22);}
+.difference-lead{max-width:820px;color:#dbeafe;font-size:18px;line-height:1.6;}
 .brief-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-top:18px;}
 .brief-card{background:rgba(7,17,28,0.66);border:1px solid rgba(255,255,255,0.10);border-radius:18px;padding:16px;line-height:1.55;}
 .brief-card small{display:block;color:#fbbf24;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:7px;}
@@ -6757,22 +6807,12 @@ p{color:#cbd5e1;line-height:1.68;font-size:var(--font-body);}
     <div class="hero">
         <div class="card">
             <span class="badge">StockRadar Premium</span>
-            <h1>Turn signals into a clearer decision review.</h1>
-            <p>Free shows what the scanner is flagging. Premium helps you understand why the signal is showing, what risk to check, where the stock may fit, and what to watch next.</p>
+            <h1>Understand the signal before you act.</h1>
+            <p><strong>Trading apps show you the market. StockRadar Premium helps you understand what the signal is trying to tell you.</strong></p>
+            <p>Free tells you the signal. Premium explains why it matters, what risk to check, where the stock may fit and what to research next.</p>
             <div class="feature"><span class="tick">✓</span><span><strong>Why this signal?</strong> Read the reasoning behind the headline BUY, HOLD or SELL research prompt.</span></div>
             <div class="feature"><span class="tick">✓</span><span><strong>What could go wrong?</strong> Check risk level, concentration warning and caution notes before adding exposure.</span></div>
             <div class="feature"><span class="tick">✓</span><span><strong>What deserves attention?</strong> Use Premium Watchlist to sort strongest setups, caution names and portfolio buckets.</span></div>
-            <div class="grid">
-                <div class="mini"><strong>Reason behind the signal</strong>Why the current setup appears in plain English.</div>
-                <div class="mini"><strong>Risk read before you act</strong>What could weaken the research case.</div>
-                <div class="mini"><strong>Portfolio-fit check</strong>Core, growth, defensive, dividend, ETF, speculative or cyclical role.</div>
-                <div class="mini"><strong>Strongest setups</strong>Start research with the highest-conviction names.</div>
-                <div class="mini"><strong>Caution zone</strong>Do not ignore weaker or lower-confidence setups.</div>
-                <div class="mini"><strong>Watch-next trigger</strong>Know what evidence would make the signal more useful.</div>
-                <div class="mini"><strong>Compare stocks with context</strong>Review two tickers side by side before choosing what to research next.</div>
-                <div class="mini"><strong>Decision checklist</strong>Check exposure, time horizon, risk fit and stop rules.</div>
-                <div class="mini"><strong>Educational only</strong>Decision support, not financial advice or promises of returns.</div>
-            </div>
         </div>
         <div class="card">
             <span class="badge">{% if premium_payments_enabled %}Premium plan{% else %}Premium preview{% endif %}</span>
@@ -6813,28 +6853,34 @@ p{color:#cbd5e1;line-height:1.68;font-size:var(--font-body);}
             </div>
         </div>
     </div>
+    <div class="card difference-card">
+        <span class="badge">Why Premium is different</span>
+        <h2 style="margin-top:16px;">A decision-support and education layer — not another broker screen.</h2>
+        <p class="difference-lead">Standard trading apps help you view prices and place trades. StockRadar Premium helps you slow down, understand the signal and decide what deserves further research without information overload.</p>
+        <div class="grid">
+            <div class="mini"><strong>Plain-English signal reasoning</strong>Understand why the current prompt is showing.</div>
+            <div class="mini"><strong>Risk read before you act</strong>See what could weaken the research case.</div>
+            <div class="mini"><strong>Portfolio-fit context</strong>Check role and possible duplicate exposure.</div>
+            <div class="mini"><strong>Watch-next trigger</strong>Know which evidence deserves another look.</div>
+            <div class="mini"><strong>Beginner mistake to avoid</strong>Spot the common trap linked to the signal.</div>
+            <div class="mini"><strong>Caution zone</strong>Keep weaker setups visible, not hidden by optimism.</div>
+            <div class="mini"><strong>Compare stocks with context</strong>Review two choices without declaring a guaranteed winner.</div>
+            <div class="mini"><strong>No information overload</strong>Get the simple answer first, with detail only where useful.</div>
+        </div>
+        <p class="note"><strong style="color:#cbd5e1;">£5/month. Cancel anytime.</strong> Educational decision support only — not financial advice, trade execution or a promise of returns.</p>
+    </div>
     <div class="card" style="margin-top:24px;background:linear-gradient(135deg,rgba(14,44,50,0.92),rgba(31,34,45,0.86));border-color:rgba(74,222,163,0.20);">
         <span class="badge">Premium Decision Brief</span>
         <h2>What would Premium help you review today?</h2>
-        <p>A compact decision-support view built from the current StockRadar signal table: what looks strongest, what needs caution, which broad-market setup matters, and what could sit on a watchlist.</p>
+        <p>A compact decision-support view that prioritises what deserves research without exposing the live Premium answers on this free preview.</p>
         <div class="brief-grid">
-            {% if premium_decision_brief.strongest %}
-            <div class="brief-card"><small>Strongest setup</small><strong>{{ premium_decision_brief.strongest.label }}</strong><span>{{ premium_decision_brief.strongest.signal }} • {{ premium_decision_brief.strongest.confidence }}. Start with why the signal is showing.</span></div>
-            {% endif %}
-            {% if premium_decision_brief.caution %}
-            <div class="brief-card"><small>Caution zone</small><strong>{{ premium_decision_brief.caution.label }}</strong><span>{{ premium_decision_brief.caution.signal }}. Review what could weaken the setup.</span></div>
-            {% endif %}
-            {% if premium_decision_brief.market_setup %}
-            <div class="brief-card"><small>ETF / market setup</small><strong>{{ premium_decision_brief.market_setup.label }}</strong><span>{{ premium_decision_brief.market_setup.signal }} • broad-market context before single-stock risk.</span></div>
-            {% endif %}
-            {% if premium_decision_brief.non_us %}
-            <div class="brief-card"><small>UK / non-US idea</small><strong>{{ premium_decision_brief.non_us.label }}</strong><span>{{ premium_decision_brief.non_us.signal }} • regional diversification research prompt.</span></div>
-            {% endif %}
-            {% if premium_decision_brief.watchlist %}
-            <div class="brief-card"><small>Watchlist idea</small><strong>{{ premium_decision_brief.watchlist.label }}</strong><span>Check what would make this more compelling or more risky.</span></div>
-            {% endif %}
+            <div class="brief-card"><small>Strongest setup</small><strong>Premium answer locked</strong><span>See which current signal deserves research first and why.</span></div>
+            <div class="brief-card"><small>Caution zone</small><strong>Premium answer locked</strong><span>Review the main risk prompt before acting.</span></div>
+            <div class="brief-card"><small>Portfolio context</small><strong>Premium answer locked</strong><span>Check role, concentration and possible overlap.</span></div>
+            <div class="brief-card"><small>Beginner mistake</small><strong>Premium answer locked</strong><span>Spot the common trap before treating a signal as a conclusion.</span></div>
+            <div class="brief-card"><small>Watch next</small><strong>Premium answer locked</strong><span>Define the evidence that should trigger another review.</span></div>
         </div>
-        <p class="note">Educational only. This preview uses existing StockRadar signals and does not provide personal financial advice.</p>
+        <p class="note">Educational only. Premium does not provide personal financial advice or tell you what to trade.</p>
     </div>
     {% endif %}
     {% if not has_premium_access %}
@@ -6883,9 +6929,9 @@ stock_detail_html = """
 <body>
 <div class="card"><p><a href="/">← Back to Dashboard</a></p><h1>{{ stock_display_label(symbol) }} Stock Detail</h1><p style="color:#94a3b8;">Live chart view for {{ range_label }}. Use the buttons below to change timeframe.</p></div>
 
-	<div class="ai-grid"><div class="ai-card"><small>Free Signal Preview</small><h2 class="{% if ai_context.signal == 'BUY' %}buy{% elif ai_context.signal == 'SELL' %}sell{% elif ai_context.signal == 'HOLD' %}hold{% endif %}">{{ ai_context.signal }}</h2><p>Free shows the headline signal for {{ stock_display_label(symbol) }} so you can see what the scanner is flagging.</p><span class="signal-badge">Live stock page: {{ stock_display_label(symbol) }}</span></div><div class="ai-card warning"><small>Free Confidence Preview</small><div class="confidence-large">{{ ai_context.confidence }}</div><div class="free-meter">{{ ai_context.confidence_meter }}</div><span class="free-strength">Signal strength: {{ ai_context.strength_label }}</span><p style="margin-top:12px;">Free shows the basic score and meter. Premium explains whether that confidence is strong enough to research, wait, or apply extra caution.</p></div><div class="ai-card risk"><small>{% if has_premium_access %}Premium Active{% else %}Premium Preview{% endif %}</small><h2>Decision context</h2>{% if has_premium_access %}<p>{{ ai_context.watch_next }}</p><span class="signal-badge">Premium unlocked</span>{% else %}<p>Premium explains the decision layer behind {{ stock_display_label(symbol) }}: risk level, portfolio role, concentration warning and the next trigger to watch.</p><a class="signal-badge" href="/upgrade">Explore Premium</a>{% endif %}</div></div>
+	<div class="ai-grid"><div class="ai-card"><small>{% if has_premium_access %}Current Signal{% else %}Free Signal Preview{% endif %}</small><h2 class="{% if ai_context.signal == 'BUY' %}buy{% elif ai_context.signal == 'SELL' %}sell{% elif ai_context.signal == 'HOLD' %}hold{% endif %}">{{ ai_context.signal }}</h2><p>The headline signal shows what the scanner is flagging for {{ stock_display_label(symbol) }}.</p><span class="signal-badge">Live stock page: {{ stock_display_label(symbol) }}</span></div><div class="ai-card warning"><small>{% if has_premium_access %}Current Confidence{% else %}Free Confidence Preview{% endif %}</small><div class="confidence-large">{{ ai_context.confidence }}</div><div class="free-meter">{{ ai_context.confidence_meter }}</div><span class="free-strength">Signal strength: {{ ai_context.strength_label }}</span><p style="margin-top:12px;">The score and meter are a research prompt. Premium explains how to interpret them, what risk to check and what evidence matters next.</p></div><div class="ai-card risk"><small>{% if has_premium_access %}Premium Active{% else %}Premium Preview{% endif %}</small><h2>Decision context</h2>{% if has_premium_access %}<p>{{ ai_context.watch_next }}</p><span class="signal-badge">Premium unlocked</span>{% else %}<p>Premium explains the decision layer behind {{ stock_display_label(symbol) }}: risk level, portfolio role, concentration warning and the next trigger to watch.</p><a class="signal-badge" href="/upgrade">Explore Premium</a>{% endif %}</div></div>
 
-	<div class="premium-banner stock-locked-preview"><div><small>{% if has_premium_access %}Premium Active{% else %}Premium locked preview{% endif %}</small><h2>Free shows the signal. Premium explains the decision.</h2><p>Premium helps you understand what the {{ ai_context.signal }} signal means before acting: why the signal appears, whether the confidence is useful, how the stock might fit, which risks need checking and what to watch next.</p><div class="premium-preview-grid"><div class="premium-preview-item"><strong>Signal reasoning</strong><span>Why this setup is being flagged as a research prompt.</span></div><div class="premium-preview-item"><strong>Risk read</strong><span>What could weaken the case or require extra caution.</span></div><div class="premium-preview-item"><strong>Portfolio role</strong><span>Core, growth, defensive, dividend, ETF, cyclical or speculative context.</span></div><div class="premium-preview-item"><strong>Concentration warning</strong><span>Whether this may duplicate sector, ETF or theme exposure.</span></div><div class="premium-preview-item"><strong>Watch-next trigger</strong><span>What evidence would make the setup more or less useful.</span></div><div class="premium-preview-item"><strong>Decision checklist</strong><span>Questions to ask before treating a signal as actionable research.</span></div></div></div><div class="premium-cta-box">{% if has_premium_access %}<strong>Decision Panel unlocked</strong><p>You have full premium access for {{ stock_display_label(symbol) }}.</p><a class="payment-button" href="/premium-decision/{{ symbol }}">Open Decision Panel</a>{% else %}<strong>Unlock the {{ stock_display_label(symbol) }} Decision Panel</strong><p>Includes Decision Score, Portfolio Fit, risk context, concentration warning, watch-next trigger and Before You Act checks.</p><a class="payment-button" href="/upgrade">Upgrade to Premium</a><div class="payment-note">Helpful research context only. No investment advice or return promises.</div>{% endif %}</div></div>
+	<div class="premium-banner stock-locked-preview"><div><small>{% if has_premium_access %}Premium Active{% else %}Premium locked preview{% endif %}</small><h2>Free shows the signal. Premium explains the decision.</h2><p>Premium is the calm education layer behind the {{ ai_context.signal }} prompt. It helps you understand the questions that matter before acting without adding another screen of market noise.</p><div class="premium-preview-grid"><div class="premium-preview-item"><strong>Why is this signal showing?</strong><span>Unlock the plain-English reasoning behind the current research prompt.</span></div><div class="premium-preview-item"><strong>What could weaken it?</strong><span>See which risk evidence would make the case less useful.</span></div><div class="premium-preview-item"><strong>Could it duplicate exposure?</strong><span>Check possible sector, ETF, theme or mega-cap overlap.</span></div><div class="premium-preview-item"><strong>Where might it fit?</strong><span>Review core, growth, defensive, income, cyclical or speculative context.</span></div><div class="premium-preview-item"><strong>What should I watch next?</strong><span>Define the next signal, price or business evidence to review.</span></div><div class="premium-preview-item"><strong>What mistake should I avoid?</strong><span>See the beginner trap linked to this type of signal.</span></div></div></div><div class="premium-cta-box">{% if has_premium_access %}<strong>Decision Panel unlocked</strong><p>You have full premium access for {{ stock_display_label(symbol) }}.</p><a class="payment-button" href="/premium-decision/{{ symbol }}">Open Decision Panel</a>{% else %}<strong>Unlock the {{ stock_display_label(symbol) }} Decision Panel</strong><p>Includes signal meaning, risk checks, portfolio fit, a beginner-mistake warning, watch-next trigger and Before You Act checklist.</p><a class="payment-button" href="/upgrade">Upgrade to Premium</a><div class="payment-note">Helpful research context only. No investment advice or return promises.</div>{% endif %}</div></div>
 
 {% if dividend_context %}
 <div class="card dividend-card">
@@ -6928,7 +6974,29 @@ stock_detail_html = """
 
 <div class="card" style="background:linear-gradient(135deg,rgba(0,255,170,0.12),rgba(56,189,248,0.08));border-color:rgba(0,255,170,0.22);"><small style="color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.1em;">StockRadar Weekly</small><h2>Get weekly signal highlights</h2><p style="color:#cbd5e1;line-height:1.7;">StockRadar Weekly sends a plain-English market signal recap, including what’s strengthening, what’s weakening and what deserves attention next.</p><a class="payment-button" href="/newsletter">Join StockRadar Weekly</a></div>
 
-	{% if has_premium_access and example_report %}<div class="example-report"><small>Premium Decision Intelligence</small><h2>{{ example_report.headline }}</h2><p>{{ example_report.summary }}</p><div class="example-report-grid"><div class="example-report-card"><span class="premium-card-label">AI Confidence</span><div class="confidence-score">{{ example_report.confidence }}</div><div class="confidence-meter">{{ example_report.meter }}</div><span class="strength-pill">Signal strength: {{ example_report.strength }}</span><span class="premium-card-support">Confidence and signal strength shown as decision context, not a prediction.</span></div><div class="example-report-card"><span class="premium-card-label">Portfolio role</span><span class="premium-card-value">{{ example_report.portfolio_role }}</span><span class="premium-card-support">How this stock is framed inside a portfolio research view.</span></div><div class="example-report-card"><span class="premium-card-label">Decision readiness</span><span class="premium-card-value">{{ example_report.readiness }}</span><span class="premium-card-support">How ready the current signal looks for further research.</span></div><div class="example-report-card"><span class="premium-card-label">Risk read</span><span class="premium-card-value">{{ example_report.risk_level }}</span><span class="premium-card-support">{{ example_report.risk }}</span></div><div class="example-report-card"><span class="premium-card-label">Watch-next trigger</span><span class="premium-card-value">{{ example_report.next_move }}</span><span class="premium-card-support">Use this to decide what evidence to check next.</span></div><div class="example-report-card"><span class="premium-card-label">Concentration warning</span><span class="premium-card-value">{{ example_report.concentration_note }}</span><span class="premium-card-support">Check whether this duplicates exposure you already hold.</span></div></div><div class="example-report-card premium-decision-use"><span class="premium-card-label">Premium decision use</span><span class="premium-card-value">{{ example_report.decision_use }}</span><span class="premium-card-support">Use this as a plain-English research frame before deciding what to check next.</span></div><div class="example-report-card premium-decision-use"><span class="premium-card-label">Decision checklist preview</span><ul style="margin:0;padding-left:18px;">{% for item in example_report.checklist[:3] %}<li>{{ item }}</li>{% endfor %}</ul><span class="premium-card-support">Open the full panel for the complete Before You Act checklist.</span></div><div class="example-report-actions"><a class="payment-button" href="/premium-decision/{{ symbol }}">Open Full Premium Decision Panel</a></div></div>{% endif %}
+	{% if has_premium_access and example_report %}
+    <div class="example-report">
+        <small>Premium Decision Intelligence</small>
+        <h2>{{ example_report.headline }}</h2>
+        <p>{{ example_report.summary }}</p>
+        <div class="example-report-card premium-decision-use">
+            <span class="premium-card-label">Simple answer first</span>
+            <span class="premium-card-value">{{ example_report.signal_meaning }}</span>
+            <span class="premium-card-support"><strong>Why it is showing:</strong> {{ example_report.signal_reason }}</span>
+        </div>
+        <div class="example-report-grid">
+            <div class="example-report-card"><span class="premium-card-label">AI Confidence</span><div class="confidence-score">{{ example_report.confidence }}</div><div class="confidence-meter">{{ example_report.meter }}</div><span class="strength-pill">Signal strength: {{ example_report.strength }}</span><span class="premium-card-support">Decision context, not a prediction.</span></div>
+            <div class="example-report-card"><span class="premium-card-label">Portfolio role</span><span class="premium-card-value">{{ example_report.portfolio_role }}</span><span class="premium-card-support">How this stock is framed inside a portfolio research view.</span></div>
+            <div class="example-report-card"><span class="premium-card-label">Risk to check</span><span class="premium-card-value">{{ example_report.risk_level }}</span><span class="premium-card-support">{{ example_report.risk }}</span></div>
+            <div class="example-report-card"><span class="premium-card-label">Common mistake to avoid</span><span class="premium-card-value">{{ example_report.common_mistake }}</span></div>
+            <div class="example-report-card"><span class="premium-card-label">What could strengthen it</span><span class="premium-card-value">{{ example_report.stronger_evidence }}</span></div>
+            <div class="example-report-card"><span class="premium-card-label">What could weaken it</span><span class="premium-card-value">{{ example_report.weaker_evidence }}</span></div>
+        </div>
+        <div class="example-report-card premium-decision-use"><span class="premium-card-label">Watch next</span><span class="premium-card-value">{{ example_report.next_move }}</span><span class="premium-card-support">Use this to decide what evidence to check next.</span></div>
+        <div class="example-report-card premium-decision-use"><span class="premium-card-label">Decision checklist preview</span><ul style="margin:0;padding-left:18px;">{% for item in example_report.checklist[:3] %}<li>{{ item }}</li>{% endfor %}</ul><span class="premium-card-support">Open the full panel for the complete Before You Act checklist.</span></div>
+        <div class="example-report-actions"><a class="payment-button" href="/premium-decision/{{ symbol }}">Open Full Premium Decision Panel</a></div>
+    </div>
+    {% endif %}
 
 <div class="range-row">{% for key, settings in chart_ranges.items() %}<a class="range-button {% if key == active_range %}active{% endif %}" href="/stock/{{ symbol }}?range={{ key }}">{{ settings.label }}</a>{% endfor %}</div>
 <div class="metric-grid"><div class="metric"><small>Range start</small><h2>{{ chart_data.start_price }}</h2></div><div class="metric"><small>Range latest</small><h2>{{ chart_data.end_price }}</h2></div><div class="metric"><small>Range move</small><h2 class="{{ chart_data.direction }}">{{ chart_data.change_amount }}</h2></div><div class="metric"><small>Range % move</small><h2 class="{{ chart_data.direction }}">{{ chart_data.change_percent }}</h2></div></div>
