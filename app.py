@@ -16,6 +16,9 @@ import smtplib
 import ssl
 import threading
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 
 
 def is_production_environment():
@@ -116,13 +119,22 @@ NEWSLETTER_AUTO_SEND_ENABLED = (
     .lower()
     in {"1", "true", "yes", "on"}
 )
-NEWSLETTER_AUTO_SEND_HOUR_LONDON = int(os.environ.get("NEWSLETTER_AUTO_SEND_HOUR_LONDON", "17"))
+NEWSLETTER_AUTO_SEND_HOUR_LONDON = int(os.environ.get("NEWSLETTER_AUTO_SEND_HOUR_LONDON", "9"))
 NEWSLETTER_AUTO_SEND_MINUTE_LONDON = int(os.environ.get("NEWSLETTER_AUTO_SEND_MINUTE_LONDON", "0"))
 NEWSLETTER_AUTO_SEND_CHECK_INTERVAL_SECONDS = int(
     os.environ.get("NEWSLETTER_AUTO_SEND_CHECK_INTERVAL_SECONDS", "300")
 )
 NEWSLETTER_SEND_LOCK_STALE_SECONDS = 60 * 60
 NEWSLETTER_AUTO_SEND_THREAD_STARTED = False
+BEEHIIV_API_KEY = os.environ.get("BEEHIIV_API_KEY", "").strip()
+BEEHIIV_PUBLICATION_ID = os.environ.get("BEEHIIV_PUBLICATION_ID", "").strip()
+BEEHIIV_AUTOSEND_ENABLED = (
+    os.environ.get("BEEHIIV_AUTOSEND_ENABLED", "false").strip().lower()
+    in {"1", "true", "yes", "on"}
+)
+BEEHIIV_API_BASE_URL = "https://api.beehiiv.com/v2"
+BEEHIIV_REQUEST_TIMEOUT_SECONDS = 20
+NEWSLETTER_BEEHIIV_STATE_PATH = os.path.join(APP_ROOT, "newsletter_beehiiv_state.json")
 LAST_NEWS_FETCH_STATUS = {
     "provider": "none",
     "status": "not_started",
@@ -4535,6 +4547,177 @@ def save_newsletter_delivery_log(data):
     return save_json_storage(NEWSLETTER_DELIVERY_LOG_PATH, data)
 
 
+def beehiiv_configured():
+    return bool(BEEHIIV_API_KEY and BEEHIIV_PUBLICATION_ID)
+
+
+def newsletter_issue_key(issue):
+    issue_date = str(issue.get("metadata", {}).get("issue_date") or "").strip()
+    return f"newsletter:{issue_date}" if issue_date else ""
+
+
+def load_newsletter_beehiiv_state():
+    data = load_json_storage(NEWSLETTER_BEEHIIV_STATE_PATH, {"issues": {}})
+    if not isinstance(data.get("issues"), dict):
+        data["issues"] = {}
+    return data
+
+
+def save_newsletter_beehiiv_state(data):
+    return save_json_storage(NEWSLETTER_BEEHIIV_STATE_PATH, data)
+
+
+def sanitise_newsletter_error(error):
+    message = str(error or "unknown_error")
+    if BEEHIIV_API_KEY:
+        message = message.replace(BEEHIIV_API_KEY, "[redacted]")
+    message = re.sub(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", "[redacted-email]", message)
+    return re.sub(r"\s+", " ", message).strip()[:240]
+
+
+def record_beehiiv_issue_state(issue_key, **updates):
+    data = load_newsletter_beehiiv_state()
+    current = data["issues"].get(issue_key, {})
+    current.update(updates)
+    current["issue_key"] = issue_key
+    current["updated_at"] = newsletter_storage_timestamp()
+    data["issues"][issue_key] = current
+    save_newsletter_beehiiv_state(data)
+    return current
+
+
+def beehiiv_api_request(method, path, payload=None, query=None):
+    if not beehiiv_configured():
+        raise RuntimeError("beehiiv_not_configured")
+    url = f"{BEEHIIV_API_BASE_URL}{path}"
+    if query:
+        url = f"{url}?{urllib.parse.urlencode(query, doseq=True)}"
+    body = None if payload is None else json.dumps(payload).encode("utf-8")
+    request_object = urllib.request.Request(
+        url,
+        data=body,
+        method=method,
+        headers={
+            "Authorization": f"Bearer {BEEHIIV_API_KEY}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(
+            request_object,
+            timeout=BEEHIIV_REQUEST_TIMEOUT_SECONDS,
+        ) as response:
+            response_body = response.read().decode("utf-8")
+            return json.loads(response_body) if response_body else {}
+    except urllib.error.HTTPError as error:
+        safe_reason = f"beehiiv_http_{error.code}"
+        raise RuntimeError(safe_reason) from error
+    except (urllib.error.URLError, TimeoutError) as error:
+        raise RuntimeError("beehiiv_request_failed") from error
+
+
+def find_existing_beehiiv_issue(issue):
+    issue_key = newsletter_issue_key(issue)
+    issue_title = str(issue.get("metadata", {}).get("title") or "")
+    response = beehiiv_api_request(
+        "GET",
+        f"/publications/{urllib.parse.quote(BEEHIIV_PUBLICATION_ID)}/posts",
+        query={"limit": 100, "page": 1},
+    )
+    for post in response.get("data", []):
+        tags = post.get("content_tags") or []
+        if issue_key in tags or str(post.get("title") or "") == issue_title:
+            return post
+    return None
+
+
+def build_beehiiv_post_payload(issue):
+    issue_url = f"{PRODUCTION_BASE_URL}/newsletter/latest"
+    status = "confirmed" if BEEHIIV_AUTOSEND_ENABLED else "draft"
+    body_content = (
+        f'<p>{xml_escape(str(issue.get("summary") or "Your weekly StockRadar market brief is ready."))}</p>'
+        f'<p><a href="{issue_url}">Read the full StockRadar Weekly issue</a></p>'
+        "<p>Educational market information only; not personal financial advice.</p>"
+    )
+    return {
+        "title": issue["metadata"]["title"],
+        "subtitle": "The 5-minute market signal: what strengthened, what weakened, and what may matter next.",
+        "body_content": body_content,
+        "status": status,
+        "content_tags": [newsletter_issue_key(issue)],
+        "email_settings": {
+            "email_subject_line": issue["metadata"]["title"],
+            "email_preview_text": "Your weekly StockRadar market signal brief is ready.",
+        },
+    }
+
+
+def create_beehiiv_issue(issue):
+    issue_key = newsletter_issue_key(issue)
+    local_state = load_newsletter_beehiiv_state()["issues"].get(issue_key, {})
+    if local_state.get("status") in {"beehiiv_draft_created", "beehiiv_scheduled", "beehiiv_published"}:
+        return dict(local_state, duplicate=True)
+
+    existing = find_existing_beehiiv_issue(issue)
+    if existing:
+        existing_status = str(existing.get("status") or "").lower()
+        state_status = "beehiiv_published" if existing_status not in {"draft", "pending"} else "beehiiv_draft_created"
+        return dict(record_beehiiv_issue_state(
+            issue_key,
+            status=state_status,
+            beehiiv_post_id=existing.get("id", ""),
+            beehiiv_status=existing_status,
+            failure_reason="",
+        ), duplicate=True)
+
+    response = beehiiv_api_request(
+        "POST",
+        f"/publications/{urllib.parse.quote(BEEHIIV_PUBLICATION_ID)}/posts",
+        payload=build_beehiiv_post_payload(issue),
+    )
+    post = response.get("data") or {}
+    post_id = str(post.get("id") or "")
+    if not post_id:
+        raise RuntimeError("beehiiv_response_missing_post_id")
+    state_status = "beehiiv_published" if BEEHIIV_AUTOSEND_ENABLED else "beehiiv_draft_created"
+    return record_beehiiv_issue_state(
+        issue_key,
+        status=state_status,
+        beehiiv_post_id=post_id,
+        beehiiv_status="confirmed" if BEEHIIV_AUTOSEND_ENABLED else "draft",
+        preview_url=str(post.get("preview_url") or ""),
+        last_successful_publish_at=(
+            newsletter_storage_timestamp() if BEEHIIV_AUTOSEND_ENABLED else ""
+        ),
+        failure_reason="",
+    )
+
+
+def create_beehiiv_subscription(email):
+    clean_email = normalize_email(email)
+    if not valid_newsletter_email(clean_email):
+        raise ValueError("invalid_email")
+    response = beehiiv_api_request(
+        "POST",
+        f"/publications/{urllib.parse.quote(BEEHIIV_PUBLICATION_ID)}/subscriptions",
+        payload={
+            "email": clean_email,
+            "reactivate_existing": True,
+            "send_welcome_email": True,
+            "utm_source": "stockradar",
+            "utm_medium": "website",
+            "utm_campaign": "stockradar_weekly",
+            "referring_site": PRODUCTION_BASE_URL,
+            "double_opt_override": "not_set",
+        },
+    )
+    subscription = response.get("data") or {}
+    if not subscription.get("id"):
+        raise RuntimeError("beehiiv_response_missing_subscription_id")
+    return subscription
+
+
 def newsletter_email_configured():
     return bool(
         NEWSLETTER_EMAIL_ENABLED
@@ -4668,9 +4851,31 @@ def newsletter_status_snapshot(now=None):
         key=lambda item: str(item.get("completed_at") or ""),
         default={},
     )
+    beehiiv_issues = load_newsletter_beehiiv_state().get("issues", {})
+    current_beehiiv = beehiiv_issues.get(
+        f"newsletter:{metadata['issue_date']}",
+        {},
+    )
+    published_issues = [
+        item for item in beehiiv_issues.values()
+        if item.get("status") == "beehiiv_published"
+    ]
+    last_published = max(
+        published_issues,
+        key=lambda item: str(item.get("last_successful_publish_at") or ""),
+        default={},
+    )
 
     return {
         "email_configured": newsletter_email_configured(),
+        "content_generation_status": current_beehiiv.get("content_generation_status", "not_due"),
+        "beehiiv_configured": beehiiv_configured(),
+        "beehiiv_autosend_enabled": BEEHIIV_AUTOSEND_ENABLED,
+        "beehiiv_campaign_status": current_beehiiv.get("status", "not_due"),
+        "beehiiv_post_id": current_beehiiv.get("beehiiv_post_id", ""),
+        "transactional_smtp_configured": newsletter_email_configured(),
+        "last_successful_beehiiv_publish_at": last_published.get("last_successful_publish_at", ""),
+        "last_failure_reason": sanitise_newsletter_error(current_beehiiv.get("failure_reason", "")),
         "auto_send_enabled": NEWSLETTER_AUTO_SEND_ENABLED,
         "cron_secret_configured": bool(NEWSLETTER_CRON_SECRET),
         "current_issue_guid": metadata["guid"],
@@ -4909,14 +5114,63 @@ def newsletter_automation_not_due_summary(reason, now=None):
 
 
 def run_due_newsletter_automation(delivery_type="auto", now=None):
-    if not newsletter_email_configured():
-        return newsletter_automation_not_due_summary("email_not_configured", now)
     if not newsletter_auto_send_due(now):
         return newsletter_automation_not_due_summary("not_due", now)
+    london_now = newsletter_london_now(now)
+    metadata = newsletter_issue_metadata(london_now)
+    issue_key = f"newsletter:{metadata['issue_date']}"
+    if not beehiiv_configured():
+        state = record_beehiiv_issue_state(
+            issue_key,
+            status="failed",
+            content_generation_status="not_due",
+            failure_reason="beehiiv_not_configured",
+        )
+        return dict(state, automation_due=True, reason="beehiiv_not_configured")
 
-    summary = send_weekly_newsletter_to_eligible_subscribers(delivery_type=delivery_type)
-    summary["automation_due"] = True
-    return summary
+    lock_path = acquire_newsletter_issue_lock(issue_key)
+    if lock_path is None:
+        state = load_newsletter_beehiiv_state()["issues"].get(issue_key, {})
+        return dict(
+            state,
+            issue_key=issue_key,
+            automation_due=True,
+            duplicate=True,
+            reason="workflow_in_progress",
+        )
+
+    record_beehiiv_issue_state(
+        issue_key,
+        status="generating",
+        content_generation_status="generating",
+        failure_reason="",
+    )
+    try:
+        issue = build_weekly_newsletter_issue(now=london_now)
+        record_beehiiv_issue_state(
+            issue_key,
+            status="generated",
+            content_generation_status="generated",
+        )
+        result = create_beehiiv_issue(issue)
+        result["automation_due"] = True
+        result["content_generation_status"] = "generated"
+        return result
+    except Exception as error:
+        safe_reason = sanitise_newsletter_error(error)
+        app.logger.error("Beehiiv newsletter workflow failed: %s", safe_reason)
+        state = record_beehiiv_issue_state(
+            issue_key,
+            status="failed",
+            content_generation_status=(
+                "generated" if load_newsletter_beehiiv_state()["issues"].get(issue_key, {}).get("content_generation_status") == "generated"
+                else "failed"
+            ),
+            failure_reason=safe_reason,
+        )
+        return dict(state, automation_due=True, reason=safe_reason)
+    finally:
+        release_newsletter_issue_lock(lock_path)
 
 
 def newsletter_auto_send_loop():
@@ -4925,11 +5179,9 @@ def newsletter_auto_send_loop():
             summary = run_due_newsletter_automation(delivery_type="auto")
             if summary.get("automation_due"):
                 app.logger.info(
-                    "Newsletter auto-send checked issue %s: sent=%s skipped=%s failed=%s",
-                    summary.get("issue_guid"),
-                    summary.get("sent"),
-                    summary.get("skipped"),
-                    summary.get("failed"),
+                    "Newsletter Beehiiv workflow checked %s: status=%s",
+                    summary.get("issue_key"),
+                    summary.get("status"),
                 )
         except Exception:
             app.logger.exception("Newsletter auto-send scheduler failed")
@@ -6604,32 +6856,19 @@ def newsletter():
             subscription_error = True
             subscription_message = "Please enter a valid email address."
         else:
-            subscriber, created = upsert_newsletter_subscriber(submitted_email)
-            if created:
-                issue = build_weekly_newsletter_issue()
-                delivery_result = deliver_newsletter_issue_to_subscriber(
-                    submitted_email,
-                    issue,
-                    delivery_type="welcome_latest",
-                )
-                if delivery_result["status"] == "sent":
-                    subscription_message = (
-                        "Subscribed successfully. The latest StockRadar Weekly issue has been sent. "
-                        "The regular weekly issue normally arrives Friday."
-                    )
-                elif delivery_result["reason"] == "email_not_configured":
-                    subscription_message = (
-                        "Subscribed successfully. The latest issue will be emailed when newsletter "
-                        "delivery is configured. The regular weekly issue normally arrives Friday."
-                    )
-                else:
-                    subscription_message = (
-                        "Subscribed successfully. The latest issue could not be emailed right now, "
-                        "but you can read it below and the regular weekly issue normally arrives Friday."
-                    )
-            else:
+            try:
+                create_beehiiv_subscription(submitted_email)
                 subscription_message = (
-                    "You are already subscribed to StockRadar Weekly. We have not resent the latest issue."
+                    "Subscribed successfully through Beehiiv. Please check your inbox if confirmation is required."
+                )
+            except Exception as error:
+                app.logger.error(
+                    "Beehiiv newsletter subscription failed: %s",
+                    sanitise_newsletter_error(error),
+                )
+                subscription_error = True
+                subscription_message = (
+                    "Newsletter signup is temporarily unavailable. Please try again shortly."
                 )
 
     return render_template_string(
@@ -6713,17 +6952,13 @@ newsletter_send_summary_html = """
 <p>Current issue deliveries recorded: {{ newsletter_status.current_issue_delivery_count }} · Last run: {{ newsletter_status.last_run_at or "none" }} {{ newsletter_status.last_run_delivery_type }}</p>
 <p>Next expected Friday auto-send: {{ newsletter_status.next_expected_friday_send_at }}</p>
 {% if not summary %}
-<p>This sends the current StockRadar Weekly issue only to subscribers who have not already received it.</p>
-<form method="POST" action="/admin/newsletter-send"><button type="submit">Send eligible newsletters</button></form>
+<p>This creates the current StockRadar Weekly issue in Beehiiv. Draft mode requires approval in Beehiiv; autosend mode publishes to Beehiiv's audience.</p>
+<form method="POST" action="/admin/newsletter-send"><button type="submit">Run Beehiiv workflow</button></form>
 {% else %}
-<p><strong>{{ summary.issue_title }}</strong></p>
-<p>Sent: {{ summary.sent }} · Skipped: {{ summary.skipped }} · Failed: {{ summary.failed }}</p>
-<table>
-<tr><th>Email</th><th>Status</th><th>Reason</th></tr>
-{% for item in summary.details %}
-<tr><td>{{ item.email }}</td><td>{{ item.status }}</td><td>{{ item.reason }}</td></tr>
-{% endfor %}
-</table>
+<p><strong>Issue:</strong> {{ summary.issue_key or summary.issue_guid }}</p>
+<p><strong>Beehiiv status:</strong> {{ summary.status or summary.reason }}</p>
+{% if summary.beehiiv_post_id %}<p><strong>Beehiiv post ID:</strong> {{ summary.beehiiv_post_id }}</p>{% endif %}
+{% if summary.failure_reason %}<p><strong>Failure:</strong> {{ summary.failure_reason }}</p>{% endif %}
 {% endif %}
 </div>
 {{ disclaimer_footer() | safe }}
@@ -6740,7 +6975,7 @@ def admin_newsletter_send():
 
     summary = None
     if request.method == "POST":
-        summary = send_weekly_newsletter_to_eligible_subscribers(delivery_type="manual")
+        summary = run_due_newsletter_automation(delivery_type="manual")
 
     return render_template_string(
         newsletter_send_summary_html,

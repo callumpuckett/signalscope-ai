@@ -8,5 +8,8 @@ premium_entitlements.json
 premium_entitlements.json.tmp
 newsletter_subscribers.json
 newsletter_subscribers.json.tmp
+newsletter_beehiiv_state.json
+newsletter_beehiiv_state.json.tmp
+.newsletter_locks/
 newsletter_delivery_log.json
 newsletter_delivery_log.json.tmp
