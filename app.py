@@ -1742,6 +1742,7 @@ def get_premium_report(symbol, ai_context):
         stronger_evidence = "Confidence stays above 80% while price action, company news and fundamentals continue to support the constructive setup."
         weaker_evidence = "Confidence falls, momentum fades or new business information challenges the reason behind the signal."
         common_mistake = "Chasing a strong BUY label without checking valuation, overlap, risk tolerance or what would invalidate the research case."
+        investor_lesson = "A positive signal is a starting point for research, not a reason to ignore valuation, risk or portfolio overlap."
     elif signal == "BUY":
         readiness = "Positive but not automatic"
         action_frame = "Worth researching, but wait for stronger evidence if risk or valuation feels stretched."
@@ -1749,6 +1750,7 @@ def get_premium_report(symbol, ai_context):
         stronger_evidence = "Confidence improves, price strength holds and relevant news or fundamentals support the same direction."
         weaker_evidence = "Confidence weakens, price strength fades or the supporting business context becomes less convincing."
         common_mistake = "Treating an early BUY prompt as certainty instead of waiting for confirmation and checking portfolio fit."
+        investor_lesson = "A positive signal is a starting point for research, not a reason to ignore valuation, risk or portfolio overlap."
     elif signal == "SELL":
         readiness = "Caution zone"
         action_frame = "Avoid rushing in. Understand why the scanner is flagging weakness before considering exposure."
@@ -1756,6 +1758,7 @@ def get_premium_report(symbol, ai_context):
         stronger_evidence = "The stock stabilises, relative strength improves and new evidence weakens the current caution case."
         weaker_evidence = "Lower highs, weaker confidence or negative business evidence continue to reinforce the cautious setup."
         common_mistake = "Assuming SELL guarantees a collapse, or reacting without checking the time horizon and the evidence behind the warning."
+        investor_lesson = "A cautious signal is a prompt to examine risk and evidence, not proof that a stock must fall."
     else:
         readiness = "Watch and learn"
         action_frame = "Keep on the watchlist until the signal, confidence or thesis becomes clearer."
@@ -1763,6 +1766,7 @@ def get_premium_report(symbol, ai_context):
         stronger_evidence = "A clearer trend, confidence upgrade or supportive company evidence turns the balanced setup into a stronger research case."
         weaker_evidence = "Confidence deteriorates, price action weakens or new information increases uncertainty around the setup."
         common_mistake = "Reading HOLD or WATCH as ‘do nothing forever’ instead of defining the trigger that would prompt another review."
+        investor_lesson = "A balanced signal teaches you to define what evidence would change your view rather than acting without a clear trigger."
 
     score_breakdown = [
         {"label": "Signal strength", "text": f"{signal} signal with {strength.lower()} strength based on the current StockRadar confidence input."},
@@ -1802,9 +1806,11 @@ def get_premium_report(symbol, ai_context):
         "signal_reason": ai_context["reason"],
         "momentum_view": ai_context["momentum_view"],
         "signal_meaning": signal_meaning,
+        "confidence_read": confidence_read,
         "stronger_evidence": stronger_evidence,
         "weaker_evidence": weaker_evidence,
         "common_mistake": common_mistake,
+        "investor_lesson": investor_lesson,
         "score_breakdown": score_breakdown,
         "checklist": checklist,
     }
@@ -2276,124 +2282,141 @@ def premium_decision(symbol):
     <title>{{ report.headline }} — StockRadar</title>
     <style>
     *{box-sizing:border-box;}
-    body{margin:0;background:linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
+    :root{--navy:#08111c;--panel:#111d2b;--panel-deep:#0b1623;--text:#f1f5f9;--muted:#aebdca;--green:#4adea3;--amber:#f0c36a;}
+    body{margin:0;background:radial-gradient(circle at 12% 6%,rgba(0,255,170,0.10),transparent 30%),linear-gradient(135deg,var(--navy),#101827);color:var(--text);font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
     .wrap{max-width:1120px;margin:0 auto;}
-    .card{background:linear-gradient(180deg,rgba(23,23,23,0.96),rgba(14,14,14,0.96));border:1px solid rgba(255,255,255,0.11);border-radius:30px;padding:32px;box-shadow:0 30px 85px rgba(0,0,0,0.42);margin-bottom:22px;}
-    .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:18px;}
-    .box{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:20px;padding:18px;line-height:1.6;}
-    .box strong{display:block;color:white;font-size:18px;margin-bottom:6px;}
-    .box span,p,li{color:#cbd5e1;line-height:1.7;}
+    .back{display:inline-block;margin-bottom:22px;color:#69c9f2;font-weight:900;text-decoration:none;}
+    .card{background:linear-gradient(180deg,rgba(18,29,42,0.98),rgba(12,22,33,0.98));border:1px solid rgba(148,163,184,0.16);border-radius:28px;padding:30px;box-shadow:0 24px 70px rgba(0,0,0,0.32);margin-bottom:20px;}
+    .summary-card{padding:36px;background:linear-gradient(135deg,rgba(12,47,48,0.94),rgba(28,38,49,0.98) 62%,rgba(72,52,27,0.74));border-color:rgba(74,222,163,0.28);}
+    .kicker{color:var(--green);font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:11px;margin:0 0 9px;}
+    h1{font-size:clamp(34px,4.2vw,48px);line-height:1.06;margin:0 0 12px;letter-spacing:0;}
+    h2{font-size:clamp(23px,2.5vw,30px);line-height:1.16;margin:0 0 12px;color:var(--text);}
+    h3{font-size:19px;line-height:1.25;margin:0 0 12px;color:var(--text);}
+    p,li{color:var(--muted);line-height:1.65;}
     ul{padding-left:22px;margin:12px 0 0;}
     li{margin-bottom:8px;}
-    .breakdown{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-top:16px;}
-    .breakdown-item{background:rgba(255,255,255,0.055);border:1px solid rgba(255,255,255,0.10);border-radius:18px;padding:16px;line-height:1.6;}
-    .breakdown-item strong{display:block;color:#f8fafc;margin-bottom:5px;}
-    .kicker{color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;}
-    h1{font-size:44px;line-height:1.08;margin:0 0 16px 0;letter-spacing:0;}
-    h2{margin:0 0 12px 0;color:#f8fafc;}
-    a{color:#38bdf8;font-weight:900;text-decoration:none;}
-    .meter{font-family:monospace;color:#00ffaa;font-size:20px;letter-spacing:2px;}
-    .note{background:rgba(0,255,170,0.09);border:1px solid rgba(0,255,170,0.18);border-radius:20px;padding:18px;color:#d1fae5;line-height:1.7;}
-    .button{display:inline-block;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-radius:15px;padding:14px 18px;font-weight:950;text-decoration:none;margin-top:14px;}
-    @media(max-width:900px){body{padding:24px 16px;}.card{padding:24px 20px;border-radius:24px;}.grid,.breakdown{grid-template-columns:1fr;}h1{font-size:32px;}.button{display:block;text-align:center;}}
+    .identity-line{max-width:780px;margin:0 0 20px;}
+    .badges{display:flex;gap:9px;flex-wrap:wrap;margin:18px 0;}
+    .badge{display:inline-flex;align-items:center;min-height:34px;padding:7px 11px;border-radius:999px;border:1px solid rgba(148,163,184,0.22);background:rgba(7,17,28,0.60);color:#e5edf5;font-size:12px;font-weight:950;text-transform:uppercase;letter-spacing:0.07em;}
+    .badge.buy{border-color:rgba(74,222,128,0.34);color:#bbf7d0;}.badge.hold,.badge.watch{border-color:rgba(240,195,106,0.38);color:#fde68a;}.badge.sell{border-color:rgba(251,113,133,0.32);color:#fecdd3;}
+    .readiness{font-size:clamp(27px,3.3vw,38px);margin:0 0 10px;color:#fff;}
+    .action-frame{max-width:880px;margin:0;color:#e5edf5;font-size:18px;line-height:1.55;font-weight:800;}
+    .disclaimer{margin:18px 0 0;color:#9fb0bf;font-size:13px;line-height:1.55;}
+    .decision-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-bottom:20px;}
+    .decision-card{background:rgba(14,25,38,0.94);border:1px solid rgba(148,163,184,0.16);border-radius:22px;padding:22px;min-width:0;}
+    .card-label{display:block;margin-bottom:8px;color:var(--green);font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:0.1em;}
+    .primary-answer{display:block;color:#fff;font-size:20px;font-weight:950;line-height:1.3;overflow-wrap:anywhere;}
+    .support{display:block;margin-top:9px;color:var(--muted);font-size:14px;line-height:1.55;overflow-wrap:anywhere;}
+    .support strong{color:#dce8f1;}
+    .reminder{display:block;margin-top:11px;color:#93a6b7;font-size:12px;line-height:1.5;}
+    .caution{background:linear-gradient(145deg,rgba(106,76,24,0.34),rgba(14,25,38,0.96));border-color:rgba(240,195,106,0.30);}
+    .caution .card-label{color:#f6d88a;}
+    .lesson{background:rgba(74,222,163,0.07);border-color:rgba(74,222,163,0.20);}
+    .lesson p{margin:0;color:#d9eee6;font-size:16px;}
+    .supporting h2{margin-bottom:6px;}.supporting>p{margin:0 0 16px;}
+    details{background:rgba(7,17,28,0.56);border:1px solid rgba(148,163,184,0.14);border-radius:17px;margin-top:10px;overflow:hidden;}
+    summary{display:flex;align-items:center;min-height:48px;padding:13px 16px;color:#eef5fa;font-weight:900;cursor:pointer;line-height:1.35;}
+    summary:focus-visible{outline:3px solid rgba(105,201,242,0.72);outline-offset:-3px;}
+    .detail-body{padding:0 16px 16px;}.detail-body p:last-child{margin-bottom:0;}
+    .breakdown{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+    .breakdown-item{background:rgba(148,163,184,0.06);border-radius:14px;padding:14px;color:var(--muted);line-height:1.55;}
+    .breakdown-item strong{display:block;color:#e9f1f7;margin-bottom:4px;}
+    .button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;border-radius:15px;padding:12px 18px;font-weight:950;text-decoration:none;margin-top:14px;}
+    .identity-note{margin:18px 0 0;color:#aebdca;font-size:13px;line-height:1.55;}
+    @media(max-width:900px){body{padding:24px 16px;}.card,.summary-card{padding:24px 20px;border-radius:24px;}.decision-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.decision-card:last-child{grid-column:1/-1;}.breakdown{grid-template-columns:1fr;}}
+    @media(max-width:640px){.decision-grid{grid-template-columns:1fr;}.decision-card:last-child{grid-column:auto;}.action-frame{font-size:16px;}.badges{gap:7px;}.badge{font-size:11px;}.button{width:100%;text-align:center;}.summary-card{padding:24px 18px;}}
     </style>
     </head>
     <body>
-    <div class="wrap">
-        <a href="/stock/{{ symbol }}">← Back to {{ stock_display_label(symbol) }}</a>
+    <main class="wrap">
+        <a class="back" href="/stock/{{ symbol }}">← Back to {{ stock_display_label(symbol) }}</a>
 
-        <div class="card">
-            <p class="kicker">Premium Decision Layer</p>
-            <h1>{{ report.headline }}</h1>
-            <p>{{ report.summary }}</p>
+        <section class="card summary-card" aria-labelledby="premium-summary-heading">
+            <p class="kicker">Premium decision summary</p>
+            <h1 id="premium-summary-heading">{{ stock_display_label(symbol) }}</h1>
+            <p class="identity-line">Each Premium report is designed to help you understand the decision process, not simply copy a signal.</p>
+            <div class="badges" aria-label="Current signal and confidence">
+                <span class="badge {{ context.signal|lower }}">Signal: {{ context.signal }}</span>
+                <span class="badge">Confidence: {{ report.confidence }}</span>
+            </div>
+            <h2 class="readiness">{{ report.readiness }}</h2>
+            <p class="action-frame">{{ report.action_frame }}</p>
+            <p class="disclaimer">Educational decision support only. This is a research prompt, not a personalised recommendation.</p>
+        </section>
 
-            <div class="grid">
-                <div class="box">
-                    <strong>Signal</strong>
-                    <span>{{ context.signal }} • {{ report.confidence }}</span>
-                    <div class="meter">{{ report.meter }}</div>
+        <section class="decision-grid" aria-label="Practical decision points">
+            <article class="decision-card">
+                <span class="card-label">Risk to check</span>
+                <strong class="primary-answer">{{ report.risk_level }}</strong>
+                <span class="support">{{ report.risk }}</span>
+            </article>
+            <article class="decision-card">
+                <span class="card-label">Portfolio fit</span>
+                <strong class="primary-answer">{{ report.portfolio_role }}</strong>
+                <span class="support">{{ report.decision_use }}</span>
+                <span class="support"><strong>Exposure check:</strong> {{ report.concentration_note }}</span>
+                <span class="reminder">Portfolio fit depends on your own goals, circumstances, time horizon and existing exposure.</span>
+            </article>
+            <article class="decision-card">
+                <span class="card-label">Watch next</span>
+                <strong class="primary-answer">Next research trigger</strong>
+                <span class="support">{{ report.next_move }}</span>
+                <span class="support"><strong>What would improve the case:</strong> {{ report.stronger_evidence }}</span>
+            </article>
+        </section>
+
+        <aside class="card caution" aria-labelledby="mistake-heading">
+            <span class="card-label">Investor caution</span>
+            <h2 id="mistake-heading">Common mistake to avoid</h2>
+            <p>{{ report.common_mistake }}</p>
+        </aside>
+
+        <section class="card lesson" aria-labelledby="lesson-heading">
+            <span class="card-label">Investor lesson</span>
+            <h2 id="lesson-heading">What this teaches you</h2>
+            <p>{{ report.investor_lesson }}</p>
+        </section>
+
+        <section class="card supporting" aria-labelledby="supporting-heading">
+            <p class="kicker">Supporting detail</p>
+            <h2 id="supporting-heading">Explore the reasoning</h2>
+            <p>Open the sections that are useful for your research. The essential decision points stay visible above.</p>
+            <details open>
+                <summary>Why this signal?</summary>
+                <div class="detail-body">
+                    <p><strong>Plain-English meaning:</strong> {{ report.signal_meaning }}</p>
+                    <p><strong>Why it is showing:</strong> {{ report.signal_reason }}</p>
+                    <p><strong>How to read confidence:</strong> {{ report.confidence_read }}</p>
                 </div>
-
-                <div class="box">
-                    <strong>Portfolio role</strong>
-                    <span>{{ report.portfolio_role }}</span>
+            </details>
+            <details>
+                <summary>What would weaken the case?</summary>
+                <div class="detail-body"><p>{{ report.weaker_evidence }}</p></div>
+            </details>
+            <details>
+                <summary>Portfolio fit checklist</summary>
+                <div class="detail-body">
+                    <ul>{% for item in report.portfolio_fit_points %}<li>{{ item }}</li>{% endfor %}</ul>
+                    <a class="button" href="/portfolio-fit">Check Portfolio Fit</a>
                 </div>
-
-                <div class="box">
-                    <strong>Decision readiness</strong>
-                    <span>{{ report.readiness }}</span>
+            </details>
+            <details>
+                <summary>Before you decide checklist</summary>
+                <div class="detail-body"><ul>{% for item in report.checklist %}<li>{{ item }}</li>{% endfor %}</ul></div>
+            </details>
+            <details>
+                <summary>Decision score breakdown</summary>
+                <div class="detail-body">
+                    <p>This structured research read uses the existing signal, confidence, risk and portfolio-role context. It is not a precise prediction.</p>
+                    <div class="breakdown">
+                        {% for item in report.score_breakdown %}<div class="breakdown-item"><strong>{{ item.label }}</strong>{{ item.text }}</div>{% endfor %}
+                    </div>
                 </div>
-            </div>
-        </div>
-
-        <div class="card">
-            <p class="kicker">Simple answer first</p>
-            <h2>What this signal means</h2>
-            <div class="grid">
-                <div class="box"><strong>Why this signal is showing</strong><span>{{ report.signal_reason }}</span></div>
-                <div class="box"><strong>Plain-English meaning</strong><span>{{ report.signal_meaning }}</span></div>
-                <div class="box"><strong>Risk to check</strong><span>{{ report.risk }}</span></div>
-                <div class="box"><strong>Common mistake to avoid</strong><span>{{ report.common_mistake }}</span></div>
-            </div>
-        </div>
-
-        <div class="card">
-            <h2>Decision Score breakdown</h2>
-            <p>This is a structured research read, not a precise prediction. It uses the available signal, confidence, risk and portfolio-role context so you can decide what needs checking next.</p>
-            <div class="breakdown">
-                {% for item in report.score_breakdown %}
-                <div class="breakdown-item"><strong>{{ item.label }}</strong>{{ item.text }}</div>
-                {% endfor %}
-            </div>
-        </div>
-
-        <div class="card">
-            <h2>Decision use</h2>
-            <p>{{ report.decision_use }}</p>
-            <div class="note">{{ report.action_frame }}</div>
-        </div>
-
-        <div class="card">
-            <h2>Risk and concentration check</h2>
-            <p>{{ report.risk }}</p>
-            <p>{{ report.concentration_note }}</p>
-        </div>
-
-        <div class="card">
-            <h2>What could strengthen or weaken the research case?</h2>
-            <div class="breakdown">
-                <div class="breakdown-item"><strong>Stronger evidence</strong>{{ report.stronger_evidence }}</div>
-                <div class="breakdown-item"><strong>Weaker evidence</strong>{{ report.weaker_evidence }}</div>
-            </div>
-        </div>
-
-        <div class="card">
-            <h2>Portfolio fit check</h2>
-            <p>Already own other stocks or ETFs? Premium Portfolio Fit helps decide whether {{ stock_display_label(symbol) }} adds useful exposure or just repeats a risk you already have.</p>
-            <ul>
-                {% for item in report.portfolio_fit_points %}
-                <li>{{ item }}</li>
-                {% endfor %}
-            </ul>
-            <a class="button" href="/portfolio-fit">Check Portfolio Fit</a>
-        </div>
-
-        <div class="card">
-            <h2>Before You Act checklist</h2>
-            <ul>
-                {% for item in report.checklist %}
-                <li>{{ item }}</li>
-                {% endfor %}
-            </ul>
-        </div>
-
-        <div class="card">
-            <h2>Watch next</h2>
-            <p>{{ report.next_move }}</p>
-            <div class="note">{{ report.pro_angle }}</div>
-        </div>
+            </details>
+            <p class="identity-note">Premium helps you practise risk awareness, portfolio thinking, evidence-based research and patience so you can make more independent decisions.</p>
+        </section>
         {{ disclaimer_footer() | safe }}
-    </div>
+    </main>
     </body>
     </html>
     """
@@ -6921,6 +6944,42 @@ stock_detail_html = """
 <title>{{ stock_display_label(symbol) }} Stock Detail</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 	<style>
+	.stock-premium-report{margin-bottom:22px;}
+	.stock-premium-summary{background:linear-gradient(135deg,rgba(12,47,48,0.96),rgba(25,38,50,0.98) 62%,rgba(75,53,27,0.76));border:1px solid rgba(74,222,163,0.30);border-radius:28px;padding:34px;box-shadow:0 26px 72px rgba(0,0,0,0.34);}
+	.stock-premium-summary h2{font-size:clamp(29px,3.5vw,40px);margin:0 0 10px;}
+	.stock-premium-summary .premium-identity{max-width:820px;margin:0 0 18px;}
+	.stock-premium-badges{display:flex;flex-wrap:wrap;gap:9px;margin:18px 0;}
+	.stock-premium-badge{display:inline-flex;align-items:center;min-height:34px;padding:7px 11px;border:1px solid rgba(148,163,184,0.24);border-radius:999px;background:rgba(7,17,28,0.62);color:#e5edf5;font-size:12px;font-weight:950;text-transform:uppercase;letter-spacing:0.07em;}
+	.stock-premium-badge.buy{border-color:rgba(74,222,128,0.34);color:#bbf7d0;}.stock-premium-badge.hold,.stock-premium-badge.watch{border-color:rgba(240,195,106,0.38);color:#fde68a;}.stock-premium-badge.sell{border-color:rgba(251,113,133,0.32);color:#fecdd3;}
+	.stock-premium-readiness{display:block;color:#fff;font-size:clamp(26px,3vw,36px);font-weight:950;line-height:1.15;margin-bottom:9px;}
+	.stock-premium-action{margin:0;max-width:900px;color:#e7eef4;font-size:18px;font-weight:800;line-height:1.55;}
+	.stock-premium-disclaimer{margin:17px 0 0;color:#9fb0bf;font-size:13px;line-height:1.55;}
+	.stock-decision-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px;margin:18px 0;}
+	.stock-decision-card{min-width:0;padding:21px;border:1px solid rgba(148,163,184,0.16);border-radius:21px;background:rgba(14,25,38,0.95);}
+	.stock-premium-label{display:block;margin-bottom:8px;color:#86efac;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:0.1em;line-height:1.35;}
+	.stock-decision-answer{display:block;color:#f8fafc;font-size:20px;font-weight:950;line-height:1.3;overflow-wrap:anywhere;}
+	.stock-decision-support{display:block;margin-top:9px;color:#aebdca;font-size:14px;line-height:1.55;overflow-wrap:anywhere;}.stock-decision-support strong{color:#dce8f1;}
+	.stock-decision-reminder{display:block;margin-top:11px;color:#93a6b7;font-size:12px;line-height:1.5;}
+	.stock-premium-callout{border-radius:22px;padding:22px;margin:16px 0;border:1px solid rgba(240,195,106,0.30);background:linear-gradient(145deg,rgba(106,76,24,0.34),rgba(14,25,38,0.96));}
+	.stock-premium-callout h3,.stock-investor-lesson h3,.stock-supporting-detail h3{margin:0 0 9px;color:#f8fafc;font-size:23px;line-height:1.2;}
+	.stock-premium-callout p,.stock-investor-lesson p{margin:0;}
+	.stock-premium-callout .stock-premium-label{color:#f6d88a;}
+	.stock-investor-lesson{border-radius:22px;padding:22px;margin:16px 0;border:1px solid rgba(74,222,163,0.20);background:rgba(74,222,163,0.07);}
+	.stock-investor-lesson p{color:#d9eee6;font-size:16px;}
+	.stock-supporting-detail{border-radius:24px;padding:24px;margin-top:16px;background:rgba(10,21,33,0.92);border:1px solid rgba(148,163,184,0.16);}
+	.stock-supporting-detail>p{margin:0 0 15px;}
+	.stock-supporting-detail details{background:rgba(7,17,28,0.58);border:1px solid rgba(148,163,184,0.14);border-radius:17px;margin-top:10px;overflow:hidden;}
+	.stock-supporting-detail summary{display:flex;align-items:center;min-height:48px;padding:13px 16px;color:#eef5fa;font-weight:900;cursor:pointer;line-height:1.35;}
+	.stock-supporting-detail summary:focus-visible{outline:3px solid rgba(105,201,242,0.72);outline-offset:-3px;}
+	.stock-detail-body{padding:0 16px 16px;}.stock-detail-body p:last-child{margin-bottom:0;}
+	.stock-detail-body ul{padding-left:21px;}.stock-detail-body li{color:#aebdca;line-height:1.6;margin-bottom:8px;}
+	.stock-score-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+	.stock-score-item{padding:14px;border-radius:14px;background:rgba(148,163,184,0.06);color:#aebdca;line-height:1.55;}.stock-score-item strong{display:block;color:#e9f1f7;margin-bottom:4px;}
+	.stock-identity-note{margin:16px 0 0;color:#9fb0bf;font-size:13px;line-height:1.55;}
+	@media(max-width:900px){.stock-premium-summary{padding:24px 20px;border-radius:24px;}.stock-decision-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.stock-decision-card:last-child{grid-column:1/-1;}.stock-score-grid{grid-template-columns:1fr;}}
+	@media(max-width:640px){.stock-decision-grid{grid-template-columns:1fr;}.stock-decision-card:last-child{grid-column:auto;}.stock-premium-action{font-size:16px;}.stock-premium-badge{font-size:11px;}.stock-supporting-detail{padding:20px 16px;}.stock-detail-body .payment-button{width:100%;text-align:center;}}
+	</style>
+	<style>
 		*{box-sizing:border-box;}:root{--font-hero:clamp(34px,4vw,46px);--font-section:clamp(24px,2.4vw,30px);--font-card-title:18px;--font-body:15px;--font-small:13px;--font-kicker:11px;--font-cta:14px;}body{background:radial-gradient(circle at 12% 6%,rgba(0,255,170,0.11),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;margin:0;min-height:100vh;padding:48px;}.card{background:linear-gradient(180deg,rgba(18,29,42,0.97),rgba(12,22,33,0.97));padding:30px;border-radius:28px;margin-bottom:22px;border:1px solid rgba(148,163,184,0.16);box-shadow:0 22px 65px rgba(0,0,0,0.30);}h1,h2{color:#f1f5f9;line-height:1.12;letter-spacing:0;}h1{font-size:var(--font-hero);}h2{font-size:var(--font-section);}p{color:#b9c5d2;line-height:1.68;font-size:var(--font-body);}a{color:#69c9f2;text-decoration:none;font-weight:bold;}.kicker{color:#4adea3;font-weight:950;text-transform:uppercase;letter-spacing:.1em;font-size:var(--font-kicker);margin:0 0 8px;}.muted{color:#91a3b4;font-size:13px;}.range-row{display:flex;gap:12px;flex-wrap:wrap;margin:22px 0;}.range-button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:12px 16px;border-radius:15px;background:#111d2b;color:#dbe4ee;text-decoration:none;border:1px solid rgba(148,163,184,0.14);font-weight:800;line-height:1.1;text-align:center;}.range-button.active{background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;}.metric-grid,.ai-grid,.example-report-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-bottom:22px;}.metric-grid{grid-template-columns:repeat(4,1fr);}.ai-card,.metric,.example-report-card{background:rgba(14,25,38,0.90);border:1px solid rgba(148,163,184,0.15);border-radius:22px;padding:23px;}.ai-card.warning{background:linear-gradient(145deg,rgba(89,70,28,0.35),rgba(14,25,38,0.94));}.ai-card.risk{background:linear-gradient(145deg,rgba(24,60,78,0.32),rgba(14,25,38,0.94));}.premium-banner,.example-report{background:linear-gradient(135deg,rgba(15,55,50,0.74),rgba(55,42,26,0.60),rgba(20,45,61,0.62));border:1px solid rgba(74,222,163,0.20);border-radius:28px;padding:30px;margin-bottom:22px;}.premium-banner{display:grid;grid-template-columns:1.35fr 0.85fr;gap:24px;align-items:center;box-shadow:0 26px 70px rgba(0,0,0,0.34);}.stock-locked-preview{border-color:rgba(255,184,107,0.34);background:linear-gradient(135deg,rgba(12,47,48,0.92),rgba(81,54,28,0.62),rgba(20,45,61,0.78));}.premium-banner small,.example-report small{display:block;color:#86efac;font-weight:950;text-transform:uppercase;letter-spacing:0.1em;font-size:var(--font-kicker);margin-bottom:8px;}.premium-cta-box{background:rgba(9,18,28,0.84);border:1px solid rgba(255,184,107,0.24);border-radius:22px;padding:22px;text-align:center;}.premium-cta-box strong{display:block;color:#f8fafc;margin-bottom:8px;}.payment-button{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;border-radius:16px;padding:13px 19px;font-size:var(--font-cta);font-weight:950;text-decoration:none;line-height:1.1;}.payment-note{color:#a8b6c6;font-size:13px;margin-top:12px;line-height:1.55;}.signal-badge,.free-strength,.strength-pill{display:inline-block;margin-top:10px;padding:8px 12px;border-radius:999px;background:rgba(148,163,184,0.09);font-weight:900;font-size:12px;text-transform:uppercase;}.confidence-large,.confidence-score{font-size:36px;font-weight:950;}.free-meter,.confidence-meter{font-size:24px;letter-spacing:0;color:#4adea3;font-weight:950;margin:8px 0;}.dividend-card{border:1px solid rgba(74,222,163,0.18);}.dividend-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:16px 0;}.dividend-metric{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:16px;padding:14px;line-height:1.45;}.dividend-metric span{display:block;color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:0.07em;font-weight:900;margin-bottom:6px;}.dividend-metric strong{display:block;color:#e5f4ff;font-size:17px;}.dividend-empty{background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.20);border-radius:16px;padding:14px;color:#fde68a;line-height:1.65;}.dividend-note{color:#cbd5e1;background:rgba(148,163,184,0.07);border-radius:14px;padding:12px 14px;}.dividend-risk{color:#fecaca;background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.16);border-radius:14px;padding:12px 14px;}.chart-card{padding:24px;}.chart-shell{position:relative;width:100%;height:360px;min-height:360px;background:#0a1420;border-radius:18px;padding:16px;overflow:hidden;}.chart-shell canvas{display:block;width:100%!important;height:100%!important;background:transparent;border-radius:12px;padding:0;}.buy{color:#4ade80;font-weight:bold;}.sell{color:#fb7185;font-weight:bold;}.hold{color:#f4c95d;font-weight:bold;}@media(max-width:900px){:root{--font-hero:clamp(32px,9vw,38px);--font-section:clamp(23px,6vw,28px);}body{padding:24px 16px;}.card,.premium-banner,.example-report{padding:24px 20px;border-radius:24px;}.metric-grid,.ai-grid,.premium-banner,.example-report-grid,.dividend-grid{grid-template-columns:1fr;}.payment-button{display:block;text-align:center;}.range-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:18px 0;}.range-button{width:100%;padding:13px 10px;font-size:14px;}.metric{padding:18px;}.metric h2{font-size:24px;line-height:1.12;overflow-wrap:anywhere;}.chart-card{padding:18px 14px;}.chart-shell{height:340px;min-height:340px;padding:12px;border-radius:16px;}}
 		.example-report{padding:32px;}.example-report h2{margin:0 0 12px;}.example-report>p{max-width:980px;margin:0 0 22px;}.example-report-grid{align-items:stretch;margin-top:20px;}.example-report-card{display:flex;flex-direction:column;gap:8px;padding:24px;line-height:1.55;}.premium-card-label{display:block;color:#86efac;font-size:12px;font-weight:950;letter-spacing:0.11em;line-height:1.35;text-transform:uppercase;}.premium-card-value{display:block;color:#f8fafc;font-size:20px;font-weight:950;line-height:1.25;overflow-wrap:anywhere;}.premium-card-support{display:block;color:#a8b6c6;font-size:14px;line-height:1.58;margin-top:2px;}.premium-decision-use{margin-top:16px;}.premium-decision-use .premium-card-value{font-size:18px;line-height:1.45;}.example-report-card .confidence-score{line-height:1.05;margin-top:2px;}.example-report-card .confidence-meter{margin:4px 0 2px;}.example-report-actions{margin-top:18px;}.premium-preview-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:18px;}.premium-preview-item{padding:14px;border-radius:15px;background:rgba(7,17,28,0.58);border:1px solid rgba(255,255,255,0.09);line-height:1.45;}.premium-preview-item strong{display:block;color:#f8fafc;font-size:14px;margin-bottom:4px;}.premium-preview-item span{display:block;color:#aebdca;font-size:13px;}@media(max-width:900px){.example-report{padding:24px 20px;}.example-report-card{padding:20px;gap:7px;}.premium-card-value{font-size:18px;}.premium-decision-use .premium-card-value{font-size:17px;}.example-report-actions .payment-button{width:100%;text-align:center;}.premium-preview-grid{grid-template-columns:1fr;}}
 		.range-row{align-items:center;gap:8px;margin:18px 0 14px;padding:7px;background:rgba(8,19,31,0.74);border:1px solid rgba(148,163,184,0.14);border-radius:18px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.03);}.range-button{flex:1 1 104px;min-height:38px;padding:10px 12px;border-radius:12px;background:transparent;border:1px solid transparent;color:#aebdca;font-size:13px;font-weight:900;}.range-button:hover{text-decoration:none;background:rgba(148,163,184,0.08);color:#f8fafc;}.range-button.active{background:rgba(74,222,163,0.16);border-color:rgba(74,222,163,0.28);color:#d1fae5;box-shadow:0 10px 28px rgba(0,255,170,0.08);}.metric-grid{gap:12px;margin-bottom:18px;}.metric{padding:18px;border-radius:18px;background:linear-gradient(180deg,rgba(13,24,37,0.92),rgba(9,18,29,0.92));box-shadow:inset 0 1px 0 rgba(255,255,255,0.03);}.metric small{display:block;color:#8ea0b1;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;font-weight:950;margin-bottom:8px;}.metric h2{margin:0;font-size:clamp(21px,2vw,28px);line-height:1.1;overflow-wrap:anywhere;}.chart-card{padding:20px;border-radius:24px;background:linear-gradient(180deg,rgba(12,24,38,0.98),rgba(7,15,26,0.98));border-color:rgba(148,163,184,0.18);box-shadow:0 18px 48px rgba(0,0,0,0.26);}.chart-card-header{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:14px;}.chart-card-header h2{font-size:20px;line-height:1.15;margin:0;color:#f8fafc;}.chart-card-header span{display:block;color:#91a3b4;font-size:13px;line-height:1.45;margin-top:4px;}.chart-range-pill{flex:0 0 auto;border-radius:999px;padding:7px 10px;background:rgba(56,189,248,0.10);border:1px solid rgba(56,189,248,0.18);color:#bae6fd;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:0.07em;}.chart-shell{height:330px;min-height:330px;padding:14px;border-radius:18px;background:linear-gradient(180deg,rgba(4,12,24,0.98),rgba(8,20,32,0.96));border:1px solid rgba(148,163,184,0.10);}@media(max-width:900px){.range-row{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin:16px 0 12px;padding:6px;border-radius:16px;}.range-button{min-height:38px;padding:9px 8px;font-size:12px;border-radius:11px;}.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:16px;}.metric{padding:14px;border-radius:16px;}.metric small{font-size:10px;letter-spacing:0.07em;margin-bottom:7px;}.metric h2{font-size:20px;line-height:1.08;}.chart-card{padding:16px 12px;border-radius:22px;}.chart-card-header{align-items:flex-start;flex-direction:column;gap:8px;margin-bottom:12px;}.chart-card-header h2{font-size:18px;}.chart-range-pill{font-size:10px;padding:6px 9px;}.chart-shell{height:300px;min-height:300px;padding:10px;border-radius:15px;}}@media(max-width:390px){.metric-grid{grid-template-columns:1fr;}.chart-shell{height:288px;min-height:288px;}}
@@ -6929,9 +6988,9 @@ stock_detail_html = """
 <body>
 <div class="card"><p><a href="/">← Back to Dashboard</a></p><h1>{{ stock_display_label(symbol) }} Stock Detail</h1><p style="color:#94a3b8;">Live chart view for {{ range_label }}. Use the buttons below to change timeframe.</p></div>
 
-	<div class="ai-grid"><div class="ai-card"><small>{% if has_premium_access %}Current Signal{% else %}Free Signal Preview{% endif %}</small><h2 class="{% if ai_context.signal == 'BUY' %}buy{% elif ai_context.signal == 'SELL' %}sell{% elif ai_context.signal == 'HOLD' %}hold{% endif %}">{{ ai_context.signal }}</h2><p>The headline signal shows what the scanner is flagging for {{ stock_display_label(symbol) }}.</p><span class="signal-badge">Live stock page: {{ stock_display_label(symbol) }}</span></div><div class="ai-card warning"><small>{% if has_premium_access %}Current Confidence{% else %}Free Confidence Preview{% endif %}</small><div class="confidence-large">{{ ai_context.confidence }}</div><div class="free-meter">{{ ai_context.confidence_meter }}</div><span class="free-strength">Signal strength: {{ ai_context.strength_label }}</span><p style="margin-top:12px;">The score and meter are a research prompt. Premium explains how to interpret them, what risk to check and what evidence matters next.</p></div><div class="ai-card risk"><small>{% if has_premium_access %}Premium Active{% else %}Premium Preview{% endif %}</small><h2>Decision context</h2>{% if has_premium_access %}<p>{{ ai_context.watch_next }}</p><span class="signal-badge">Premium unlocked</span>{% else %}<p>Premium explains the decision layer behind {{ stock_display_label(symbol) }}: risk level, portfolio role, concentration warning and the next trigger to watch.</p><a class="signal-badge" href="/upgrade">Explore Premium</a>{% endif %}</div></div>
+	<div class="ai-grid"><div class="ai-card"><small>{% if has_premium_access %}Current Signal{% else %}Free Signal Preview{% endif %}</small><h2 class="{% if ai_context.signal == 'BUY' %}buy{% elif ai_context.signal == 'SELL' %}sell{% elif ai_context.signal == 'HOLD' %}hold{% endif %}">{{ ai_context.signal }}</h2><p>The headline signal shows what the scanner is flagging for {{ stock_display_label(symbol) }}.</p><span class="signal-badge">Live stock page: {{ stock_display_label(symbol) }}</span></div><div class="ai-card warning"><small>{% if has_premium_access %}Current Confidence{% else %}Free Confidence Preview{% endif %}</small><div class="confidence-large">{{ ai_context.confidence }}</div><div class="free-meter">{{ ai_context.confidence_meter }}</div><span class="free-strength">Signal strength: {{ ai_context.strength_label }}</span><p style="margin-top:12px;">The score and meter are a research prompt. Premium explains how to interpret them, what risk to check and what evidence matters next.</p></div><div class="ai-card risk"><small>{% if has_premium_access %}Premium Active{% else %}Premium Preview{% endif %}</small><h2>Decision context</h2>{% if has_premium_access %}<p>The Premium report below puts the simple answer first, followed by practical checks and optional supporting detail.</p><span class="signal-badge">Premium unlocked</span>{% else %}<p>Premium explains the decision layer behind {{ stock_display_label(symbol) }}: risk level, portfolio role, concentration warning and the next trigger to watch.</p><a class="signal-badge" href="/upgrade">Explore Premium</a>{% endif %}</div></div>
 
-	<div class="premium-banner stock-locked-preview"><div><small>{% if has_premium_access %}Premium Active{% else %}Premium locked preview{% endif %}</small><h2>Free shows the signal. Premium explains the decision.</h2><p>Premium is the calm education layer behind the {{ ai_context.signal }} prompt. It helps you understand the questions that matter before acting without adding another screen of market noise.</p><div class="premium-preview-grid"><div class="premium-preview-item"><strong>Why is this signal showing?</strong><span>Unlock the plain-English reasoning behind the current research prompt.</span></div><div class="premium-preview-item"><strong>What could weaken it?</strong><span>See which risk evidence would make the case less useful.</span></div><div class="premium-preview-item"><strong>Could it duplicate exposure?</strong><span>Check possible sector, ETF, theme or mega-cap overlap.</span></div><div class="premium-preview-item"><strong>Where might it fit?</strong><span>Review core, growth, defensive, income, cyclical or speculative context.</span></div><div class="premium-preview-item"><strong>What should I watch next?</strong><span>Define the next signal, price or business evidence to review.</span></div><div class="premium-preview-item"><strong>What mistake should I avoid?</strong><span>See the beginner trap linked to this type of signal.</span></div></div></div><div class="premium-cta-box">{% if has_premium_access %}<strong>Decision Panel unlocked</strong><p>You have full premium access for {{ stock_display_label(symbol) }}.</p><a class="payment-button" href="/premium-decision/{{ symbol }}">Open Decision Panel</a>{% else %}<strong>Unlock the {{ stock_display_label(symbol) }} Decision Panel</strong><p>Includes signal meaning, risk checks, portfolio fit, a beginner-mistake warning, watch-next trigger and Before You Act checklist.</p><a class="payment-button" href="/upgrade">Upgrade to Premium</a><div class="payment-note">Helpful research context only. No investment advice or return promises.</div>{% endif %}</div></div>
+	{% if not has_premium_access %}<div class="premium-banner stock-locked-preview"><div><small>Premium locked preview</small><h2>Free shows the signal. Premium explains the decision.</h2><p>Premium is the calm education layer behind the {{ ai_context.signal }} prompt. It helps you understand the questions that matter before acting without adding another screen of market noise.</p><div class="premium-preview-grid"><div class="premium-preview-item"><strong>Why is this signal showing?</strong><span>Unlock the plain-English reasoning behind the current research prompt.</span></div><div class="premium-preview-item"><strong>What could weaken it?</strong><span>See which risk evidence would make the case less useful.</span></div><div class="premium-preview-item"><strong>Could it duplicate exposure?</strong><span>Check possible sector, ETF, theme or mega-cap overlap.</span></div><div class="premium-preview-item"><strong>Where might it fit?</strong><span>Review core, growth, defensive, income, cyclical or speculative context.</span></div><div class="premium-preview-item"><strong>What should I watch next?</strong><span>Define the next signal, price or business evidence to review.</span></div><div class="premium-preview-item"><strong>What mistake should I avoid?</strong><span>See the beginner trap linked to this type of signal.</span></div></div></div><div class="premium-cta-box"><strong>Unlock the {{ stock_display_label(symbol) }} Decision Panel</strong><p>Includes signal meaning, risk checks, portfolio fit, a beginner-mistake warning, watch-next trigger and Before You Act checklist.</p><a class="payment-button" href="/upgrade">Upgrade to Premium</a><div class="payment-note"><a href="/premium-decision/{{ symbol }}">View the locked decision-panel preview</a></div><div class="payment-note">Helpful research context only. No investment advice or return promises.</div></div></div>{% endif %}
 
 {% if dividend_context %}
 <div class="card dividend-card">
@@ -6975,27 +7034,88 @@ stock_detail_html = """
 <div class="card" style="background:linear-gradient(135deg,rgba(0,255,170,0.12),rgba(56,189,248,0.08));border-color:rgba(0,255,170,0.22);"><small style="color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.1em;">StockRadar Weekly</small><h2>Get weekly signal highlights</h2><p style="color:#cbd5e1;line-height:1.7;">StockRadar Weekly sends a plain-English market signal recap, including what’s strengthening, what’s weakening and what deserves attention next.</p><a class="payment-button" href="/newsletter">Join StockRadar Weekly</a></div>
 
 	{% if has_premium_access and example_report %}
-    <div class="example-report">
-        <small>Premium Decision Intelligence</small>
-        <h2>{{ example_report.headline }}</h2>
-        <p>{{ example_report.summary }}</p>
-        <div class="example-report-card premium-decision-use">
-            <span class="premium-card-label">Simple answer first</span>
-            <span class="premium-card-value">{{ example_report.signal_meaning }}</span>
-            <span class="premium-card-support"><strong>Why it is showing:</strong> {{ example_report.signal_reason }}</span>
-        </div>
-        <div class="example-report-grid">
-            <div class="example-report-card"><span class="premium-card-label">AI Confidence</span><div class="confidence-score">{{ example_report.confidence }}</div><div class="confidence-meter">{{ example_report.meter }}</div><span class="strength-pill">Signal strength: {{ example_report.strength }}</span><span class="premium-card-support">Decision context, not a prediction.</span></div>
-            <div class="example-report-card"><span class="premium-card-label">Portfolio role</span><span class="premium-card-value">{{ example_report.portfolio_role }}</span><span class="premium-card-support">How this stock is framed inside a portfolio research view.</span></div>
-            <div class="example-report-card"><span class="premium-card-label">Risk to check</span><span class="premium-card-value">{{ example_report.risk_level }}</span><span class="premium-card-support">{{ example_report.risk }}</span></div>
-            <div class="example-report-card"><span class="premium-card-label">Common mistake to avoid</span><span class="premium-card-value">{{ example_report.common_mistake }}</span></div>
-            <div class="example-report-card"><span class="premium-card-label">What could strengthen it</span><span class="premium-card-value">{{ example_report.stronger_evidence }}</span></div>
-            <div class="example-report-card"><span class="premium-card-label">What could weaken it</span><span class="premium-card-value">{{ example_report.weaker_evidence }}</span></div>
-        </div>
-        <div class="example-report-card premium-decision-use"><span class="premium-card-label">Watch next</span><span class="premium-card-value">{{ example_report.next_move }}</span><span class="premium-card-support">Use this to decide what evidence to check next.</span></div>
-        <div class="example-report-card premium-decision-use"><span class="premium-card-label">Decision checklist preview</span><ul style="margin:0;padding-left:18px;">{% for item in example_report.checklist[:3] %}<li>{{ item }}</li>{% endfor %}</ul><span class="premium-card-support">Open the full panel for the complete Before You Act checklist.</span></div>
-        <div class="example-report-actions"><a class="payment-button" href="/premium-decision/{{ symbol }}">Open Full Premium Decision Panel</a></div>
-    </div>
+	<section class="stock-premium-report" aria-labelledby="stock-premium-summary-heading">
+	    <div class="stock-premium-summary">
+	        <span class="stock-premium-label">Premium decision summary</span>
+	        <h2 id="stock-premium-summary-heading">{{ stock_display_label(symbol) }}</h2>
+	        <p class="premium-identity">Each Premium report is designed to help you understand the decision process, not simply copy a signal.</p>
+	        <div class="stock-premium-badges" aria-label="Current signal and confidence">
+	            <span class="stock-premium-badge {{ ai_context.signal|lower }}">Signal: {{ ai_context.signal }}</span>
+	            <span class="stock-premium-badge">Confidence: {{ example_report.confidence }}</span>
+	        </div>
+	        <strong class="stock-premium-readiness">{{ example_report.readiness }}</strong>
+	        <p class="stock-premium-action">{{ example_report.action_frame }}</p>
+	        <p class="stock-premium-disclaimer">Educational decision support only. This is a research prompt, not a personalised recommendation.</p>
+	    </div>
+
+	    <div class="stock-decision-grid" aria-label="Practical decision points">
+	        <article class="stock-decision-card">
+	            <span class="stock-premium-label">Risk to check</span>
+	            <strong class="stock-decision-answer">{{ example_report.risk_level }}</strong>
+	            <span class="stock-decision-support">{{ example_report.risk }}</span>
+	        </article>
+	        <article class="stock-decision-card">
+	            <span class="stock-premium-label">Portfolio fit</span>
+	            <strong class="stock-decision-answer">{{ example_report.portfolio_role }}</strong>
+	            <span class="stock-decision-support">{{ example_report.decision_use }}</span>
+	            <span class="stock-decision-support"><strong>Exposure check:</strong> {{ example_report.concentration_note }}</span>
+	            <span class="stock-decision-reminder">Portfolio fit depends on your own goals, circumstances, time horizon and existing exposure.</span>
+	        </article>
+	        <article class="stock-decision-card">
+	            <span class="stock-premium-label">Watch next</span>
+	            <strong class="stock-decision-answer">Next research trigger</strong>
+	            <span class="stock-decision-support">{{ example_report.next_move }}</span>
+	            <span class="stock-decision-support"><strong>What would improve the case:</strong> {{ example_report.stronger_evidence }}</span>
+	        </article>
+	    </div>
+
+	    <aside class="stock-premium-callout" aria-labelledby="stock-mistake-heading">
+	        <span class="stock-premium-label">Investor caution</span>
+	        <h3 id="stock-mistake-heading">Common mistake to avoid</h3>
+	        <p>{{ example_report.common_mistake }}</p>
+	    </aside>
+
+	    <div class="stock-investor-lesson" aria-labelledby="stock-lesson-heading">
+	        <span class="stock-premium-label">Investor lesson</span>
+	        <h3 id="stock-lesson-heading">What this teaches you</h3>
+	        <p>{{ example_report.investor_lesson }}</p>
+	    </div>
+
+	    <div class="stock-supporting-detail" aria-labelledby="stock-supporting-heading">
+	        <span class="stock-premium-label">Supporting detail</span>
+	        <h3 id="stock-supporting-heading">Explore the reasoning</h3>
+	        <p>Open the sections that are useful for your research. The essential decision points stay visible above.</p>
+	        <details open>
+	            <summary>Why this signal?</summary>
+	            <div class="stock-detail-body">
+	                <p><strong>Plain-English meaning:</strong> {{ example_report.signal_meaning }}</p>
+	                <p><strong>Why it is showing:</strong> {{ example_report.signal_reason }}</p>
+	                <p><strong>How to read confidence:</strong> {{ example_report.confidence_read }}</p>
+	            </div>
+	        </details>
+	        <details>
+	            <summary>What would weaken the case?</summary>
+	            <div class="stock-detail-body"><p>{{ example_report.weaker_evidence }}</p></div>
+	        </details>
+	        <details>
+	            <summary>Portfolio fit checklist</summary>
+	            <div class="stock-detail-body"><ul>{% for item in example_report.portfolio_fit_points %}<li>{{ item }}</li>{% endfor %}</ul><a class="payment-button" href="/portfolio-fit">Check Portfolio Fit</a></div>
+	        </details>
+	        <details>
+	            <summary>Before you decide checklist</summary>
+	            <div class="stock-detail-body"><ul>{% for item in example_report.checklist %}<li>{{ item }}</li>{% endfor %}</ul></div>
+	        </details>
+	        <details>
+	            <summary>Decision score breakdown</summary>
+	            <div class="stock-detail-body">
+	                <p>This structured research read uses the existing signal, confidence, risk and portfolio-role context. It is not a precise prediction.</p>
+	                <div class="stock-score-grid">{% for item in example_report.score_breakdown %}<div class="stock-score-item"><strong>{{ item.label }}</strong>{{ item.text }}</div>{% endfor %}</div>
+	            </div>
+	        </details>
+	        <p class="stock-identity-note">Premium helps you practise risk awareness, portfolio thinking, evidence-based research and patience so you can make more independent decisions.</p>
+	        <a class="payment-button" href="/premium-decision/{{ symbol }}">Open focused Premium report</a>
+	    </div>
+	</section>
     {% endif %}
 
 <div class="range-row">{% for key, settings in chart_ranges.items() %}<a class="range-button {% if key == active_range %}active{% endif %}" href="/stock/{{ symbol }}?range={{ key }}">{{ settings.label }}</a>{% endfor %}</div>
