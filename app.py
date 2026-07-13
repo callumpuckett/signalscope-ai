@@ -1679,6 +1679,146 @@ def render_dividend_snapshot_html(dividend_context):
     """
 
 
+LEARNING_HIGH_GROWTH_TICKERS = {
+    "NVDA", "AMD", "AVGO", "TSLA", "PLTR", "SPCX", "COIN", "MSTR",
+}
+
+LEARNING_DIVIDEND_TICKERS = {
+    "KO", "PEP", "PG", "JNJ", "MCD", "WMT", "PFE", "MRK", "ABBV",
+    "VZ", "T", "XOM", "CVX", "BP.L", "SHEL.L", "HSBA.L", "LLOY.L",
+    "BARC.L", "AZN.L", "GSK.L", "VOD.L", "BT-A.L",
+}
+
+
+def build_stock_learning_lesson(symbol, signal, role_profile):
+    cleaned_symbol = canonical_stock_symbol(symbol)
+    role_key = str((role_profile or {}).get("key") or "research").strip().lower()
+    mapped_sector = str(SECTOR_MAP.get(cleaned_symbol) or "").strip()
+    universe_sector = ""
+
+    if not mapped_sector:
+        universe_item = next(
+            (
+                item for item in get_stock_universe()
+                if str(item.get("ticker") or "").strip().upper() == cleaned_symbol
+            ),
+            {},
+        )
+        universe_sector = str(universe_item.get("sector") or "").strip()
+
+    sector = mapped_sector or universe_sector or "Diversified"
+    sector_lower = sector.lower()
+    crypto_symbols = {"BTC-USD", "ETH-USD", "SOL-USD"}
+
+    if role_key in {"core_etf", "index"} or cleaned_symbol in DIVIDEND_ETF_TICKERS:
+        return {
+            "rule": "ETF or market index",
+            "lesson": "Broad-market ETFs help reduce company-specific risk through diversification.",
+            "why": "One company can face a serious setback. A broad fund spreads exposure across many businesses, although market-wide losses can still affect it.",
+            "question": "Does this fund genuinely broaden my portfolio, or does it repeat exposure I already own?",
+        }
+
+    if cleaned_symbol in crypto_symbols:
+        return {
+            "rule": "Crypto asset",
+            "lesson": "High volatility makes position sizing and risk management more important.",
+            "why": "Large price swings can make a small holding dominate how the whole portfolio feels and performs.",
+            "question": "Could I tolerate a sharp fall without abandoning my wider investing plan?",
+        }
+
+    if "bank" in sector_lower or "financial services" in sector_lower:
+        return {
+            "rule": "Bank or financial sector",
+            "lesson": "Bank performance is influenced by interest rates, lending activity and the wider economy.",
+            "why": "Loan demand, funding costs and customer defaults can change together as economic conditions move.",
+            "question": "What could changing rates or weaker borrowers mean for this bank’s earnings?",
+        }
+
+    if any(word in sector_lower for word in ("energy", "commodity", "materials")):
+        return {
+            "rule": "Energy or commodity sector",
+            "lesson": "Energy companies are often driven by commodity prices as much as company performance.",
+            "why": "A well-run business can still face lower profits when oil, gas or other commodity prices fall.",
+            "question": "Am I judging the company separately from the commodity cycle affecting it?",
+        }
+
+    if "healthcare" in sector_lower:
+        return {
+            "rule": "Healthcare sector",
+            "lesson": "Healthcare demand can remain resilient when weaker economic conditions affect other sectors.",
+            "why": "Healthcare can behave differently from growth stocks, but regulation, product pipelines and company-specific risks still matter.",
+            "question": "Which risks belong to the healthcare sector, and which are specific to this company?",
+        }
+
+    if cleaned_symbol in LEARNING_DIVIDEND_TICKERS:
+        return {
+            "rule": "Dividend-oriented company",
+            "lesson": "Dividend investing is about sustainable cash generation, not simply chasing the highest yield.",
+            "why": "Dividends are paid from business cash and can be reduced. A high yield is not free money if the underlying company is weakening.",
+            "question": "Could the business keep funding this dividend through a difficult period?",
+        }
+
+    if any(word in sector_lower for word in ("consumer defensive", "consumer staple", "staples")):
+        return {
+            "rule": "Consumer staples sector",
+            "lesson": "Consumer staple companies often prioritise steady cash generation rather than rapid growth.",
+            "why": "Everyday products can support more stable demand, although competition, costs and valuation still affect returns.",
+            "question": "Am I expecting steady compounding from this business, or unrealistic growth?",
+        }
+
+    if cleaned_symbol in LEARNING_HIGH_GROWTH_TICKERS:
+        return {
+            "rule": "High-growth company",
+            "lesson": "High-growth businesses can produce strong gains but also experience larger drawdowns.",
+            "why": "Their prices often reflect high expectations, so disappointment can cause sharp moves even when the business keeps growing.",
+            "question": "How much growth is already expected, and could I stay patient through volatility?",
+        }
+
+    if any(word in sector_lower for word in ("technology", "software", "cloud", "semiconductor")) or role_key == "growth":
+        return {
+            "rule": "Technology or growth role",
+            "lesson": "Quality technology companies can remain expensive for long periods, so patience and business quality both matter.",
+            "why": "Long-term investors often compare durable growth and competitive strength with the price they are being asked to pay.",
+            "question": "Would I still value this business if its share price moved sideways for a year?",
+        }
+
+    if any(word in sector_lower for word in ("industrial", "aerospace", "defence", "defense")) or role_key == "industrial":
+        return {
+            "rule": "Industrial or defence sector",
+            "lesson": "Industrial businesses often reward investors who understand cycles, contracts and long project timelines.",
+            "why": "Orders can provide useful visibility, but costs, policy changes and economic slowdowns can still affect delivery and profits.",
+            "question": "Which part of the investment case depends on the economic cycle or future contracts?",
+        }
+
+    if role_key == "defensive":
+        return {
+            "rule": "Defensive portfolio role",
+            "lesson": "Defensive businesses can add balance, but lower volatility does not mean no risk.",
+            "why": "Stable demand may soften economic pressure while debt, regulation, competition and valuation remain important.",
+            "question": "What makes this business defensive, and what could still weaken it?",
+        }
+
+    if role_key in {"cyclical", "quality"}:
+        return {
+            "rule": "Cyclical or quality portfolio role",
+            "lesson": "A strong business and a suitable investment price are related, but they are not the same thing.",
+            "why": "Investors often study business durability, economic sensitivity and valuation together instead of relying on one attractive feature.",
+            "question": "Which assumption would matter most if I reviewed a similar company?",
+        }
+
+    signal_wording = {
+        "BUY": "Positive research views still need a clear reason, a risk check and patience.",
+        "SELL": "Cautious research views are most useful when they identify which evidence could change.",
+    }.get(str(signal or "").upper(), "Balanced research views become more useful when investors define what would change their minds.")
+
+    return {
+        "rule": "General research discipline",
+        "lesson": signal_wording,
+        "why": "A repeatable research process helps investors compare opportunities without treating any single signal as a complete answer.",
+        "question": "If another company looked similar, would the same investing principle still apply?",
+    }
+
+
 def get_premium_report(symbol, ai_context):
     cleaned_symbol = symbol.strip().upper()
     signal = ai_context.get("signal", "HOLD")
@@ -1690,6 +1830,7 @@ def get_premium_report(symbol, ai_context):
     decision_use = role_profile["decision_use"]
     concentration_note = role_profile["concentration_note"]
     role_key = role_profile.get("key", "research")
+    learning_lesson = build_stock_learning_lesson(cleaned_symbol, signal, role_profile)
 
     if signal == "SELL":
         risk_level = "Higher caution"
@@ -1811,6 +1952,7 @@ def get_premium_report(symbol, ai_context):
         "weaker_evidence": weaker_evidence,
         "common_mistake": common_mistake,
         "investor_lesson": investor_lesson,
+        "learning_lesson": learning_lesson,
         "score_breakdown": score_breakdown,
         "checklist": checklist,
     }
@@ -2313,6 +2455,13 @@ def premium_decision(symbol):
     .caution .card-label{color:#f6d88a;}
     .lesson{background:rgba(74,222,163,0.07);border-color:rgba(74,222,163,0.20);}
     .lesson p{margin:0;color:#d9eee6;font-size:16px;}
+    .learning-card{background:linear-gradient(145deg,rgba(21,42,55,0.96),rgba(13,27,40,0.98));border-color:rgba(105,201,242,0.22);}
+    .learning-card>p{margin:0;}.learning-subtitle{color:#c5d7e3;font-size:15px;}
+    .learning-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:18px;}
+    .learning-part{min-width:0;padding:16px;border-radius:16px;background:rgba(7,17,28,0.52);border:1px solid rgba(148,163,184,0.14);}
+    .learning-part span{display:block;margin-bottom:7px;color:#86d8f5;font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:0.1em;}
+    .learning-part p{margin:0;color:#d7e2ea;font-size:14px;line-height:1.58;}
+    .learning-goal{margin-top:16px!important;color:#9fb0bf!important;font-size:13px;line-height:1.55;}
     .supporting h2{margin-bottom:6px;}.supporting>p{margin:0 0 16px;}
     details{background:rgba(7,17,28,0.56);border:1px solid rgba(148,163,184,0.14);border-radius:17px;margin-top:10px;overflow:hidden;}
     summary{display:flex;align-items:center;min-height:48px;padding:13px 16px;color:#eef5fa;font-weight:900;cursor:pointer;line-height:1.35;}
@@ -2323,7 +2472,7 @@ def premium_decision(symbol):
     .breakdown-item strong{display:block;color:#e9f1f7;margin-bottom:4px;}
     .button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;border-radius:15px;padding:12px 18px;font-weight:950;text-decoration:none;margin-top:14px;}
     .identity-note{margin:18px 0 0;color:#aebdca;font-size:13px;line-height:1.55;}
-    @media(max-width:900px){body{padding:24px 16px;}.card,.summary-card{padding:24px 20px;border-radius:24px;}.decision-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.decision-card:last-child{grid-column:1/-1;}.breakdown{grid-template-columns:1fr;}}
+    @media(max-width:900px){body{padding:24px 16px;}.card,.summary-card{padding:24px 20px;border-radius:24px;}.decision-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.decision-card:last-child{grid-column:1/-1;}.breakdown,.learning-grid{grid-template-columns:1fr;}}
     @media(max-width:640px){.decision-grid{grid-template-columns:1fr;}.decision-card:last-child{grid-column:auto;}.action-frame{font-size:16px;}.badges{gap:7px;}.badge{font-size:11px;}.button{width:100%;text-align:center;}.summary-card{padding:24px 18px;}}
     </style>
     </head>
@@ -2375,6 +2524,18 @@ def premium_decision(symbol):
             <span class="card-label">Investor lesson</span>
             <h2 id="lesson-heading">What this teaches you</h2>
             <p>{{ report.investor_lesson }}</p>
+        </section>
+
+        <section class="card learning-card" aria-labelledby="learning-heading">
+            <span class="card-label">Premium investing principle</span>
+            <h2 id="learning-heading">Learn From This Stock</h2>
+            <p class="learning-subtitle">This investing principle can help with future decisions.</p>
+            <div class="learning-grid">
+                <div class="learning-part"><span>Lesson</span><p>{{ report.learning_lesson.lesson }}</p></div>
+                <div class="learning-part"><span>Why investors care</span><p>{{ report.learning_lesson.why }}</p></div>
+                <div class="learning-part"><span>Question to ask yourself</span><p>{{ report.learning_lesson.question }}</p></div>
+            </div>
+            <p class="learning-goal">The goal is to help you understand investing principles, not memorise stock signals.</p>
         </section>
 
         <section class="card supporting" aria-labelledby="supporting-heading">
@@ -5783,16 +5944,16 @@ html = """
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>StockRadar — AI-Assisted Market Signals</title>
-<meta name="description" content="AI-assisted market signals, live market news, affected stocks, watchlists and educational research prompts for clearer investing decisions.">
+<meta name="description" content="Learn to think like an investor with AI-assisted market signals, practical decision support, live market news and investing education from StockRadar.">
 <link rel="canonical" href="https://www.stockradarhq.com/">
 <meta property="og:title" content="StockRadar — AI-Assisted Market Signals">
-<meta property="og:description" content="AI-assisted market signals, live market news, affected stocks, watchlists and educational research prompts for clearer investing decisions.">
+<meta property="og:description" content="Learn to think like an investor with AI-assisted market signals, practical decision support, live market news and investing education from StockRadar.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://www.stockradarhq.com/">
 <meta property="og:site_name" content="StockRadar">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="StockRadar — AI-Assisted Market Signals">
-<meta name="twitter:description" content="AI-assisted market signals, live market news, affected stocks, watchlists and educational research prompts for clearer investing decisions.">
+<meta name="twitter:description" content="Learn to think like an investor with AI-assisted market signals, practical decision support, live market news and investing education from StockRadar.">
 <style>
 *{box-sizing:border-box;}
 :root{--font-hero:clamp(40px,4.4vw,52px);--font-section:clamp(26px,2.4vw,34px);--font-card-title:19px;--font-body:15px;--font-small:13px;--font-kicker:11px;--font-cta:14px;}
@@ -6079,8 +6240,8 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 
 	    <div class="card hero-card" id="investment-compass-card">
 	        <p style="color:#4adea3;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 12px;">AI-assisted market research</p>
-	        <h1>Stop drowning in financial news. Get plain-English market signals in seconds.</h1>
-	        <p class="hero-subtitle">StockRadar helps everyday investors cut through noisy headlines, understand market impact, and see clearer BUY/HOLD/SELL-style signals with context.</p>
+	        <h1>Learn to think like an investor.</h1>
+	        <p class="hero-subtitle">We help people become better investors through plain-English market signals, practical decision support and investing education—without the noise.</p>
 	        <p style="color:#91a3b4;font-size:14px;line-height:1.6;margin:18px 0 0;">Start free with StockRadar Weekly, explore the live signal dashboard, then upgrade when you want the reasoning and risk read behind each signal.</p>
         <div class="hero-actions">
             <a class="cta-primary" href="/newsletter">Join Free</a>
@@ -6387,8 +6548,8 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
     <div id="radar-section" class="dashboard-section {% if active_tab == 'radar' %}active-section{% endif %}">
     <div class="card">
         <p style="color:#00ffaa;font-weight:900;text-transform:uppercase;letter-spacing:0.12em;margin:0 0 10px 0;">Market Impact</p>
-        <h2>Political & Geopolitical Market Intelligence</h2>
-        <p style="color:#94a3b8;line-height:1.7;">Track political, geopolitical and regulatory themes that may affect sectors and individual stocks.</p>
+        <h2>Less noise. Better decisions.</h2>
+        <p style="color:#94a3b8;line-height:1.7;">Stop drowning in financial news. StockRadar filters market noise into clear signals, practical decision support and investing lessons that help you build confidence over time.</p>
     </div>
     <div class="card"><h2>AI Market Brief</h2><p style="color:#cbd5e1;line-height:1.8;">Your latest AI scanner output is feeding this dashboard, while the market snapshot gives visitors a current UK and US context.</p></div>
 
@@ -6961,11 +7122,18 @@ stock_detail_html = """
 	.stock-decision-support{display:block;margin-top:9px;color:#aebdca;font-size:14px;line-height:1.55;overflow-wrap:anywhere;}.stock-decision-support strong{color:#dce8f1;}
 	.stock-decision-reminder{display:block;margin-top:11px;color:#93a6b7;font-size:12px;line-height:1.5;}
 	.stock-premium-callout{border-radius:22px;padding:22px;margin:16px 0;border:1px solid rgba(240,195,106,0.30);background:linear-gradient(145deg,rgba(106,76,24,0.34),rgba(14,25,38,0.96));}
-	.stock-premium-callout h3,.stock-investor-lesson h3,.stock-supporting-detail h3{margin:0 0 9px;color:#f8fafc;font-size:23px;line-height:1.2;}
+	.stock-premium-callout h3,.stock-investor-lesson h3,.stock-learning-card h3,.stock-supporting-detail h3{margin:0 0 9px;color:#f8fafc;font-size:23px;line-height:1.2;}
 	.stock-premium-callout p,.stock-investor-lesson p{margin:0;}
 	.stock-premium-callout .stock-premium-label{color:#f6d88a;}
 	.stock-investor-lesson{border-radius:22px;padding:22px;margin:16px 0;border:1px solid rgba(74,222,163,0.20);background:rgba(74,222,163,0.07);}
 	.stock-investor-lesson p{color:#d9eee6;font-size:16px;}
+	.stock-learning-card{border-radius:22px;padding:22px;margin:16px 0;border:1px solid rgba(105,201,242,0.22);background:linear-gradient(145deg,rgba(21,42,55,0.96),rgba(13,27,40,0.98));}
+	.stock-learning-card>p{margin:0;}.stock-learning-subtitle{color:#c5d7e3;}
+	.stock-learning-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:18px;}
+	.stock-learning-part{min-width:0;padding:16px;border-radius:16px;background:rgba(7,17,28,0.52);border:1px solid rgba(148,163,184,0.14);}
+	.stock-learning-part span{display:block;margin-bottom:7px;color:#86d8f5;font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:0.1em;}
+	.stock-learning-part p{margin:0;color:#d7e2ea;font-size:14px;line-height:1.58;}
+	.stock-learning-goal{margin-top:16px!important;color:#9fb0bf!important;font-size:13px;line-height:1.55;}
 	.stock-supporting-detail{border-radius:24px;padding:24px;margin-top:16px;background:rgba(10,21,33,0.92);border:1px solid rgba(148,163,184,0.16);}
 	.stock-supporting-detail>p{margin:0 0 15px;}
 	.stock-supporting-detail details{background:rgba(7,17,28,0.58);border:1px solid rgba(148,163,184,0.14);border-radius:17px;margin-top:10px;overflow:hidden;}
@@ -6976,7 +7144,7 @@ stock_detail_html = """
 	.stock-score-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
 	.stock-score-item{padding:14px;border-radius:14px;background:rgba(148,163,184,0.06);color:#aebdca;line-height:1.55;}.stock-score-item strong{display:block;color:#e9f1f7;margin-bottom:4px;}
 	.stock-identity-note{margin:16px 0 0;color:#9fb0bf;font-size:13px;line-height:1.55;}
-	@media(max-width:900px){.stock-premium-summary{padding:24px 20px;border-radius:24px;}.stock-decision-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.stock-decision-card:last-child{grid-column:1/-1;}.stock-score-grid{grid-template-columns:1fr;}}
+	@media(max-width:900px){.stock-premium-summary{padding:24px 20px;border-radius:24px;}.stock-decision-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.stock-decision-card:last-child{grid-column:1/-1;}.stock-score-grid,.stock-learning-grid{grid-template-columns:1fr;}}
 	@media(max-width:640px){.stock-decision-grid{grid-template-columns:1fr;}.stock-decision-card:last-child{grid-column:auto;}.stock-premium-action{font-size:16px;}.stock-premium-badge{font-size:11px;}.stock-supporting-detail{padding:20px 16px;}.stock-detail-body .payment-button{width:100%;text-align:center;}}
 	</style>
 	<style>
@@ -7079,6 +7247,18 @@ stock_detail_html = """
 	        <span class="stock-premium-label">Investor lesson</span>
 	        <h3 id="stock-lesson-heading">What this teaches you</h3>
 	        <p>{{ example_report.investor_lesson }}</p>
+	    </div>
+
+	    <div class="stock-learning-card" aria-labelledby="stock-learning-heading">
+	        <span class="stock-premium-label">Premium investing principle</span>
+	        <h3 id="stock-learning-heading">Learn From This Stock</h3>
+	        <p class="stock-learning-subtitle">This investing principle can help with future decisions.</p>
+	        <div class="stock-learning-grid">
+	            <div class="stock-learning-part"><span>Lesson</span><p>{{ example_report.learning_lesson.lesson }}</p></div>
+	            <div class="stock-learning-part"><span>Why investors care</span><p>{{ example_report.learning_lesson.why }}</p></div>
+	            <div class="stock-learning-part"><span>Question to ask yourself</span><p>{{ example_report.learning_lesson.question }}</p></div>
+	        </div>
+	        <p class="stock-learning-goal">The goal is to help you understand investing principles, not memorise stock signals.</p>
 	    </div>
 
 	    <div class="stock-supporting-detail" aria-labelledby="stock-supporting-heading">
