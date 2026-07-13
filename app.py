@@ -1357,9 +1357,19 @@ def classify_portfolio_role(symbol):
     cleaned_symbol = str(symbol or "").strip().upper()
     sector = SECTOR_MAP.get(cleaned_symbol, "").lower()
 
+    broad_market_etfs = {"SPY", "DIA", "IWM", "VUSA", "VUSA.L", "VUAG", "VUAG.L", "VWRP", "VWRP.L", "VWRL", "VWRL.L"}
     core_etfs = {"SPY", "QQQ", "DIA", "IWM", "SMH", "GLD", "SLV", "USO", "TLT", "HYG", "VUSA", "VUAG", "VWRP", "VWRL"}
     index_symbols = {"^GSPC", "^IXIC", "^DJI", "^RUT", "^FTSE", "^N225", "^HSI"}
     crypto_symbols = {"BTC-USD", "ETH-USD", "SOL-USD"}
+    dividend_compounders = {"KO", "PEP", "PG", "MCD", "WMT", "JNJ", "ABBV"}
+
+    if cleaned_symbol in broad_market_etfs:
+        return {
+            "key": "broad_market_etf",
+            "label": "Broad-market ETF",
+            "decision_use": "Use as diversified market exposure and a possible portfolio building block before adding narrower company or sector risk.",
+            "concentration_note": "Check the fund's largest holdings because broad exposure can still be concentrated in the biggest companies or sectors.",
+        }
 
     if cleaned_symbol in core_etfs or "etf" in sector:
         return {
@@ -1391,6 +1401,14 @@ def classify_portfolio_role(symbol):
             "label": "Growth / technology satellite",
             "decision_use": "Use as a growth research candidate, but keep position size and overlap with other tech names under control.",
             "concentration_note": "This may increase technology, AI, platform or high-growth exposure if you already own similar names or Nasdaq-heavy ETFs.",
+        }
+
+    if cleaned_symbol in dividend_compounders:
+        return {
+            "key": "dividend",
+            "label": "Dividend compounder / consumer staples",
+            "decision_use": "Use as a quality, defensive or income-oriented research candidate after checking business durability and dividend sustainability.",
+            "concentration_note": "Several dividend or consumer-staples holdings can share slow-growth, valuation, debt and interest-rate sensitivities.",
         }
 
     if any(word in sector for word in ["payments", "consumer / cloud", "retail", "consumer"]):
@@ -1446,6 +1464,163 @@ def classify_portfolio_role(symbol):
         "label": "Research candidate",
         "decision_use": "Use the signal as a research prompt, then check business quality, risk, valuation and portfolio fit.",
         "concentration_note": "Check whether this duplicates a sector, theme or risk you already own.",
+    }
+
+
+def build_portfolio_builder_education(symbol, role_profile):
+    cleaned_symbol = canonical_stock_symbol(symbol)
+    role_profile = role_profile or classify_portfolio_role(cleaned_symbol)
+    role_key = str(role_profile.get("key") or "research").strip().lower()
+    role_label = str(role_profile.get("label") or "General research candidate").strip()
+    sector = str(SECTOR_MAP.get(cleaned_symbol) or "").strip().lower()
+
+    is_broad_fund = role_key == "broad_market_etf"
+    is_fund = is_broad_fund or role_key == "core_etf" or "etf" in sector
+    is_growth = role_key == "growth" or any(
+        word in sector for word in ("technology", "software", "cloud", "semiconductor", "growth")
+    )
+    is_bank = "bank" in sector
+    is_energy = any(word in sector for word in ("energy", "commodity", "materials"))
+    is_dividend = role_key == "dividend"
+    is_defensive = role_key == "defensive"
+
+    role_copy = {
+        "broad_market_etf": {
+            "meaning": "This type of holding may serve as a broad foundation by spreading exposure across many companies.",
+            "use": "Investors often use broad-market funds as core holdings, then add narrower ideas only when those ideas have a clear purpose.",
+            "caution": "Broad does not mean overlap-free: the largest companies and sectors can still drive a meaningful share of returns.",
+        },
+        "core_etf": {
+            "meaning": "This type of holding may serve as a fund-based building block or a targeted source of market exposure.",
+            "use": "Investors often use funds to reach many securities at once, while checking whether the fund is broad, sector-specific or theme-specific.",
+            "caution": "An ETF label alone does not make a holding diversified or suitable as a core position.",
+        },
+        "index": {
+            "meaning": "This type of holding may serve as a benchmark for understanding how a market segment is performing.",
+            "use": "Investors often compare individual holdings with an index to separate company-specific results from the wider market backdrop.",
+            "caution": "A market index is a reference point, not a complete answer about portfolio construction or personal suitability.",
+        },
+        "growth": {
+            "meaning": "This type of holding may serve as a targeted growth or technology satellite within a broader portfolio.",
+            "use": "Investors often use a single growth company to pursue a specific opportunity while keeping its company-specific risk visible.",
+            "caution": "High expectations, valuation and volatility can make a strong business a demanding holding.",
+        },
+        "quality": {
+            "meaning": "This type of holding may serve as a quality compounder focused on durable cash flow, scale or brand strength.",
+            "use": "Investors often research quality companies for long-term compounding while comparing business strength with valuation.",
+            "caution": "Quality can already be widely owned through large funds, and a strong company can still be bought at a demanding price.",
+        },
+        "dividend": {
+            "meaning": "This type of holding may serve as a dividend, quality or defensive satellite when its cash flows remain durable.",
+            "use": "Investors often use established dividend companies for income context and steadier business exposure.",
+            "caution": "A familiar brand or attractive yield does not guarantee dividend growth or protect against valuation, debt and business risks.",
+        },
+        "defensive": {
+            "meaning": "This type of holding may serve as defensive exposure where demand can be steadier across the economic cycle.",
+            "use": "Investors often use defensive companies to reduce reliance on one growth theme or economic outcome.",
+            "caution": "Defensive does not mean risk-free; regulation, debt, competition and valuation still matter.",
+        },
+        "cyclical": {
+            "meaning": "This type of holding may serve as targeted cyclical exposure linked to an industry or economic driver.",
+            "use": "Investors often use cyclical companies as satellites when they want deliberate exposure to a sector, cycle or macro condition.",
+            "caution": "A good company can still be affected by rates, credit, commodity prices or the economic cycle.",
+        },
+        "industrial": {
+            "meaning": "This type of holding may serve as targeted industrial or defence exposure within a diversified portfolio.",
+            "use": "Investors often use industrial companies as satellites tied to contracts, infrastructure, capital spending or economic activity.",
+            "caution": "Order books can add visibility, but costs, contracts, policy and the economic cycle still affect outcomes.",
+        },
+        "research": {
+            "meaning": "This type of holding may serve as a general research candidate once its purpose and main risk drivers are clear.",
+            "use": "Investors often define a holding's role before deciding whether it adds genuinely different exposure.",
+            "caution": "If the role is unclear, it is harder to judge overlap, concentration and what evidence would weaken the case.",
+        },
+    }.get(role_key)
+
+    if role_copy is None:
+        role_copy = {
+            "meaning": "This type of holding may serve as a general research candidate once its purpose and main risk drivers are clear.",
+            "use": "Investors often define a holding's role before deciding whether it adds genuinely different exposure.",
+            "caution": "If the role is unclear, it is harder to judge overlap, concentration and what evidence would weaken the case.",
+        }
+
+    if is_broad_fund:
+        overlap = "Check the fund's largest holdings before assuming it adds entirely new diversification. Broad funds can still share many of the same large companies."
+        core_label = "Often considered for a core role"
+        core_or_satellite = "Broad-market funds are often used as core holdings because they spread exposure across many companies. Their breadth, index design and existing portfolio overlap still need checking."
+        mistake = "Owning several ETFs does not guarantee diversification if they hold many of the same companies."
+        principle = "Diversification means spreading underlying risks, not simply owning more ticker symbols."
+    elif is_fund:
+        overlap = "Check the fund's largest holdings, sector weights and index method before assuming it adds entirely new diversification."
+        core_label = "Core or satellite depends on fund breadth"
+        core_or_satellite = "A broadly diversified fund may support a core role. A sector, theme or commodity fund is generally better understood as a satellite because its risk drivers are narrower."
+        mistake = "Owning several ETFs does not guarantee diversification if they hold many of the same companies."
+        principle = "Core holdings provide broad structure; satellite holdings add targeted opportunities and risks."
+    elif is_growth:
+        overlap = "If you already own several large technology companies or technology-heavy ETFs, this may increase exposure to the same growth drivers."
+        core_label = "Generally a satellite holding"
+        core_or_satellite = "A single growth stock is usually better understood as a satellite holding because company-specific risk and valuation risk remain high."
+        mistake = "Owning several technology stocks and a technology-heavy ETF can create more concentration than the number of holdings suggests."
+        principle = "Several holdings can still behave like one large bet if they depend on the same theme."
+    elif is_bank:
+        overlap = "Several bank holdings can respond to the same interest-rate, credit and economic conditions. Different company names do not remove those shared drivers."
+        core_label = "Generally a satellite holding"
+        core_or_satellite = "A bank is generally better understood as a satellite because its performance can depend heavily on one industry and the economic cycle."
+        mistake = "Owning several banks may still leave a portfolio dependent on the same rate, credit and economic conditions."
+        principle = "Several holdings can still behave like one large bet if they depend on the same theme."
+    elif is_energy:
+        overlap = "Owning several energy companies may still leave a portfolio exposed to the same commodity prices and geopolitical risks."
+        core_label = "Generally a satellite holding"
+        core_or_satellite = "An energy or commodity-linked company is generally better understood as a satellite because its results can depend heavily on an industry cycle."
+        mistake = "Several different energy companies may still depend on the same commodity cycle."
+        principle = "Several holdings can still behave like one large bet if they depend on the same theme."
+    elif is_dividend:
+        overlap = "Several dividend companies may look diversified while sharing similar slow-growth, debt or interest-rate risks."
+        core_label = "A defensive satellite, not a complete core"
+        core_or_satellite = "A dividend or consumer-staples company may support portfolio balance, but it remains a single-company position rather than a complete core portfolio."
+        mistake = "Building a portfolio only around high yields can concentrate risk in slower-growing, indebted or rate-sensitive businesses."
+        principle = "Position size often matters as much as stock selection."
+    elif is_defensive:
+        overlap = "Several defensive companies can still depend on similar economic, regulatory or income-related conditions."
+        core_label = "A defensive satellite, not a complete core"
+        core_or_satellite = "A defensive stock may support portfolio balance, but it remains a single-company position rather than a complete core portfolio."
+        mistake = "Several defensive holdings can still share regulatory, debt, valuation or slow-growth risks."
+        principle = "Core holdings provide broad structure; satellite holdings add targeted opportunities and risks."
+    else:
+        overlap = str(role_profile.get("concentration_note") or "Check whether this duplicates a sector, theme, fund holding or risk already present elsewhere.")
+        core_label = "Usually assessed as a satellite first"
+        core_or_satellite = "A single company is generally better understood as a satellite because company-specific risk remains, even when the business is high quality."
+        mistake = "Adding more holdings does not automatically improve diversification. What matters is whether the underlying risks are genuinely different."
+        principle = "Position size often matters as much as stock selection."
+
+    first_check = (
+        "Do I understand what the fund actually owns?"
+        if is_fund
+        else "Do I understand what the business actually does?"
+    )
+
+    return {
+        "role_key": role_key,
+        "role_label": role_label,
+        "role_meaning": role_copy["meaning"],
+        "role_use": role_copy["use"],
+        "role_caution": role_copy["caution"],
+        "overlap": overlap,
+        "core_label": core_label,
+        "core_or_satellite": core_or_satellite,
+        "position_size": "A strong company can still become a poor portfolio decision if one position becomes too large. Position size determines how much a single mistake or sharp price move can affect the whole portfolio.",
+        "position_question": "If this holding fell sharply, would the size of the position disrupt the wider plan?",
+        "checklist": [
+            first_check,
+            "Does this duplicate a sector, theme or ETF exposure I already have?",
+            "Is this a core holding or a satellite?",
+            "Am I comfortable with the likely volatility?",
+            "What evidence would make the investment case weaker?",
+            "Is the position size small enough to avoid dominating the portfolio?",
+            "Am I adding this because of research rather than recent price excitement?",
+        ],
+        "mistake": mistake,
+        "principle": principle,
     }
 
 
@@ -1831,6 +2006,7 @@ def get_premium_report(symbol, ai_context):
     concentration_note = role_profile["concentration_note"]
     role_key = role_profile.get("key", "research")
     learning_lesson = build_stock_learning_lesson(cleaned_symbol, signal, role_profile)
+    portfolio_builder = build_portfolio_builder_education(cleaned_symbol, role_profile)
 
     if signal == "SELL":
         risk_level = "Higher caution"
@@ -1851,7 +2027,7 @@ def get_premium_report(symbol, ai_context):
             "Check duplicate exposure if you already own Nasdaq-heavy ETFs, mega-cap technology or other high-growth names.",
             "Best treated as a satellite idea unless it is already part of your deliberate core allocation.",
         ]
-    elif role_key in {"defensive", "core_etf", "index"}:
+    elif role_key in {"defensive", "core_etf", "broad_market_etf", "index"}:
         portfolio_fit_points = [
             "May add defensive balance or broad market context rather than a narrow growth bet.",
             "Check whether it overlaps with existing ETFs or defensive holdings before adding more.",
@@ -1953,6 +2129,7 @@ def get_premium_report(symbol, ai_context):
         "common_mistake": common_mistake,
         "investor_lesson": investor_lesson,
         "learning_lesson": learning_lesson,
+        "portfolio_builder": portfolio_builder,
         "score_breakdown": score_breakdown,
         "checklist": checklist,
     }
@@ -2042,6 +2219,43 @@ def before_you_choose_checklist(left, right):
         "Portfolio role: which one has the clearer purpose - core, satellite, dividend/income, defensive, cyclical or speculative?",
         "Watch-next trigger: what price, headline, signal change or confidence update would make me review the comparison again?",
     ]
+
+
+def compare_portfolio_role_education(left, right):
+    left_builder = left["report"]["portfolio_builder"]
+    right_builder = right["report"]["portfolio_builder"]
+    left_key = left_builder["role_key"]
+    right_key = right_builder["role_key"]
+    fund_keys = {"broad_market_etf", "core_etf"}
+
+    if left_key == right_key:
+        overlap_summary = (
+            f"{left['label']} and {right['label']} may serve a similar portfolio role. "
+            "Compare their underlying holdings and risk drivers before treating them as diversification."
+        )
+    elif left_key in fund_keys and right_key in fund_keys:
+        overlap_summary = (
+            "Both are funds, but two fund names can still hold many of the same companies. "
+            "Compare their largest holdings, sector weights and index methods."
+        )
+    elif left_key == "growth" or right_key == "growth":
+        overlap_summary = (
+            "Check whether either holding repeats technology, mega-cap or growth exposure already present through the other holding or a broad fund."
+        )
+    elif left_key == "cyclical" and right_key == "cyclical":
+        overlap_summary = (
+            "Both holdings may depend on economic or sector cycles. Different industries can still respond to shared macro conditions."
+        )
+    else:
+        overlap_summary = (
+            "Different role labels do not prove diversification. Compare the underlying companies, sectors and economic drivers before assuming the risks are genuinely different."
+        )
+
+    return {
+        "left": left_builder,
+        "right": right_builder,
+        "overlap_summary": overlap_summary,
+    }
 
 
 compare_html = """
@@ -2169,6 +2383,26 @@ ul{padding-left:22px;margin:12px 0 0;}
         </table>
     </div>
 
+    <section class="card" aria-labelledby="compare-portfolio-roles-heading">
+        <p class="kicker">Premium portfolio education</p>
+        <h2 id="compare-portfolio-roles-heading">Compare portfolio roles</h2>
+        <p>Two strong companies may still serve the same role or expose a portfolio to the same risks.</p>
+        <div class="grid">
+            <article class="box">
+                <strong>{{ left.label }}</strong>
+                <span>{{ portfolio_role_comparison.left.role_label }}</span>
+                <p class="muted"><b>Core or satellite:</b> {{ portfolio_role_comparison.left.core_label }}. {{ portfolio_role_comparison.left.core_or_satellite }}</p>
+            </article>
+            <article class="box">
+                <strong>{{ right.label }}</strong>
+                <span>{{ portfolio_role_comparison.right.role_label }}</span>
+                <p class="muted"><b>Core or satellite:</b> {{ portfolio_role_comparison.right.core_label }}. {{ portfolio_role_comparison.right.core_or_satellite }}</p>
+            </article>
+        </div>
+        <p class="warning"><strong>Similar exposure to check:</strong> {{ portfolio_role_comparison.overlap_summary }}</p>
+        <p class="muted">Portfolio examples are general education only. Appropriate diversification and position size depend on personal circumstances, goals and risk tolerance.</p>
+    </section>
+
     <div class="card">
         <h2>Dividend / Income Context</h2>
         <div class="grid">
@@ -2216,6 +2450,7 @@ def render_compare_page(symbol_a="", symbol_b=""):
     has_pair = False
     strength_summary = ""
     checklist = []
+    portfolio_role_comparison = None
     has_premium_access = premium_has_access()
 
     if raw_a or raw_b:
@@ -2235,6 +2470,7 @@ def render_compare_page(symbol_a="", symbol_b=""):
             elif has_premium_access:
                 strength_summary = compare_strength_summary(left, right)
                 checklist = before_you_choose_checklist(left, right)
+                portfolio_role_comparison = compare_portfolio_role_education(left, right)
 
     return render_template_string(
         compare_html,
@@ -2247,6 +2483,7 @@ def render_compare_page(symbol_a="", symbol_b=""):
         error_message=error_message,
         strength_summary=strength_summary,
         checklist=checklist,
+        portfolio_role_comparison=portfolio_role_comparison,
     )
 
 
@@ -7134,6 +7371,25 @@ stock_detail_html = """
 	.stock-learning-part span{display:block;margin-bottom:7px;color:#86d8f5;font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:0.1em;}
 	.stock-learning-part p{margin:0;color:#d7e2ea;font-size:14px;line-height:1.58;}
 	.stock-learning-goal{margin-top:16px!important;color:#9fb0bf!important;font-size:13px;line-height:1.55;}
+	.stock-portfolio-builder{border-radius:24px;padding:24px;margin:16px 0;background:linear-gradient(145deg,rgba(19,37,48,0.97),rgba(11,24,36,0.98));border:1px solid rgba(74,222,163,0.20);}
+	.stock-portfolio-builder>h3{margin:0 0 8px;color:#f8fafc;font-size:24px;line-height:1.2;}
+	.stock-portfolio-builder>p{margin:0;color:#b9cbd7;}
+	.stock-portfolio-role{margin-top:18px;padding:19px;border-radius:18px;background:rgba(7,17,28,0.52);border:1px solid rgba(74,222,163,0.17);}
+	.stock-portfolio-role h4,.stock-portfolio-card h4,.stock-portfolio-checklist h4,.stock-portfolio-principle h4{margin:0 0 8px;color:#f1f5f9;font-size:17px;line-height:1.3;}
+	.stock-portfolio-role strong{display:block;color:#d1fae5;font-size:20px;line-height:1.3;margin-bottom:8px;overflow-wrap:anywhere;}
+	.stock-portfolio-role p,.stock-portfolio-card p,.stock-portfolio-principle p{margin:7px 0 0;color:#b8c7d3;font-size:14px;line-height:1.58;}
+	.stock-portfolio-role .stock-portfolio-caution{color:#f5d99a;}
+	.stock-portfolio-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px;}
+	.stock-portfolio-card{min-width:0;padding:17px;border-radius:17px;background:rgba(7,17,28,0.44);border:1px solid rgba(148,163,184,0.14);}
+	.stock-portfolio-card strong{display:block;color:#e8f2f7;line-height:1.45;overflow-wrap:anywhere;}
+	.stock-portfolio-card.caution{border-color:rgba(240,195,106,0.23);background:rgba(91,65,26,0.18);}
+	.stock-position-question{padding:10px 12px;border-radius:12px;background:rgba(105,201,242,0.08);color:#ccebf7!important;font-weight:800;}
+	.stock-portfolio-checklist{margin-top:12px;padding:18px;border-radius:18px;background:rgba(7,17,28,0.44);border:1px solid rgba(148,163,184,0.14);}
+	.stock-portfolio-checklist ul{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px 26px;margin:10px 0 0;padding-left:21px;}
+	.stock-portfolio-checklist li{color:#b8c7d3;line-height:1.5;padding-left:2px;}
+	.stock-portfolio-principle{margin-top:12px;padding:17px 18px;border-radius:17px;background:rgba(74,222,163,0.08);border-left:4px solid rgba(74,222,163,0.62);}
+	.stock-portfolio-principle p{color:#dcfce7;font-weight:850;font-size:15px;}
+	.stock-portfolio-note{margin-top:14px!important;color:#93a6b7!important;font-size:12px!important;line-height:1.55!important;}
 	.stock-supporting-detail{border-radius:24px;padding:24px;margin-top:16px;background:rgba(10,21,33,0.92);border:1px solid rgba(148,163,184,0.16);}
 	.stock-supporting-detail>p{margin:0 0 15px;}
 	.stock-supporting-detail details{background:rgba(7,17,28,0.58);border:1px solid rgba(148,163,184,0.14);border-radius:17px;margin-top:10px;overflow:hidden;}
@@ -7144,8 +7400,8 @@ stock_detail_html = """
 	.stock-score-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
 	.stock-score-item{padding:14px;border-radius:14px;background:rgba(148,163,184,0.06);color:#aebdca;line-height:1.55;}.stock-score-item strong{display:block;color:#e9f1f7;margin-bottom:4px;}
 	.stock-identity-note{margin:16px 0 0;color:#9fb0bf;font-size:13px;line-height:1.55;}
-	@media(max-width:900px){.stock-premium-summary{padding:24px 20px;border-radius:24px;}.stock-decision-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.stock-decision-card:last-child{grid-column:1/-1;}.stock-score-grid,.stock-learning-grid{grid-template-columns:1fr;}}
-	@media(max-width:640px){.stock-decision-grid{grid-template-columns:1fr;}.stock-decision-card:last-child{grid-column:auto;}.stock-premium-action{font-size:16px;}.stock-premium-badge{font-size:11px;}.stock-supporting-detail{padding:20px 16px;}.stock-detail-body .payment-button{width:100%;text-align:center;}}
+	@media(max-width:900px){.stock-premium-summary{padding:24px 20px;border-radius:24px;}.stock-decision-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.stock-decision-card:last-child{grid-column:1/-1;}.stock-score-grid,.stock-learning-grid{grid-template-columns:1fr;}.stock-portfolio-checklist ul{grid-template-columns:1fr;}}
+	@media(max-width:640px){.stock-decision-grid,.stock-portfolio-grid{grid-template-columns:1fr;}.stock-decision-card:last-child{grid-column:auto;}.stock-premium-action{font-size:16px;}.stock-premium-badge{font-size:11px;}.stock-portfolio-builder,.stock-supporting-detail{padding:20px 16px;}.stock-detail-body .payment-button{width:100%;text-align:center;}}
 	</style>
 	<style>
 		*{box-sizing:border-box;}:root{--font-hero:clamp(34px,4vw,46px);--font-section:clamp(24px,2.4vw,30px);--font-card-title:18px;--font-body:15px;--font-small:13px;--font-kicker:11px;--font-cta:14px;}body{background:radial-gradient(circle at 12% 6%,rgba(0,255,170,0.11),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;margin:0;min-height:100vh;padding:48px;}.card{background:linear-gradient(180deg,rgba(18,29,42,0.97),rgba(12,22,33,0.97));padding:30px;border-radius:28px;margin-bottom:22px;border:1px solid rgba(148,163,184,0.16);box-shadow:0 22px 65px rgba(0,0,0,0.30);}h1,h2{color:#f1f5f9;line-height:1.12;letter-spacing:0;}h1{font-size:var(--font-hero);}h2{font-size:var(--font-section);}p{color:#b9c5d2;line-height:1.68;font-size:var(--font-body);}a{color:#69c9f2;text-decoration:none;font-weight:bold;}.kicker{color:#4adea3;font-weight:950;text-transform:uppercase;letter-spacing:.1em;font-size:var(--font-kicker);margin:0 0 8px;}.muted{color:#91a3b4;font-size:13px;}.range-row{display:flex;gap:12px;flex-wrap:wrap;margin:22px 0;}.range-button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:12px 16px;border-radius:15px;background:#111d2b;color:#dbe4ee;text-decoration:none;border:1px solid rgba(148,163,184,0.14);font-weight:800;line-height:1.1;text-align:center;}.range-button.active{background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;}.metric-grid,.ai-grid,.example-report-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-bottom:22px;}.metric-grid{grid-template-columns:repeat(4,1fr);}.ai-card,.metric,.example-report-card{background:rgba(14,25,38,0.90);border:1px solid rgba(148,163,184,0.15);border-radius:22px;padding:23px;}.ai-card.warning{background:linear-gradient(145deg,rgba(89,70,28,0.35),rgba(14,25,38,0.94));}.ai-card.risk{background:linear-gradient(145deg,rgba(24,60,78,0.32),rgba(14,25,38,0.94));}.premium-banner,.example-report{background:linear-gradient(135deg,rgba(15,55,50,0.74),rgba(55,42,26,0.60),rgba(20,45,61,0.62));border:1px solid rgba(74,222,163,0.20);border-radius:28px;padding:30px;margin-bottom:22px;}.premium-banner{display:grid;grid-template-columns:1.35fr 0.85fr;gap:24px;align-items:center;box-shadow:0 26px 70px rgba(0,0,0,0.34);}.stock-locked-preview{border-color:rgba(255,184,107,0.34);background:linear-gradient(135deg,rgba(12,47,48,0.92),rgba(81,54,28,0.62),rgba(20,45,61,0.78));}.premium-banner small,.example-report small{display:block;color:#86efac;font-weight:950;text-transform:uppercase;letter-spacing:0.1em;font-size:var(--font-kicker);margin-bottom:8px;}.premium-cta-box{background:rgba(9,18,28,0.84);border:1px solid rgba(255,184,107,0.24);border-radius:22px;padding:22px;text-align:center;}.premium-cta-box strong{display:block;color:#f8fafc;margin-bottom:8px;}.payment-button{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;border-radius:16px;padding:13px 19px;font-size:var(--font-cta);font-weight:950;text-decoration:none;line-height:1.1;}.payment-note{color:#a8b6c6;font-size:13px;margin-top:12px;line-height:1.55;}.signal-badge,.free-strength,.strength-pill{display:inline-block;margin-top:10px;padding:8px 12px;border-radius:999px;background:rgba(148,163,184,0.09);font-weight:900;font-size:12px;text-transform:uppercase;}.confidence-large,.confidence-score{font-size:36px;font-weight:950;}.free-meter,.confidence-meter{font-size:24px;letter-spacing:0;color:#4adea3;font-weight:950;margin:8px 0;}.dividend-card{border:1px solid rgba(74,222,163,0.18);}.dividend-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:16px 0;}.dividend-metric{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:16px;padding:14px;line-height:1.45;}.dividend-metric span{display:block;color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:0.07em;font-weight:900;margin-bottom:6px;}.dividend-metric strong{display:block;color:#e5f4ff;font-size:17px;}.dividend-empty{background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.20);border-radius:16px;padding:14px;color:#fde68a;line-height:1.65;}.dividend-note{color:#cbd5e1;background:rgba(148,163,184,0.07);border-radius:14px;padding:12px 14px;}.dividend-risk{color:#fecaca;background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.16);border-radius:14px;padding:12px 14px;}.chart-card{padding:24px;}.chart-shell{position:relative;width:100%;height:360px;min-height:360px;background:#0a1420;border-radius:18px;padding:16px;overflow:hidden;}.chart-shell canvas{display:block;width:100%!important;height:100%!important;background:transparent;border-radius:12px;padding:0;}.buy{color:#4ade80;font-weight:bold;}.sell{color:#fb7185;font-weight:bold;}.hold{color:#f4c95d;font-weight:bold;}@media(max-width:900px){:root{--font-hero:clamp(32px,9vw,38px);--font-section:clamp(23px,6vw,28px);}body{padding:24px 16px;}.card,.premium-banner,.example-report{padding:24px 20px;border-radius:24px;}.metric-grid,.ai-grid,.premium-banner,.example-report-grid,.dividend-grid{grid-template-columns:1fr;}.payment-button{display:block;text-align:center;}.range-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:18px 0;}.range-button{width:100%;padding:13px 10px;font-size:14px;}.metric{padding:18px;}.metric h2{font-size:24px;line-height:1.12;overflow-wrap:anywhere;}.chart-card{padding:18px 14px;}.chart-shell{height:340px;min-height:340px;padding:12px;border-radius:16px;}}
@@ -7260,6 +7516,53 @@ stock_detail_html = """
 	        </div>
 	        <p class="stock-learning-goal">The goal is to help you understand investing principles, not memorise stock signals.</p>
 	    </div>
+
+	    {% set portfolio = example_report.portfolio_builder %}
+	    <section class="stock-portfolio-builder" aria-labelledby="stock-portfolio-builder-heading">
+	        <span class="stock-premium-label">Premium portfolio education</span>
+	        <h3 id="stock-portfolio-builder-heading">How this may fit in a portfolio</h3>
+	        <p>Understand the role, overlap and risk questions to consider before adding another holding.</p>
+
+	        <article class="stock-portfolio-role" aria-labelledby="stock-portfolio-role-heading">
+	            <h4 id="stock-portfolio-role-heading">Likely portfolio role</h4>
+	            <strong>{{ portfolio.role_label }}</strong>
+	            <p>{{ portfolio.role_meaning }}</p>
+	            <p><b>How investors often use it:</b> {{ portfolio.role_use }}</p>
+	            <p class="stock-portfolio-caution"><b>Educational caution:</b> {{ portfolio.role_caution }}</p>
+	        </article>
+
+	        <div class="stock-portfolio-grid">
+	            <article class="stock-portfolio-card">
+	                <h4>Portfolio overlap to check</h4>
+	                <strong>{{ portfolio.overlap }}</strong>
+	            </article>
+	            <article class="stock-portfolio-card">
+	                <h4>Core or satellite?</h4>
+	                <strong>{{ portfolio.core_label }}</strong>
+	                <p>{{ portfolio.core_or_satellite }}</p>
+	            </article>
+	            <article class="stock-portfolio-card">
+	                <h4>Why position size matters</h4>
+	                <p>{{ portfolio.position_size }}</p>
+	                <p class="stock-position-question">{{ portfolio.position_question }}</p>
+	            </article>
+	            <article class="stock-portfolio-card caution">
+	                <h4>Portfolio mistake to avoid</h4>
+	                <strong>{{ portfolio.mistake }}</strong>
+	            </article>
+	        </div>
+
+	        <div class="stock-portfolio-checklist">
+	            <h4>Before adding this holding</h4>
+	            <ul>{% for item in portfolio.checklist %}<li>{{ item }}</li>{% endfor %}</ul>
+	        </div>
+
+	        <aside class="stock-portfolio-principle" aria-labelledby="stock-portfolio-principle-heading">
+	            <h4 id="stock-portfolio-principle-heading">Portfolio principle</h4>
+	            <p>{{ portfolio.principle }}</p>
+	        </aside>
+	        <p class="stock-portfolio-note">Portfolio examples are general education only. Appropriate diversification and position size depend on personal circumstances, goals and risk tolerance.</p>
+	    </section>
 
 	    <div class="stock-supporting-detail" aria-labelledby="stock-supporting-heading">
 	        <span class="stock-premium-label">Supporting detail</span>
