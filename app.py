@@ -7390,6 +7390,14 @@ stock_detail_html = """
 	.stock-portfolio-principle{margin-top:12px;padding:17px 18px;border-radius:17px;background:rgba(74,222,163,0.08);border-left:4px solid rgba(74,222,163,0.62);}
 	.stock-portfolio-principle p{color:#dcfce7;font-weight:850;font-size:15px;}
 	.stock-portfolio-note{margin-top:14px!important;color:#93a6b7!important;font-size:12px!important;line-height:1.55!important;}
+	.stock-psychology{border-radius:24px;padding:24px;margin:16px 0;background:linear-gradient(145deg,rgba(29,35,53,0.97),rgba(12,24,37,0.98));border:1px solid rgba(105,201,242,0.20);}
+	.stock-psychology>h3{margin:0 0 8px;color:#f8fafc;font-size:24px;line-height:1.2;}
+	.stock-psychology>p{margin:0;color:#b9cbd7;}
+	.stock-psychology-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:18px;}
+	.stock-psychology-card{min-width:0;padding:17px;border-radius:17px;background:rgba(7,17,28,0.48);border:1px solid rgba(148,163,184,0.14);}
+	.stock-psychology-card h4{margin:0 0 9px;color:#f1f5f9;font-size:17px;line-height:1.3;}
+	.stock-psychology-prompt{margin:0;color:#dcebf3;font-weight:850;line-height:1.55;}
+	.stock-psychology-support{margin:9px 0 0;color:#aebdca;font-size:14px;line-height:1.55;}
 	.stock-supporting-detail{border-radius:24px;padding:24px;margin-top:16px;background:rgba(10,21,33,0.92);border:1px solid rgba(148,163,184,0.16);}
 	.stock-supporting-detail>p{margin:0 0 15px;}
 	.stock-supporting-detail details{background:rgba(7,17,28,0.58);border:1px solid rgba(148,163,184,0.14);border-radius:17px;margin-top:10px;overflow:hidden;}
@@ -7401,7 +7409,7 @@ stock_detail_html = """
 	.stock-score-item{padding:14px;border-radius:14px;background:rgba(148,163,184,0.06);color:#aebdca;line-height:1.55;}.stock-score-item strong{display:block;color:#e9f1f7;margin-bottom:4px;}
 	.stock-identity-note{margin:16px 0 0;color:#9fb0bf;font-size:13px;line-height:1.55;}
 	@media(max-width:900px){.stock-premium-summary{padding:24px 20px;border-radius:24px;}.stock-decision-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.stock-decision-card:last-child{grid-column:1/-1;}.stock-score-grid,.stock-learning-grid{grid-template-columns:1fr;}.stock-portfolio-checklist ul{grid-template-columns:1fr;}}
-	@media(max-width:640px){.stock-decision-grid,.stock-portfolio-grid{grid-template-columns:1fr;}.stock-decision-card:last-child{grid-column:auto;}.stock-premium-action{font-size:16px;}.stock-premium-badge{font-size:11px;}.stock-portfolio-builder,.stock-supporting-detail{padding:20px 16px;}.stock-detail-body .payment-button{width:100%;text-align:center;}}
+	@media(max-width:640px){.stock-decision-grid,.stock-portfolio-grid,.stock-psychology-grid{grid-template-columns:1fr;}.stock-decision-card:last-child{grid-column:auto;}.stock-premium-action{font-size:16px;}.stock-premium-badge{font-size:11px;}.stock-portfolio-builder,.stock-psychology,.stock-supporting-detail{padding:20px 16px;}.stock-detail-body .payment-button{width:100%;text-align:center;}}
 	</style>
 	<style>
 		*{box-sizing:border-box;}:root{--font-hero:clamp(34px,4vw,46px);--font-section:clamp(24px,2.4vw,30px);--font-card-title:18px;--font-body:15px;--font-small:13px;--font-kicker:11px;--font-cta:14px;}body{background:radial-gradient(circle at 12% 6%,rgba(0,255,170,0.11),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;margin:0;min-height:100vh;padding:48px;}.card{background:linear-gradient(180deg,rgba(18,29,42,0.97),rgba(12,22,33,0.97));padding:30px;border-radius:28px;margin-bottom:22px;border:1px solid rgba(148,163,184,0.16);box-shadow:0 22px 65px rgba(0,0,0,0.30);}h1,h2{color:#f1f5f9;line-height:1.12;letter-spacing:0;}h1{font-size:var(--font-hero);}h2{font-size:var(--font-section);}p{color:#b9c5d2;line-height:1.68;font-size:var(--font-body);}a{color:#69c9f2;text-decoration:none;font-weight:bold;}.kicker{color:#4adea3;font-weight:950;text-transform:uppercase;letter-spacing:.1em;font-size:var(--font-kicker);margin:0 0 8px;}.muted{color:#91a3b4;font-size:13px;}.range-row{display:flex;gap:12px;flex-wrap:wrap;margin:22px 0;}.range-button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:12px 16px;border-radius:15px;background:#111d2b;color:#dbe4ee;text-decoration:none;border:1px solid rgba(148,163,184,0.14);font-weight:800;line-height:1.1;text-align:center;}.range-button.active{background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;}.metric-grid,.ai-grid,.example-report-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-bottom:22px;}.metric-grid{grid-template-columns:repeat(4,1fr);}.ai-card,.metric,.example-report-card{background:rgba(14,25,38,0.90);border:1px solid rgba(148,163,184,0.15);border-radius:22px;padding:23px;}.ai-card.warning{background:linear-gradient(145deg,rgba(89,70,28,0.35),rgba(14,25,38,0.94));}.ai-card.risk{background:linear-gradient(145deg,rgba(24,60,78,0.32),rgba(14,25,38,0.94));}.premium-banner,.example-report{background:linear-gradient(135deg,rgba(15,55,50,0.74),rgba(55,42,26,0.60),rgba(20,45,61,0.62));border:1px solid rgba(74,222,163,0.20);border-radius:28px;padding:30px;margin-bottom:22px;}.premium-banner{display:grid;grid-template-columns:1.35fr 0.85fr;gap:24px;align-items:center;box-shadow:0 26px 70px rgba(0,0,0,0.34);}.stock-locked-preview{border-color:rgba(255,184,107,0.34);background:linear-gradient(135deg,rgba(12,47,48,0.92),rgba(81,54,28,0.62),rgba(20,45,61,0.78));}.premium-banner small,.example-report small{display:block;color:#86efac;font-weight:950;text-transform:uppercase;letter-spacing:0.1em;font-size:var(--font-kicker);margin-bottom:8px;}.premium-cta-box{background:rgba(9,18,28,0.84);border:1px solid rgba(255,184,107,0.24);border-radius:22px;padding:22px;text-align:center;}.premium-cta-box strong{display:block;color:#f8fafc;margin-bottom:8px;}.payment-button{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;border-radius:16px;padding:13px 19px;font-size:var(--font-cta);font-weight:950;text-decoration:none;line-height:1.1;}.payment-note{color:#a8b6c6;font-size:13px;margin-top:12px;line-height:1.55;}.signal-badge,.free-strength,.strength-pill{display:inline-block;margin-top:10px;padding:8px 12px;border-radius:999px;background:rgba(148,163,184,0.09);font-weight:900;font-size:12px;text-transform:uppercase;}.confidence-large,.confidence-score{font-size:36px;font-weight:950;}.free-meter,.confidence-meter{font-size:24px;letter-spacing:0;color:#4adea3;font-weight:950;margin:8px 0;}.dividend-card{border:1px solid rgba(74,222,163,0.18);}.dividend-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:16px 0;}.dividend-metric{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:16px;padding:14px;line-height:1.45;}.dividend-metric span{display:block;color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:0.07em;font-weight:900;margin-bottom:6px;}.dividend-metric strong{display:block;color:#e5f4ff;font-size:17px;}.dividend-empty{background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.20);border-radius:16px;padding:14px;color:#fde68a;line-height:1.65;}.dividend-note{color:#cbd5e1;background:rgba(148,163,184,0.07);border-radius:14px;padding:12px 14px;}.dividend-risk{color:#fecaca;background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.16);border-radius:14px;padding:12px 14px;}.chart-card{padding:24px;}.chart-shell{position:relative;width:100%;height:360px;min-height:360px;background:#0a1420;border-radius:18px;padding:16px;overflow:hidden;}.chart-shell canvas{display:block;width:100%!important;height:100%!important;background:transparent;border-radius:12px;padding:0;}.buy{color:#4ade80;font-weight:bold;}.sell{color:#fb7185;font-weight:bold;}.hold{color:#f4c95d;font-weight:bold;}@media(max-width:900px){:root{--font-hero:clamp(32px,9vw,38px);--font-section:clamp(23px,6vw,28px);}body{padding:24px 16px;}.card,.premium-banner,.example-report{padding:24px 20px;border-radius:24px;}.metric-grid,.ai-grid,.premium-banner,.example-report-grid,.dividend-grid{grid-template-columns:1fr;}.payment-button{display:block;text-align:center;}.range-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:18px 0;}.range-button{width:100%;padding:13px 10px;font-size:14px;}.metric{padding:18px;}.metric h2{font-size:24px;line-height:1.12;overflow-wrap:anywhere;}.chart-card{padding:18px 14px;}.chart-shell{height:340px;min-height:340px;padding:12px;border-radius:16px;}}
@@ -7562,6 +7570,34 @@ stock_detail_html = """
 	            <p>{{ portfolio.principle }}</p>
 	        </aside>
 	        <p class="stock-portfolio-note">Portfolio examples are general education only. Appropriate diversification and position size depend on personal circumstances, goals and risk tolerance.</p>
+	    </section>
+
+	    <section class="stock-psychology" aria-labelledby="stock-psychology-heading">
+	        <span class="stock-premium-label">Premium investor psychology</span>
+	        <h3 id="stock-psychology-heading">Think Before You Invest</h3>
+	        <p>A strong investing process includes checking your own thinking—not just the stock.</p>
+	        <div class="stock-psychology-grid">
+	            <article class="stock-psychology-card">
+	                <h4>Avoid FOMO</h4>
+	                <p class="stock-psychology-prompt">Would this still interest me if the price had not risen recently or the stock was not receiving attention?</p>
+	                <p class="stock-psychology-support">Recent excitement can make an opportunity feel safer or more urgent than the evidence supports.</p>
+	            </article>
+	            <article class="stock-psychology-card">
+	                <h4>What could prove me wrong?</h4>
+	                <p class="stock-psychology-prompt">What evidence would weaken the investment case?</p>
+	                <p class="stock-psychology-support">A clear reason to reconsider helps prevent confirmation bias and overconfidence.</p>
+	            </article>
+	            <article class="stock-psychology-card">
+	                <h4>Am I investing or reacting?</h4>
+	                <p class="stock-psychology-prompt">Is this decision based on research, or am I reacting to headlines, price moves or other investors?</p>
+	                <p class="stock-psychology-support">Separating evidence from emotion can improve decision discipline.</p>
+	            </article>
+	            <article class="stock-psychology-card">
+	                <h4>Patience reminder</h4>
+	                <p class="stock-psychology-prompt">Has the investment case changed, or am I simply uncomfortable with short-term movement?</p>
+	                <p class="stock-psychology-support">Good investing decisions often come from waiting for evidence rather than rushing to act.</p>
+	            </article>
+	        </div>
 	    </section>
 
 	    <div class="stock-supporting-detail" aria-labelledby="stock-supporting-heading">
