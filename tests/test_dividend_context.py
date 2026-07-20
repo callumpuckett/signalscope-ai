@@ -9,10 +9,15 @@ import app
 
 def clear_dividend_cache():
     app.DIVIDEND_CONTEXT_CACHE.clear()
+    app.INCOME_HISTORY_CACHE.clear()
 
 
 def ticker_with_info(info):
     return SimpleNamespace(get_info=lambda: info)
+
+
+def ticker_with_info_and_history(info, history):
+    return SimpleNamespace(get_info=lambda: info, history=lambda **kwargs: history)
 
 
 def test_equity_dividend_context_formats_available_fields():
@@ -159,6 +164,11 @@ def test_complete_provider_profile_can_confirm_income_is_absent(
     expected_message,
 ):
     clear_dividend_cache()
+    info = {
+        **info,
+        "dividendYield": 0,
+        "trailingAnnualDividendRate": 0,
+    }
     with patch.object(app.yf, "Ticker", return_value=ticker_with_info(info)):
         context = app.get_dividend_context(symbol)
 
@@ -229,6 +239,83 @@ def test_cached_unavailable_context_is_retried_before_successful_data_expires():
     assert context["dividend_yield"] == "0.9%"
 
 
+def test_existing_history_restores_distribution_data_when_metadata_is_incomplete():
+    clear_dividend_cache()
+    info = {
+        "quoteType": "ETF",
+        "currency": "GBP",
+        "regularMarketPrice": 105.675,
+    }
+    history = pd.DataFrame(
+        {"Dividends": [0.222219, 0.223298, 0.246723, 0.244174]},
+        index=pd.to_datetime(["2025-09-18", "2025-12-18", "2026-03-19", "2026-06-18"]),
+    )
+    app.cache_income_history("VUSA.L", history)
+
+    with patch.object(app.yf, "Ticker", return_value=ticker_with_info(info)):
+        context = app.get_dividend_context("VUSA.L")
+
+    assert context["income_status"] == app.INCOME_STATUS_AVAILABLE
+    assert context["is_etf"] is True
+    assert context["dividend_yield"] == "0.89%"
+    assert context["annual_dividend"] == "£0.94 per share annually"
+
+
+def test_existing_history_corrects_cross_currency_income_units_generically():
+    clear_dividend_cache()
+    info = {
+        "quoteType": "EQUITY",
+        "currency": "GBp",
+        "financialCurrency": "USD",
+        "regularMarketPrice": 3220,
+        "trailingAnnualDividendRate": 1.479,
+        "trailingAnnualDividendYield": 0.000457,
+    }
+    history = pd.DataFrame(
+        {"Dividends": [26.62, 26.85, 27.87, 29.18]},
+        index=pd.to_datetime(["2025-08-14", "2025-11-13", "2026-02-19", "2026-05-21"]),
+    )
+    app.cache_income_history("SHEL.L", history)
+
+    with patch.object(app.yf, "Ticker", return_value=ticker_with_info(info)):
+        context = app.get_dividend_context("SHEL.L")
+
+    assert context["income_status"] == app.INCOME_STATUS_AVAILABLE
+    assert context["dividend_yield"] == "3.43%"
+    assert context["annual_dividend"] == "110.52p per share annually"
+
+
+def test_profile_without_income_evidence_is_not_confirmed_absent_when_history_fails():
+    clear_dividend_cache()
+    ticker = ticker_with_info_and_history(
+        {"quoteType": "EQUITY", "regularMarketPrice": 100},
+        pd.DataFrame(),
+    )
+    with patch.object(app.yf, "Ticker", return_value=ticker):
+        context = app.get_dividend_context("NVDA")
+
+    assert context["income_status"] == app.INCOME_STATUS_UNAVAILABLE
+    assert context["no_data_message"] == "Dividend data is temporarily unavailable."
+
+
+def test_successful_history_with_explicit_zero_payments_confirms_absence():
+    clear_dividend_cache()
+    info = {"quoteType": "EQUITY", "regularMarketPrice": 100}
+    history = pd.DataFrame(
+        {"Close": [99, 100], "Dividends": [0, 0]},
+        index=pd.to_datetime(["2026-07-17", "2026-07-18"]),
+    )
+    with patch.object(
+        app.yf,
+        "Ticker",
+        return_value=ticker_with_info_and_history(info, history),
+    ):
+        context = app.get_dividend_context("NVDA")
+
+    assert context["income_status"] == app.INCOME_STATUS_ABSENT
+    assert context["no_data_message"].startswith("No regular dividend found")
+
+
 @pytest.mark.parametrize(
     ("symbol", "universe_item", "expected_title", "expected_message"),
     (
@@ -287,7 +374,12 @@ def test_yfinance_failure_does_not_break_stock_page():
 
 def test_confirmed_non_dividend_company_keeps_truthful_absent_message_on_stock_page():
     clear_dividend_cache()
-    info = {"quoteType": "EQUITY", "currentPrice": 320.5}
+    info = {
+        "quoteType": "EQUITY",
+        "currentPrice": 320.5,
+        "dividendYield": 0,
+        "trailingAnnualDividendRate": 0,
+    }
     with (
         patch.object(app.yf, "Ticker", return_value=ticker_with_info(info)),
         patch.object(app, "safe_history", return_value=pd.DataFrame()),

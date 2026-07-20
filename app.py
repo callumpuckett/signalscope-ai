@@ -682,6 +682,8 @@ STOCK_DISPLAY_LOOKUP_CACHE = {
 DIVIDEND_CONTEXT_CACHE_TTL_SECONDS = 3600
 DIVIDEND_CONTEXT_UNAVAILABLE_CACHE_TTL_SECONDS = 300
 DIVIDEND_CONTEXT_CACHE = {}
+INCOME_HISTORY_CACHE_TTL_SECONDS = 300
+INCOME_HISTORY_CACHE = {}
 
 TRACKED_STOCK_UNIVERSE = [
     "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "PLTR", "SPCX", "AVGO", "AMD", "NFLX",
@@ -1942,14 +1944,6 @@ INCOME_DATE_SIGNAL_FIELDS = (
     "exDividendDate",
     "lastDividendDate",
 )
-PROVIDER_MARKET_PROFILE_FIELDS = (
-    "currentPrice",
-    "regularMarketPrice",
-    "previousClose",
-    "marketCap",
-)
-
-
 FUNDAMENTAL_CURRENCY_SYMBOLS = {
     "USD": "$",
     "GBP": "£",
@@ -2154,12 +2148,7 @@ def classify_income_data(info, provider_response_received):
             return INCOME_STATUS_AVAILABLE
         explicit_zero_fields += 1
 
-    quote_type = str(info.get("quoteType") or "").strip()
-    has_market_profile = any(
-        (fundamental_number(info.get(field)) or 0) > 0
-        for field in PROVIDER_MARKET_PROFILE_FIELDS
-    )
-    if (quote_type and has_market_profile) or explicit_zero_fields >= 2:
+    if explicit_zero_fields >= 2:
         return INCOME_STATUS_ABSENT
     return INCOME_STATUS_UNAVAILABLE
 
@@ -2197,6 +2186,100 @@ def income_summary_text(dividend_context):
 app.jinja_env.globals["income_status_from_context"] = income_status_from_context
 
 
+def normalized_income_history(history):
+    if not isinstance(history, pd.DataFrame) or history.empty:
+        return None
+
+    dividend_column = None
+    if "Dividends" in history.columns:
+        dividend_column = history["Dividends"]
+    elif isinstance(history.columns, pd.MultiIndex):
+        for column in history.columns:
+            if "DIVIDENDS" in tuple(str(part).strip().upper() for part in column):
+                dividend_column = history[column]
+                break
+    if dividend_column is None:
+        return None
+    if isinstance(dividend_column, pd.DataFrame):
+        dividend_column = dividend_column.iloc[:, 0]
+
+    payments = pd.to_numeric(dividend_column, errors="coerce")
+    if payments.isna().all() or (payments.dropna() < 0).any():
+        return None
+
+    payments = payments.fillna(0)
+    if isinstance(payments.index, pd.DatetimeIndex) and len(payments.index):
+        latest_history_date = payments.index.max()
+        payments = payments[payments.index >= latest_history_date - pd.Timedelta(days=370)]
+    return payments.to_frame(name="Dividends")
+
+
+def cache_income_history(symbol, history):
+    income_history = normalized_income_history(history)
+    if income_history is not None:
+        INCOME_HISTORY_CACHE[canonical_stock_symbol(symbol)] = {
+            "timestamp": time.time(),
+            "history": income_history,
+        }
+
+
+def cached_income_history(symbol, now=None):
+    cached = INCOME_HISTORY_CACHE.get(canonical_stock_symbol(symbol))
+    current_time = time.time() if now is None else now
+    if (
+        cached
+        and current_time - cached["timestamp"] < INCOME_HISTORY_CACHE_TTL_SECONDS
+    ):
+        return cached["history"]
+    return None
+
+
+def enrich_income_info_from_history(info, history):
+    income_history = normalized_income_history(history)
+    if income_history is None:
+        return dict(info or {}), False
+
+    payments = income_history["Dividends"]
+
+    updated = dict(info or {})
+    positive_payments = payments[payments > 0]
+    annual_payment = float(positive_payments.sum())
+    updated["trailingAnnualDividendRate"] = annual_payment
+    updated["dividendYield"] = 0 if not annual_payment else updated.get("dividendYield")
+    updated["_validatedAnnualIncome"] = annual_payment
+    updated["_validatedIncomeCurrency"] = updated.get("currency") or updated.get(
+        "financialCurrency"
+    )
+
+    market_price = next(
+        (
+            fundamental_number(updated.get(field))
+            for field in ("currentPrice", "regularMarketPrice")
+            if (fundamental_number(updated.get(field)) or 0) > 0
+        ),
+        None,
+    )
+    if annual_payment > 0 and market_price:
+        updated["trailingAnnualDividendYield"] = annual_payment / market_price
+        updated["_validatedIncomeYield"] = annual_payment / market_price
+    else:
+        updated["trailingAnnualDividendYield"] = 0
+        updated["_validatedIncomeYield"] = 0
+
+    return updated, True
+
+
+def provider_failure_kind(exc):
+    message = str(exc).lower()
+    if isinstance(exc, TimeoutError) or "timed out" in message or "timeout" in message:
+        return "timeout"
+    if "429" in message or "rate limit" in message or "too many requests" in message:
+        return "rate-limit"
+    if any(marker in message for marker in ("http", "401", "403", "404", "502", "503")):
+        return "http-error"
+    return "provider-exception"
+
+
 def get_dividend_context(symbol):
     cleaned_symbol = canonical_stock_symbol(symbol)
     now = time.time()
@@ -2224,6 +2307,7 @@ def get_dividend_context(symbol):
     ).strip()
     info = {}
     provider_response_received = False
+    ticker_object = None
 
     if yf is not None and cleaned_symbol:
         try:
@@ -2237,20 +2321,11 @@ def get_dividend_context(symbol):
             if provider_response_received:
                 info = provider_info
         except Exception as exc:
-            message = str(exc).lower()
-            if isinstance(exc, TimeoutError) or "timed out" in message or "timeout" in message:
-                failure_kind = "timeout"
-            elif "429" in message or "rate limit" in message or "too many requests" in message:
-                failure_kind = "rate-limit"
-            elif any(marker in message for marker in ("http", "401", "403", "404", "502", "503")):
-                failure_kind = "http-error"
-            else:
-                failure_kind = "provider-exception"
             app.logger.warning(
                 "Dividend metadata unavailable for %s: %s (%s).",
                 cleaned_symbol,
                 type(exc).__name__,
-                failure_kind,
+                provider_failure_kind(exc),
             )
 
     if provider_response_received and not info:
@@ -2263,6 +2338,69 @@ def get_dividend_context(symbol):
     if sector and not instrument_profile.get("sector"):
         instrument_profile["sector"] = sector
     is_etf = provider_instrument_is_etf(info, instrument_profile)
+    preliminary_status = classify_income_data(info, provider_response_received)
+    quote_currency = str(info.get("currency") or "").strip()
+    financial_currency = str(info.get("financialCurrency") or "").strip()
+    income_currency_mismatch = bool(
+        quote_currency
+        and financial_currency
+        and quote_currency != financial_currency
+    )
+    needs_history_evidence = (
+        preliminary_status == INCOME_STATUS_UNAVAILABLE
+        or (
+            preliminary_status == INCOME_STATUS_AVAILABLE
+            and income_currency_mismatch
+        )
+    )
+    history_evidence_received = False
+    if needs_history_evidence:
+        income_history = cached_income_history(cleaned_symbol, now=now)
+        if income_history is None and ticker_object is not None:
+            try:
+                income_history = ticker_object.history(
+                    period="1y",
+                    auto_adjust=False,
+                    actions=True,
+                    timeout=6,
+                )
+                cache_income_history(cleaned_symbol, income_history)
+            except TypeError:
+                try:
+                    income_history = ticker_object.history(
+                        period="1y",
+                        auto_adjust=False,
+                        actions=True,
+                    )
+                    cache_income_history(cleaned_symbol, income_history)
+                except Exception as exc:
+                    app.logger.warning(
+                        "Income history unavailable for %s: %s (%s).",
+                        cleaned_symbol,
+                        type(exc).__name__,
+                        provider_failure_kind(exc),
+                    )
+                    income_history = None
+            except Exception as exc:
+                app.logger.warning(
+                    "Income history unavailable for %s: %s (%s).",
+                    cleaned_symbol,
+                    type(exc).__name__,
+                    provider_failure_kind(exc),
+                )
+                income_history = None
+        info, history_evidence_received = enrich_income_info_from_history(
+            info,
+            income_history,
+        )
+        if income_history is not None and not history_evidence_received:
+            app.logger.warning(
+                "Income history unavailable for %s: incomplete provider response.",
+                cleaned_symbol,
+            )
+        if income_currency_mismatch and not history_evidence_received:
+            provider_response_received = False
+
     income_status = classify_income_data(info, provider_response_received)
 
     def percentage_text(value):
@@ -2276,10 +2414,14 @@ def get_dividend_context(symbol):
         number = fundamental_number(value)
         if number is None or number < 0:
             return "Not available"
-        formatted = format_fundamental_currency(
-            number,
-            fundamental_currency(info),
-        )
+        currency = str(
+            info.get("_validatedIncomeCurrency")
+            or fundamental_currency(info)
+        ).strip()
+        if currency in {"GBp", "GBX"}:
+            formatted = f"{number:.2f}".rstrip("0").rstrip(".") + "p"
+        else:
+            formatted = format_fundamental_currency(number, currency)
         return formatted + " per share annually"
 
     def date_text(value):
@@ -2298,11 +2440,15 @@ def get_dividend_context(symbol):
         return parsed.strftime("%d %B %Y")
 
     reported_yield_value = info.get("dividendYield")
-    trailing_yield_value = info.get("trailingAnnualDividendYield")
+    trailing_yield_value = info.get(
+        "_validatedIncomeYield",
+        info.get("trailingAnnualDividendYield"),
+    )
     annual_value = next(
         (
             info.get(field)
             for field in (
+                "_validatedAnnualIncome",
                 "forwardAnnualDividendRate",
                 "trailingAnnualDividendRate",
                 "dividendRate",
@@ -3945,6 +4091,7 @@ def stock_history(symbol, range_key):
             interval=settings["interval"],
             timeout=6,
         )
+        cache_income_history(symbol, history)
 
         points = normalize_history_points(history, symbol)
         if not points:
@@ -3990,6 +4137,7 @@ def stock_lifetime_growth(symbol):
     symbol = canonical_stock_symbol(symbol)
     try:
         history = safe_history(symbol, period="max", interval="1mo", timeout=8)
+        cache_income_history(symbol, history)
         close = extract_history_price_series(history, symbol)
         if close.empty:
             raise ValueError("No lifetime close data available")
