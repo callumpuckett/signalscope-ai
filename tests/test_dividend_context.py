@@ -1,10 +1,20 @@
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+import json
 
 import pandas as pd
 import pytest
 
 import app
+
+
+@pytest.fixture(autouse=True)
+def disable_live_yahoo_chart_requests(monkeypatch):
+    monkeypatch.setattr(
+        app,
+        "urlopen",
+        MagicMock(side_effect=RuntimeError("chart fallback unavailable")),
+    )
 
 
 def clear_dividend_cache():
@@ -311,6 +321,74 @@ def test_successful_history_with_explicit_zero_payments_confirms_absence():
         return_value=ticker_with_info_and_history(info, history),
     ):
         context = app.get_dividend_context("NVDA")
+
+    assert context["income_status"] == app.INCOME_STATUS_ABSENT
+    assert context["no_data_message"].startswith("No regular dividend found")
+
+
+def test_direct_yahoo_chart_fallback_restores_distribution_after_yfinance_failure():
+    clear_dividend_cache()
+    payload = {
+        "chart": {
+            "result": [{
+                "meta": {
+                    "currency": "GBP",
+                    "regularMarketPrice": 105.675,
+                    "instrumentType": "ETF",
+                },
+                "timestamp": [1784332800],
+                "events": {
+                    "dividends": {
+                        "one": {"amount": 0.222219, "date": 1758178800},
+                        "two": {"amount": 0.223298, "date": 1766016000},
+                        "three": {"amount": 0.246723, "date": 1773878400},
+                        "four": {"amount": 0.244174, "date": 1781740800},
+                    }
+                },
+            }],
+            "error": None,
+        }
+    }
+    response = MagicMock()
+    response.read.return_value = json.dumps(payload).encode("utf-8")
+    response.__enter__.return_value = response
+
+    with (
+        patch.object(app.yf, "Ticker", side_effect=RuntimeError("rate limited")),
+        patch.object(app, "urlopen", return_value=response),
+    ):
+        context = app.get_dividend_context("VUSA.L")
+
+    assert context["income_status"] == app.INCOME_STATUS_AVAILABLE
+    assert context["is_etf"] is True
+    assert context["dividend_yield"] == "0.89%"
+    assert context["annual_dividend"] == "£0.94 per share annually"
+
+
+def test_direct_yahoo_chart_fallback_can_confirm_no_dividend_without_metadata():
+    clear_dividend_cache()
+    payload = {
+        "chart": {
+            "result": [{
+                "meta": {
+                    "currency": "USD",
+                    "regularMarketPrice": 320.5,
+                    "instrumentType": "EQUITY",
+                },
+                "timestamp": [1784332800],
+            }],
+            "error": None,
+        }
+    }
+    response = MagicMock()
+    response.read.return_value = json.dumps(payload).encode("utf-8")
+    response.__enter__.return_value = response
+
+    with (
+        patch.object(app.yf, "Ticker", side_effect=RuntimeError("rate limited")),
+        patch.object(app, "urlopen", return_value=response),
+    ):
+        context = app.get_dividend_context("TSLA")
 
     assert context["income_status"] == app.INCOME_STATUS_ABSENT
     assert context["no_data_message"].startswith("No regular dividend found")

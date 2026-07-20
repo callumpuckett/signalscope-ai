@@ -20,6 +20,11 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+try:
+    import certifi
+except ImportError:
+    certifi = None
+
 
 def is_production_environment():
     return (
@@ -2280,6 +2285,80 @@ def provider_failure_kind(exc):
     return "provider-exception"
 
 
+def fetch_yahoo_income_history(symbol):
+    query = urlencode({
+        "range": "1y",
+        "interval": "1d",
+        "events": "div",
+        "includeAdjustedClose": "true",
+    })
+    url = (
+        "https://query1.finance.yahoo.com/v8/finance/chart/"
+        f"{quote(canonical_stock_symbol(symbol), safe='')}?{query}"
+    )
+    request_object = Request(
+        url,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (compatible; StockRadar/1.0)",
+        },
+    )
+    ssl_context = (
+        ssl.create_default_context(cafile=certifi.where())
+        if certifi is not None
+        else ssl.create_default_context()
+    )
+    with urlopen(request_object, timeout=6, context=ssl_context) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+
+    chart = payload.get("chart") if isinstance(payload, dict) else None
+    results = chart.get("result") if isinstance(chart, dict) else None
+    result = results[0] if isinstance(results, list) and results else None
+    if not isinstance(result, dict):
+        raise ValueError("Yahoo chart response did not contain a result")
+
+    meta = result.get("meta") if isinstance(result.get("meta"), dict) else {}
+    provider_info = {
+        "quoteType": meta.get("instrumentType"),
+        "currency": meta.get("currency"),
+        "regularMarketPrice": meta.get("regularMarketPrice"),
+    }
+    provider_info = {
+        key: value for key, value in provider_info.items() if value not in (None, "")
+    }
+
+    events = result.get("events") if isinstance(result.get("events"), dict) else {}
+    dividends = events.get("dividends") if isinstance(events.get("dividends"), dict) else {}
+    payment_rows = []
+    for event in dividends.values():
+        if not isinstance(event, dict):
+            continue
+        timestamp = fundamental_number(event.get("date"))
+        amount = fundamental_number(event.get("amount"))
+        if timestamp is None or timestamp <= 0 or amount is None or amount < 0:
+            continue
+        payment_rows.append((datetime.fromtimestamp(timestamp, tz=timezone.utc), amount))
+
+    if payment_rows:
+        history = pd.DataFrame(
+            {"Dividends": [amount for _, amount in payment_rows]},
+            index=pd.DatetimeIndex([date for date, _ in payment_rows]),
+        )
+    else:
+        timestamps = result.get("timestamp") if isinstance(result.get("timestamp"), list) else []
+        latest_timestamp = fundamental_number(timestamps[-1]) if timestamps else None
+        if latest_timestamp is None or latest_timestamp <= 0:
+            raise ValueError("Yahoo chart response did not contain validated timestamps")
+        history = pd.DataFrame(
+            {"Dividends": [0]},
+            index=pd.DatetimeIndex([
+                datetime.fromtimestamp(latest_timestamp, tz=timezone.utc)
+            ]),
+        )
+
+    return history, provider_info
+
+
 def get_dividend_context(symbol):
     cleaned_symbol = canonical_stock_symbol(symbol)
     now = time.time()
@@ -2389,10 +2468,30 @@ def get_dividend_context(symbol):
                     provider_failure_kind(exc),
                 )
                 income_history = None
+        if income_history is None:
+            try:
+                income_history, chart_info = fetch_yahoo_income_history(cleaned_symbol)
+                for key, value in chart_info.items():
+                    info.setdefault(key, value)
+                provider_response_received = True
+                cache_income_history(cleaned_symbol, income_history)
+                app.logger.warning(
+                    "Income history fallback succeeded for %s via Yahoo chart data.",
+                    cleaned_symbol,
+                )
+            except Exception as exc:
+                app.logger.warning(
+                    "Yahoo chart fallback unavailable for %s: %s (%s).",
+                    cleaned_symbol,
+                    type(exc).__name__,
+                    provider_failure_kind(exc),
+                )
         info, history_evidence_received = enrich_income_info_from_history(
             info,
             income_history,
         )
+        if history_evidence_received:
+            provider_response_received = True
         if income_history is not None and not history_evidence_received:
             app.logger.warning(
                 "Income history unavailable for %s: incomplete provider response.",
@@ -2400,6 +2499,8 @@ def get_dividend_context(symbol):
             )
         if income_currency_mismatch and not history_evidence_received:
             provider_response_received = False
+
+    is_etf = provider_instrument_is_etf(info, instrument_profile)
 
     income_status = classify_income_data(info, provider_response_received)
 
