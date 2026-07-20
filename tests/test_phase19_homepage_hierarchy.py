@@ -36,6 +36,7 @@ def test_logged_out_homepage_uses_the_batch_one_public_order():
     assert response.status_code == 200
     markers = (
         '<header class="public-header">',
+        'aria-label="Live market headlines"',
         '<div class="card hero-card public-hero" id="investment-compass-card">',
         '<section class="hero-search-panel" id="stock-search"',
         '<section class="card product-steps" id="how-stockradar-works"',
@@ -68,7 +69,7 @@ def test_logged_out_homepage_has_compact_public_navigation_and_stock_search():
     assert "📊 AI Signals" not in page
     assert "🧠 Premium Watchlist" not in page
     assert "⚖️ Compare Stocks" not in page
-    assert "Market News" not in page
+    assert page.count('class="live-alert-strip"') == 1
     assert 'id="overview-section"' not in page
     assert 'aria-label="Current signal overview"' not in page
     assert "UK market status" not in page

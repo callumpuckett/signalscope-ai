@@ -6770,7 +6770,6 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 
 
 <div class="main {% if is_public_home %}public-main{% endif %}" id="main-content" tabindex="-1">
-    {% if not is_public_home %}
     <div class="top-intel-layout {% if not live_headlines %}single-intel{% endif %}">
         <div class="live-alert-strip" aria-label="Live market headlines">
             <div class="live-alert-header">
@@ -6816,6 +6815,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
             {% endif %}
         </div>
 
+        {% if not is_public_home %}
         <div class="top-bar" aria-label="Quick search and navigation">
             <form class="smart-search" onsubmit="return runSmartSearch(event)">
                 <label for="smartSearchInput">Quick Search</label>
@@ -6827,8 +6827,8 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
                 <div id="searchMessage" class="search-message" role="status"></div>
             </form>
         </div>
+        {% endif %}
     </div>
-    {% endif %}
 
 	    <div class="card hero-card {% if is_public_home %}public-hero{% endif %}" id="investment-compass-card">
         {% if is_public_home %}
