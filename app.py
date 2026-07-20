@@ -6454,6 +6454,7 @@ html = """
 :root{--font-hero:clamp(40px,4.4vw,52px);--font-section:clamp(26px,2.4vw,34px);--font-card-title:19px;--font-body:15px;--font-small:13px;--font-kicker:11px;--font-cta:14px;}
 html{scroll-behavior:smooth;}
 body{margin:0;background:radial-gradient(circle at 18% 8%,rgba(0,255,170,0.11),transparent 30%),radial-gradient(circle at 90% 12%,rgba(245,185,79,0.08),transparent 28%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;display:flex;min-height:100vh;font-size:var(--font-body);}
+body.public-home{display:block;}
 a{color:#38bdf8;text-decoration:none;font-weight:800;}
 a:hover{text-decoration:underline;}
 .sidebar{width:280px;min-height:100vh;padding:28px;background:rgba(7,17,24,0.92);border-right:1px solid rgba(148,163,184,0.12);position:sticky;top:0;}
@@ -6469,8 +6470,18 @@ a:hover{text-decoration:underline;}
 .menu-divider{height:1px;background:rgba(255,255,255,0.08);margin:18px 0;}
 .menu-help{color:#94a3b8;font-size:12px;line-height:1.55;margin:10px 0 14px 0;}
 .owner-box{margin-top:20px;color:#94a3b8;font-size:13px;line-height:1.6;}
-.main{flex:1;padding:44px;overflow-y:auto;max-width:1500px;margin:0 auto;display:flex;flex-direction:column;} .top-intel-layout{display:grid;grid-template-columns:1fr;gap:14px;align-items:start;margin-bottom:22px;order:1;}
-.main>#investment-compass-card{order:2}.main>#premium-decision-section{order:3}.main>.trust-strip{order:4}.main>.signal-snapshot-grid{order:5}.main>#newsletter-cta{order:6}.main>.dashboard-section{order:7}.main>footer{order:8}
+.main{flex:1;padding:44px;overflow-y:auto;max-width:1500px;margin:0 auto;display:flex;flex-direction:column;}
+.public-main{max-width:1180px;overflow:visible;}
+.top-intel-layout{display:grid;grid-template-columns:1fr;gap:14px;align-items:start;margin-bottom:22px;}
+.public-header{position:relative;z-index:60;width:100%;padding:16px 28px;background:rgba(7,17,24,0.94);border-bottom:1px solid rgba(148,163,184,0.12);backdrop-filter:blur(18px);}
+.public-header-inner{display:flex;align-items:center;justify-content:space-between;gap:24px;width:min(1180px,100%);margin:0 auto;}
+.public-header .logo{width:190px;margin:0;flex:0 0 auto;}
+.public-header .logo-img{max-width:190px;max-height:52px;}
+.public-nav-links{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
+.public-nav-link{display:inline-flex;align-items:center;justify-content:center;padding:10px 12px;border-radius:13px;color:#d6e0e9;text-decoration:none;font-size:13px;font-weight:900;white-space:nowrap;}
+.public-nav-link:hover{background:rgba(148,163,184,0.09);text-decoration:none;}
+.public-nav-primary{background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;}
+.public-nav-primary:hover{background:linear-gradient(135deg,#5bedaF,#f4cc7b);color:#071018;}
 .top-intel-layout .live-alert-strip{margin-bottom:0;}
 .top-intel-layout.single-intel{grid-template-columns:1fr;}
 .top-intel-layout.single-intel .top-bar{max-width:620px;width:100%;}
@@ -6486,6 +6497,19 @@ a:hover{text-decoration:underline;}
 .smart-search button{background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border:none;border-radius:14px;padding:10px 15px;font-weight:950;cursor:pointer;}
 .search-hint{color:#94a3b8;font-size:12px;margin-top:8px;line-height:1.45;}
 .search-message{display:none;margin-top:8px;color:#ffce4a;font-size:13px;font-weight:800;}
+.public-search-card{padding:24px 28px;scroll-margin-top:18px;}
+.public-search-card .smart-search{width:100%;max-width:760px;margin:0 auto;}
+.public-search-card .smart-search label{color:#dce6ef;font-size:13px;}
+.public-search-card .smart-search button{min-width:128px;}
+.product-steps{padding:24px 28px;}
+.product-steps-header{text-align:center;margin:0 auto 18px;max-width:720px;}
+.product-steps-header h2{margin:0 0 7px;color:#eef2f6;font-size:var(--font-section);}
+.product-steps-header p{margin:0;color:#9fb0bf;line-height:1.55;}
+.product-step-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}
+.product-step{padding:17px;border-radius:17px;background:rgba(2,6,23,0.34);border:1px solid rgba(148,163,184,0.13);}
+.product-step-number{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-bottom:9px;border-radius:999px;background:rgba(74,222,163,0.13);color:#86efac;font-weight:950;}
+.product-step strong{display:block;color:#e8eef4;font-size:16px;margin-bottom:5px;}
+.product-step span{display:block;color:#9fb0bf;font-size:13px;line-height:1.45;}
 .live-alert-strip{position:relative;top:auto;z-index:1;width:100%;max-width:100%;margin-bottom:0;background:linear-gradient(90deg,rgba(0,255,170,0.12),rgba(56,189,248,0.10),rgba(255,184,107,0.10));border:1px solid rgba(255,255,255,0.12);border-radius:18px;overflow:hidden;box-shadow:0 18px 48px rgba(0,0,0,0.24);backdrop-filter:blur(18px);}
 .live-alert-header{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid rgba(255,255,255,0.08);font-weight:950;color:white;text-transform:uppercase;letter-spacing:0.08em;font-size:12px;}
 .live-dot{width:9px;height:9px;border-radius:999px;background:#22c55e;box-shadow:0 0 18px rgba(34,197,94,0.8);}
@@ -6638,11 +6662,24 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 .filter-button.active-filter{background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-color:transparent;}
 .filter-status{margin-top:12px;color:#94a3b8;font-size:13px;font-weight:800;}
 .hidden-signal-row{display:none;}
-	@media(max-width:900px){:root{--font-hero:clamp(32px,9vw,38px);--font-section:clamp(24px,6vw,28px);}body{flex-direction:column;}.sidebar{width:100%;min-height:auto;position:relative;top:auto;padding:18px 16px;overflow-x:auto;white-space:nowrap;border-right:0;border-bottom:1px solid rgba(148,163,184,0.12);}.sidebar .logo{display:inline-block;max-width:170px;margin-bottom:12px;vertical-align:middle;}.sidebar .logo-img{max-width:170px;max-height:46px;}.sidebar .nav-section-label,.sidebar .menu-help,.sidebar .menu-divider,.sidebar .owner-box{display:none;}.sidebar .nav-link{display:inline-block;width:auto;padding:10px 12px;margin:0 6px 0 0;font-size:13px;}.main{padding:20px 16px;width:100%;}.top-bar{position:relative;justify-content:stretch;}.smart-search{width:100%;}.live-alert-strip{width:100%;}.live-alert-header{padding:8px 11px;font-size:11px;}.live-alert-track{padding:5px 0;}.live-alert-loop{gap:14px;animation-duration:48s;}.live-headline{flex-basis:540px;min-height:28px;padding:3px 14px 3px 0;gap:6px;}.live-news-title{font-size:12px;max-width:225px;}.market-news-stocks{display:inline-flex;}.market-news-stocks .live-affected-label{font-size:9px;}.market-news-impact .live-meta{display:none;}.market-news-impact .live-score{font-size:9px;}.summary-grid,.market-grid,.feature-grid,.impact-grid,.radar-summary,.signal-guide-grid,.filter-grid,.trust-strip,.signal-snapshot-grid{grid-template-columns:1fr;}.premium-example-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.premium-brief-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.premium-home-grid{grid-template-columns:repeat(2,minmax(0,1fr));max-width:720px;}.newsletter-cta-card{align-items:flex-start;flex-direction:column;}.hero-card{padding:28px 22px}.hero-card h1{font-size:var(--font-hero);line-height:1.05;}.hero-card .hero-subtitle{font-size:15px;}.hero-actions a,.premium-price-row a{width:100%;text-align:center;}}
-	@media(max-width:640px){.premium-home-card{padding:20px 18px;}.premium-home-header{text-align:left;margin-bottom:14px;}.premium-home-card h2{font-size:clamp(28px,7vw,34px);}.premium-example-header{flex-direction:column;gap:8px;}.premium-example-grid,.premium-home-grid{grid-template-columns:1fr;max-width:none;}.premium-home-feature{min-height:0;padding:16px;}.premium-home-cta-banner{align-items:flex-start;flex-direction:column;gap:6px;width:100%;}.premium-home-cta-banner small{text-align:left;}}
+	@media(max-width:900px){:root{--font-hero:clamp(32px,9vw,38px);--font-section:clamp(24px,6vw,28px);}body{flex-direction:column;}.sidebar{width:100%;min-height:auto;position:relative;top:auto;padding:18px 16px;overflow-x:auto;white-space:nowrap;border-right:0;border-bottom:1px solid rgba(148,163,184,0.12);}.sidebar .logo{display:inline-block;max-width:170px;margin-bottom:12px;vertical-align:middle;}.sidebar .logo-img{max-width:170px;max-height:46px;}.sidebar .nav-section-label,.sidebar .menu-help,.sidebar .menu-divider,.sidebar .owner-box{display:none;}.sidebar .nav-link{display:inline-block;width:auto;padding:10px 12px;margin:0 6px 0 0;font-size:13px;}.main{padding:20px 16px;width:100%;}.top-bar{position:relative;justify-content:stretch;}.smart-search{width:100%;}.live-alert-strip{width:100%;}.live-alert-header{padding:8px 11px;font-size:11px;}.live-alert-track{padding:5px 0;}.live-alert-loop{gap:14px;animation-duration:48s;}.live-headline{flex-basis:540px;min-height:28px;padding:3px 14px 3px 0;gap:6px;}.live-news-title{font-size:12px;max-width:225px;}.market-news-stocks{display:inline-flex;}.market-news-stocks .live-affected-label{font-size:9px;}.market-news-impact .live-meta{display:none;}.market-news-impact .live-score{font-size:9px;}.summary-grid,.market-grid,.feature-grid,.impact-grid,.radar-summary,.signal-guide-grid,.filter-grid,.trust-strip,.signal-snapshot-grid{grid-template-columns:1fr;}.product-step-grid{grid-template-columns:1fr;}.premium-example-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.premium-brief-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.premium-home-grid{grid-template-columns:repeat(2,minmax(0,1fr));max-width:720px;}.newsletter-cta-card{align-items:flex-start;flex-direction:column;}.hero-card{padding:28px 22px}.hero-card h1{font-size:var(--font-hero);line-height:1.05;}.hero-card .hero-subtitle{font-size:15px;}.hero-actions a,.premium-price-row a{width:100%;text-align:center;}}
+	@media(max-width:640px){.public-header{padding:12px 14px;}.public-header-inner{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px 12px;}.public-header .logo{width:154px;}.public-header .logo-img{max-width:154px;max-height:42px;}.public-nav-links{grid-column:1/-1;justify-content:flex-start;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;}.public-nav-link{padding:9px 6px;font-size:12px;white-space:normal;text-align:center;}.public-nav-primary{grid-column:2;grid-row:1;min-width:86px;}.public-nav-links .public-nav-primary{grid-column:auto;grid-row:auto;}.public-search-card,.product-steps{padding:20px 18px;}.public-search-card .smart-search-row{flex-direction:column;}.public-search-card .smart-search button{width:100%;}.premium-home-card{padding:20px 18px;}.premium-home-header{text-align:left;margin-bottom:14px;}.premium-home-card h2{font-size:clamp(28px,7vw,34px);}.premium-example-header{flex-direction:column;gap:8px;}.premium-example-grid,.premium-home-grid{grid-template-columns:1fr;max-width:none;}.premium-home-feature{min-height:0;padding:16px;}.premium-home-cta-banner{align-items:flex-start;flex-direction:column;gap:6px;width:100%;}.premium-home-cta-banner small{text-align:left;}}
 </style>
 </head>
-<body>
+<body class="{% if is_public_home %}public-home{% else %}dashboard-view{% endif %}" data-public-home="{{ 'true' if is_public_home else 'false' }}">
+{% if is_public_home %}
+<header class="public-header">
+    <div class="public-header-inner">
+        <a class="logo" href="/" aria-label="StockRadar home"><img class="logo-img" src="/static/stockradar-main-logo.png" alt="StockRadar" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-block';"><span class="logo-fallback">StockRadar</span></a>
+        <nav class="public-nav-links" aria-label="Primary navigation">
+            <a class="public-nav-link public-nav-primary" href="#stock-search">Search</a>
+            <a class="public-nav-link" href="/how-it-works">How It Works</a>
+            <a class="public-nav-link" href="/newsletter">Newsletter</a>
+            <a class="public-nav-link" href="/upgrade">Premium</a>
+        </nav>
+    </div>
+</header>
+{% else %}
 <div class="sidebar">
     <a class="logo" href="/" aria-label="StockRadar"><img class="logo-img" src="/static/stockradar-main-logo.png" alt="StockRadar" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-block';"><span class="logo-fallback">StockRadar</span></a>
     <div class="nav-section-label">Main Menu</div>
@@ -6672,9 +6709,11 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
     {% endif %}
     <div class="owner-box">Premium unlocks full AI reasoning, risk reads, next-move analysis and market intelligence.</div>
 </div>
+{% endif %}
 
 
-<div class="main" id="main-content" tabindex="-1">
+<div class="main {% if is_public_home %}public-main{% endif %}" id="main-content" tabindex="-1">
+    {% if not is_public_home %}
     <div class="top-intel-layout {% if not live_headlines %}single-intel{% endif %}">
         <div class="live-alert-strip" aria-label="Live market headlines">
             <div class="live-alert-header">
@@ -6732,19 +6771,54 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
             </form>
         </div>
     </div>
+    {% endif %}
 
 	    <div class="card hero-card" id="investment-compass-card">
 	        <p style="color:#4adea3;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 12px;">AI-assisted market research</p>
 	        <h1>Learn to think like an investor.</h1>
 	        <p class="hero-subtitle">We help people become better investors through plain-English market signals, practical decision support and investing education—without the noise.</p>
+	        {% if is_public_home %}
+	        <p style="color:#91a3b4;font-size:14px;line-height:1.6;margin:18px 0 0;">Start with one company or ETF. See the current signal, understand the basic report and use it as a prompt for your own research.</p>
+	        {% else %}
 	        <p style="color:#91a3b4;font-size:14px;line-height:1.6;margin:18px 0 0;">Start free with StockRadar Weekly, explore the live signal dashboard, then upgrade when you want the reasoning and risk read behind each signal.</p>
+	        {% endif %}
         <div class="hero-actions">
+            {% if is_public_home %}
+            <a class="cta-primary" href="#stock-search">Search a stock</a>
+            {% else %}
             <a class="cta-primary" href="/newsletter">Join Free</a>
             <a class="cta-secondary" href="/upgrade">Upgrade to Premium — £5/month</a>
             <a class="cta-secondary" href="/?tab=signals">Explore Signals</a>
+            {% endif %}
         </div>
         <p style="color:#91a3b4;font-size:13px;line-height:1.6;margin:18px 0 0;">Signals are research prompts, not financial advice. <a href="/how-it-works">How it works</a></p>
     </div>
+
+    {% if is_public_home %}
+    <section class="card public-search-card" id="stock-search" aria-labelledby="stock-search-heading">
+        <form class="smart-search" onsubmit="return runSmartSearch(event)">
+            <label id="stock-search-heading" for="smartSearchInput">Search a stock or ETF</label>
+            <div class="smart-search-row">
+                <input id="smartSearchInput" type="search" placeholder="Try Microsoft, Apple, SPY or MSFT" autocomplete="off" aria-label="Search by company name, ticker or ETF">
+                <button type="submit">View report</button>
+            </div>
+            <div class="search-hint">Start with a company or fund you already know. Major indexes remain supported.</div>
+            <div id="searchMessage" class="search-message" role="status"></div>
+        </form>
+    </section>
+
+    <section class="card product-steps" id="how-stockradar-works" aria-labelledby="product-steps-heading">
+        <div class="product-steps-header">
+            <h2 id="product-steps-heading">Start with one stock</h2>
+            <p>Use each signal as a starting point for independent research.</p>
+        </div>
+        <div class="product-step-grid">
+            <div class="product-step"><span class="product-step-number">1</span><strong>Search a stock</strong><span>Enter a company, ticker or ETF.</span></div>
+            <div class="product-step"><span class="product-step-number">2</span><strong>See the free signal and basic report</strong><span>Review the current research prompt in plain English.</span></div>
+            <div class="product-step"><span class="product-step-number">3</span><strong>Learn what evidence to research next</strong><span>Check the context and make your own decision.</span></div>
+        </div>
+    </section>
+    {% endif %}
 
 	    <div class="card premium-home-card" id="premium-decision-section">
 	        <div class="premium-home-header">
@@ -6824,11 +6898,13 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
         <div class="trust-item"><strong>Risk still matters</strong>Check concentration, time horizon and portfolio fit before acting.</div>
     </div>
 
+    {% if not is_public_home %}
     <div class="signal-snapshot-grid" aria-label="Current signal overview">
         <a class="signal-snapshot" href="/?tab=signals&open=buy-panel"><span>Constructive patterns</span><strong class="buy">{{ buy_count }}</strong><span>Explore BUY research prompts</span></a>
         <a class="signal-snapshot" href="/?tab=signals&open=hold-panel"><span>Steady patterns</span><strong class="hold">{{ hold_count }}</strong><span>Review HOLD and watch signals</span></a>
         <a class="signal-snapshot" href="/?tab=signals&open=sell-panel"><span>Caution patterns</span><strong class="sell">{{ sell_count }}</strong><span>Check weakening signals and risk</span></a>
     </div>
+    {% endif %}
 
     <div class="card newsletter-cta-card" id="newsletter-cta">
         <div>
@@ -6838,6 +6914,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
         </div>
         <a class="cta-primary" href="/newsletter">Join Free</a>
     </div>
+    {% if not is_public_home %}
     <div id="overview-section" class="dashboard-section {% if active_tab == 'overview' %}active-section{% endif %}">
     <div class="card">
         <h2>Market status</h2>
@@ -7094,6 +7171,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
         <div class="card"><h2>Daily Value</h2><p>Use the dashboard to check what is strengthening, weakening and worth watching.</p></div>
     </div>
     </div>
+    {% endif %}
     {{ disclaimer_footer() | safe }}
 </div>
 
@@ -7103,7 +7181,7 @@ function togglePanel(panelId){var panel=document.getElementById(panelId);var but
 function flashTarget(element){if(!element){return;}element.classList.remove('highlight-target');void element.offsetWidth;element.classList.add('highlight-target');}
 function openPanelAndJump(panelId){var panel=document.getElementById(panelId);var button=document.querySelector('[aria-controls="'+panelId+'"]');if(!panel){return;}panel.classList.add('open');if(button){button.setAttribute('aria-expanded','true');}panel.scrollIntoView({behavior:'smooth',block:'start'});flashTarget(panel);}
 function showSearchMessage(message){var messageBox=document.getElementById('searchMessage');if(!messageBox){return;}messageBox.textContent=message;messageBox.style.display='block';}
-function runSmartSearch(event){event.preventDefault();var input=document.getElementById('smartSearchInput');if(!input){return false;}var query=input.value.trim().toUpperCase();if(!query){showSearchMessage('Type a ticker or section name first.');return false;}var map={'APPLE':'AAPL','AAPL':'AAPL','TESLA':'TSLA','TSLA':'TSLA','NVIDIA':'NVDA','NVDA':'NVDA','MICROSOFT':'MSFT','MSFT':'MSFT','AMAZON':'AMZN','AMZN':'AMZN','GOOGLE':'GOOGL','ALPHABET':'GOOGL','META':'META','FACEBOOK':'META','SPCX':'SPCX','SPACEX':'SPCX','SPACE X':'SPCX','SPAX.PVT':'SPCX','MAERSK':'MAERSK-B.CO','MAERSK B':'MAERSK-B.CO','MAERSK A':'MAERSK-A.CO','A P MOLLER MAERSK':'MAERSK-B.CO','AP MOLLER MAERSK':'MAERSK-B.CO','BAE.L':'BA.L','BAE SYSTEMS':'BA.L','S&P 500':'^GSPC','SP500':'^GSPC','S&P':'^GSPC','NASDAQ':'^IXIC','FTSE':'^FTSE','FTSE 100':'^FTSE','HSBC':'HSBA.L','BP':'BP.L','ASTRAZENECA':'AZN.L','SHELL':'SHEL.L'};if(map[query]){window.location.href='/stock/'+encodeURIComponent(map[query]);return false;}if(['AI','RECOMMENDATIONS','AI RECOMMENDATIONS','WATCHLIST'].includes(query)){window.location.href='/?tab=watchlist';return false;}if(['BUY','BUYS','BUY SIGNALS'].includes(query)){window.location.href='/?tab=signals&open=buy-panel';return false;}if(['HOLD','HOLDS','HOLD SIGNALS'].includes(query)){window.location.href='/?tab=signals&open=hold-panel';return false;}if(['SELL','SELLS','SELL SIGNALS'].includes(query)){window.location.href='/?tab=signals&open=sell-panel';return false;}if(['CONVICTION','HIGH CONVICTION','TOP'].includes(query)){window.location.href='/?tab=signals&open=conviction-panel';return false;}if(['POLITICS','POLITICAL','GEOPOLITICS','GEOPOLITICAL','RADAR','MARKET IMPACT','IMPACT RADAR'].includes(query)){window.location.href='/?tab=radar';return false;}
+function runSmartSearch(event){event.preventDefault();var input=document.getElementById('smartSearchInput');if(!input){return false;}var publicHome=document.body.getAttribute('data-public-home')==='true';var query=input.value.trim().toUpperCase();if(!query){showSearchMessage(publicHome?'Type a company, ticker or ETF first.':'Type a ticker or section name first.');return false;}var map={'APPLE':'AAPL','AAPL':'AAPL','TESLA':'TSLA','TSLA':'TSLA','NVIDIA':'NVDA','NVDA':'NVDA','MICROSOFT':'MSFT','MSFT':'MSFT','AMAZON':'AMZN','AMZN':'AMZN','GOOGLE':'GOOGL','ALPHABET':'GOOGL','META':'META','FACEBOOK':'META','SPCX':'SPCX','SPACEX':'SPCX','SPACE X':'SPCX','SPAX.PVT':'SPCX','MAERSK':'MAERSK-B.CO','MAERSK B':'MAERSK-B.CO','MAERSK A':'MAERSK-A.CO','A P MOLLER MAERSK':'MAERSK-B.CO','AP MOLLER MAERSK':'MAERSK-B.CO','BAE.L':'BA.L','BAE SYSTEMS':'BA.L','S&P 500':'^GSPC','SP500':'^GSPC','S&P':'^GSPC','NASDAQ':'^IXIC','FTSE':'^FTSE','FTSE 100':'^FTSE','HSBC':'HSBA.L','BP':'BP.L','ASTRAZENECA':'AZN.L','SHELL':'SHEL.L'};if(map[query]){window.location.href='/stock/'+encodeURIComponent(map[query]);return false;}if(publicHome){if(/^[A-Z0-9.^-]{1,12}$/.test(query)){window.location.href='/stock/'+encodeURIComponent(query);return false;}showSearchMessage('No matching stock or ETF found. Try Microsoft, Apple, SPY or MSFT.');return false;}if(['AI','RECOMMENDATIONS','AI RECOMMENDATIONS','WATCHLIST'].includes(query)){window.location.href='/?tab=watchlist';return false;}if(['BUY','BUYS','BUY SIGNALS'].includes(query)){window.location.href='/?tab=signals&open=buy-panel';return false;}if(['HOLD','HOLDS','HOLD SIGNALS'].includes(query)){window.location.href='/?tab=signals&open=hold-panel';return false;}if(['SELL','SELLS','SELL SIGNALS'].includes(query)){window.location.href='/?tab=signals&open=sell-panel';return false;}if(['CONVICTION','HIGH CONVICTION','TOP'].includes(query)){window.location.href='/?tab=signals&open=conviction-panel';return false;}if(['POLITICS','POLITICAL','GEOPOLITICS','GEOPOLITICAL','RADAR','MARKET IMPACT','IMPACT RADAR'].includes(query)){window.location.href='/?tab=radar';return false;}
 if(['PRO','PREMIUM','UPGRADE','PAYMENT','SUBSCRIPTION'].includes(query)){window.location.href='/upgrade';return false;}if(/^[A-Z0-9.^-]{1,12}$/.test(query)){window.location.href='/stock/'+encodeURIComponent(query);return false;}showSearchMessage('No matching stock or section found. Try Apple, AAPL, S&P 500, Nasdaq, BUY, SELL, AI or Premium.');return false;}
 function setSignalFilter(signal){var select=document.getElementById('signalFilterValue');if(select){select.value=signal;}document.querySelectorAll('[data-signal-filter]').forEach(function(button){button.classList.toggle('active-filter',button.getAttribute('data-signal-filter')===signal);});applySignalFilters();}
 function resetSignalFilters(){var tickerInput=document.getElementById('tickerFilterInput');var sectorSelect=document.getElementById('sectorFilterSelect');if(tickerInput){tickerInput.value='';}if(sectorSelect){sectorSelect.value='ALL';}setSignalFilter('ALL');}
@@ -8573,6 +8651,11 @@ def dashboard():
     data["market_news_ticker_limit"] = MARKET_NEWS_TICKER_LIMIT
     data["owner_logged_in"] = owner_has_access()
     data["has_premium_access"] = premium_has_access()
+    data["is_public_home"] = (
+        not request.args.get("tab")
+        and not data["owner_logged_in"]
+        and not data["has_premium_access"]
+    )
     data["active_tab"] = active_tab
     data["quick_search_query"] = quick_search_query
     data["quick_search_results"] = quick_search_results
