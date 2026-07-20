@@ -363,6 +363,7 @@ def test_direct_yahoo_chart_fallback_restores_distribution_after_yfinance_failur
     assert context["is_etf"] is True
     assert context["dividend_yield"] == "0.89%"
     assert context["annual_dividend"] == "£0.94 per share annually"
+    assert context["ex_dividend_date"] != "Not available"
 
 
 def test_direct_yahoo_chart_fallback_can_confirm_no_dividend_without_metadata():

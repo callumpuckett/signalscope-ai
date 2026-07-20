@@ -2344,6 +2344,9 @@ def fetch_yahoo_income_history(symbol):
             {"Dividends": [amount for _, amount in payment_rows]},
             index=pd.DatetimeIndex([date for date, _ in payment_rows]),
         )
+        provider_info["exDividendDate"] = max(
+            date.timestamp() for date, _ in payment_rows
+        )
     else:
         timestamps = result.get("timestamp") if isinstance(result.get("timestamp"), list) else []
         latest_timestamp = fundamental_number(timestamps[-1]) if timestamps else None
@@ -2468,9 +2471,20 @@ def get_dividend_context(symbol):
                     provider_failure_kind(exc),
                 )
                 income_history = None
-        if income_history is None:
+        market_price_available = any(
+            (fundamental_number(info.get(field)) or 0) > 0
+            for field in ("currentPrice", "regularMarketPrice")
+        )
+        needs_chart_metadata = (
+            not provider_response_received
+            or not str(info.get("currency") or "").strip()
+            or not market_price_available
+        )
+        if income_history is None or needs_chart_metadata:
             try:
-                income_history, chart_info = fetch_yahoo_income_history(cleaned_symbol)
+                chart_history, chart_info = fetch_yahoo_income_history(cleaned_symbol)
+                if income_history is None or needs_chart_metadata:
+                    income_history = chart_history
                 for key, value in chart_info.items():
                     info.setdefault(key, value)
                 provider_response_received = True
@@ -2646,8 +2660,9 @@ def get_dividend_context(symbol):
             else ""
         ),
         "source_note": (
-            "Source: Yahoo Finance data accessed through yfinance. Values may be delayed, "
-            "incomplete or unavailable; confirm important details with the company or fund."
+            "Source: Yahoo Finance data accessed through yfinance or Yahoo chart data. "
+            "Values may be delayed, incomplete or unavailable; confirm important details "
+            "with the company or fund."
             if income_status != INCOME_STATUS_UNAVAILABLE
             else "Source data is currently unavailable or incomplete from yfinance."
         ),
