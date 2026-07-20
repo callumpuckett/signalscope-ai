@@ -36,9 +36,10 @@ def test_logged_out_homepage_uses_the_batch_one_public_order():
     assert response.status_code == 200
     markers = (
         '<header class="public-header">',
-        '<div class="card hero-card" id="investment-compass-card">',
-        '<section class="card public-search-card" id="stock-search"',
+        '<div class="card hero-card public-hero" id="investment-compass-card">',
+        '<section class="hero-search-panel" id="stock-search"',
         '<section class="card product-steps" id="how-stockradar-works"',
+        '<section class="card free-report-preview" id="free-report-preview"',
         '<div class="card premium-home-card" id="premium-decision-section">',
         '<div class="trust-strip" aria-label="How to use StockRadar">',
         '<div class="card newsletter-cta-card" id="newsletter-cta">',
@@ -59,10 +60,10 @@ def test_logged_out_homepage_has_compact_public_navigation_and_stock_search():
     assert 'href="/upgrade">Premium</a>' in page
     assert "Search a stock or ETF" in page
     assert 'placeholder="Try Microsoft, Apple, SPY or MSFT"' in page
-    assert "View report" in page
-    assert "Search a stock</strong>" in page
-    assert "See the free signal and basic report" in page
-    assert "Learn what evidence to research next" in page
+    assert "View free report" in page
+    assert "Choose a company or fund you recognise." in page
+    assert "See the current signal in plain English." in page
+    assert "Learn what evidence and risks may matter next." in page
 
     assert "📊 AI Signals" not in page
     assert "🧠 Premium Watchlist" not in page

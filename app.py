@@ -1142,6 +1142,42 @@ def calculate_counts(recommendations):
     return buy_count, hold_count, sell_count, high_conviction_count
 
 
+def build_homepage_free_report_preview(recommendations=None):
+    """Build a free-only Microsoft preview from data already loaded for the homepage."""
+    for item in recommendations or []:
+        if str(item.get("ticker") or "").strip().upper() != "MSFT":
+            continue
+
+        signal = clean_signal(item.get("signal"), item.get("confidence"))
+        confidence = normalise_confidence(item.get("confidence"))
+        strength = signal_strength_label(confidence)
+        return {
+            "company_name": "Microsoft",
+            "ticker": "MSFT",
+            "signal": signal,
+            "confidence": confidence,
+            "strength": strength,
+            "is_current": True,
+            "explanation": (
+                f"The current {signal} signal is StockRadar's latest free research prompt for Microsoft."
+            ),
+            "research_next": (
+                "Open the live report to review the current signal, strength and chart context."
+            ),
+        }
+
+    return {
+        "company_name": "Microsoft",
+        "ticker": "MSFT",
+        "signal": "",
+        "confidence": "",
+        "strength": "",
+        "is_current": False,
+        "explanation": "Example preview — open the live report for the current signal.",
+        "research_next": "The live Microsoft report is the authoritative current view.",
+    }
+
+
 def build_premium_decision_brief(recommendations=None):
     rows = list(recommendations or get_recommendations())
     buy_rows, hold_rows, sell_rows, conviction_rows = split_rows(rows)
@@ -6497,19 +6533,39 @@ a:hover{text-decoration:underline;}
 .smart-search button{background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border:none;border-radius:14px;padding:10px 15px;font-weight:950;cursor:pointer;}
 .search-hint{color:#94a3b8;font-size:12px;margin-top:8px;line-height:1.45;}
 .search-message{display:none;margin-top:8px;color:#ffce4a;font-size:13px;font-weight:800;}
-.public-search-card{padding:24px 28px;scroll-margin-top:18px;}
-.public-search-card .smart-search{width:100%;max-width:760px;margin:0 auto;}
-.public-search-card .smart-search label{color:#dce6ef;font-size:13px;}
-.public-search-card .smart-search button{min-width:128px;}
-.product-steps{padding:24px 28px;}
-.product-steps-header{text-align:center;margin:0 auto 18px;max-width:720px;}
+.hero-search-panel{max-width:820px;margin-top:28px;padding-top:24px;border-top:1px solid rgba(148,163,184,0.15);scroll-margin-top:18px;}
+.hero-search-panel h2{margin:0 0 6px;color:#eef2f6;font-size:22px;line-height:1.2;}
+.hero-search-panel>p{margin:0 0 14px;color:#aebdca;line-height:1.5;}
+.hero-search-panel .smart-search{width:100%;max-width:none;}
+.hero-search-panel .smart-search label{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+.hero-search-panel .smart-search-row{border-color:rgba(74,222,163,0.28);box-shadow:0 22px 60px rgba(0,0,0,0.30),0 0 44px rgba(0,255,170,0.08);}
+.hero-search-panel .smart-search button{min-width:150px;}
+.suggested-searches{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:13px;}
+.suggested-searches-label{color:#8fa1b2;font-size:12px;font-weight:850;margin-right:2px;}
+.suggested-search-chip{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:8px 12px;border-radius:999px;background:rgba(148,163,184,0.08);border:1px solid rgba(148,163,184,0.16);color:#dbe7f0;font-size:12px;font-weight:900;text-decoration:none;}
+.suggested-search-chip:hover{background:rgba(74,222,163,0.10);border-color:rgba(74,222,163,0.26);text-decoration:none;}
+.example-reassurance{color:#91a3b4;font-size:13px;line-height:1.5;margin:12px 0 0;}
+.product-steps{padding:22px 26px;}
+.product-steps-header{text-align:center;margin:0 auto 15px;max-width:720px;}
 .product-steps-header h2{margin:0 0 7px;color:#eef2f6;font-size:var(--font-section);}
 .product-steps-header p{margin:0;color:#9fb0bf;line-height:1.55;}
 .product-step-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}
-.product-step{padding:17px;border-radius:17px;background:rgba(2,6,23,0.34);border:1px solid rgba(148,163,184,0.13);}
+.product-step{padding:15px 16px;border-radius:17px;background:rgba(2,6,23,0.28);border:1px solid rgba(148,163,184,0.12);}
 .product-step-number{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-bottom:9px;border-radius:999px;background:rgba(74,222,163,0.13);color:#86efac;font-weight:950;}
 .product-step strong{display:block;color:#e8eef4;font-size:16px;margin-bottom:5px;}
 .product-step span{display:block;color:#9fb0bf;font-size:13px;line-height:1.45;}
+.free-report-preview{padding:24px 28px;}
+.free-report-preview-header{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:14px;}
+.free-report-preview h2{margin:0 0 8px;color:#eef2f6;font-size:var(--font-section);}
+.free-report-preview-name{display:block;color:#f8fafc;font-size:20px;line-height:1.25;}
+.free-report-preview-ticker{color:#8fa1b2;font-size:13px;font-weight:900;letter-spacing:0.08em;}
+.free-report-signal{display:inline-flex;align-items:center;justify-content:center;min-width:74px;padding:9px 12px;border-radius:999px;background:rgba(245,158,11,0.13);border:1px solid rgba(245,158,11,0.24);font-size:13px;font-weight:950;}
+.free-report-signal.buy{background:rgba(34,197,94,0.13);border-color:rgba(34,197,94,0.25);}
+.free-report-signal.sell{background:rgba(239,68,68,0.13);border-color:rgba(239,68,68,0.25);}
+.free-report-meta{color:#aebdca;font-size:13px;font-weight:850;margin:0 0 10px;}
+.free-report-explanation,.free-report-next{max-width:780px;color:#b8c5d1;line-height:1.55;margin:0 0 9px;}
+.free-report-next strong{color:#dce6ef;}
+.free-report-preview .cta-primary{margin-top:6px;}
 .live-alert-strip{position:relative;top:auto;z-index:1;width:100%;max-width:100%;margin-bottom:0;background:linear-gradient(90deg,rgba(0,255,170,0.12),rgba(56,189,248,0.10),rgba(255,184,107,0.10));border:1px solid rgba(255,255,255,0.12);border-radius:18px;overflow:hidden;box-shadow:0 18px 48px rgba(0,0,0,0.24);backdrop-filter:blur(18px);}
 .live-alert-header{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid rgba(255,255,255,0.08);font-weight:950;color:white;text-transform:uppercase;letter-spacing:0.08em;font-size:12px;}
 .live-dot{width:9px;height:9px;border-radius:999px;background:#22c55e;box-shadow:0 0 18px rgba(34,197,94,0.8);}
@@ -6556,6 +6612,7 @@ a:hover{text-decoration:underline;}
 .hero-card{padding:clamp(28px,4vw,48px);background:linear-gradient(145deg,rgba(18,35,45,0.98),rgba(14,23,36,0.98));border-color:rgba(74,222,163,0.20);}
 .hero-card h1{color:#f2f5f8;max-width:980px;margin:0 0 18px;font-size:var(--font-hero);line-height:1.04;letter-spacing:0;}
 .hero-card .hero-subtitle{color:#bdc9d5;line-height:1.68;max-width:900px;font-size:16px;margin:0;}
+.public-hero .hero-subtitle{max-width:720px;font-size:18px;line-height:1.55;}
 .hero-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:24px;}
 .cta-primary,.cta-secondary{display:inline-block;padding:14px 18px;border-radius:15px;text-decoration:none;font-weight:950;font-size:var(--font-cta);line-height:1.1;}
 .cta-primary{background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;box-shadow:0 14px 34px rgba(0,255,170,0.12);}
@@ -6663,7 +6720,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 .filter-status{margin-top:12px;color:#94a3b8;font-size:13px;font-weight:800;}
 .hidden-signal-row{display:none;}
 	@media(max-width:900px){:root{--font-hero:clamp(32px,9vw,38px);--font-section:clamp(24px,6vw,28px);}body{flex-direction:column;}.sidebar{width:100%;min-height:auto;position:relative;top:auto;padding:18px 16px;overflow-x:auto;white-space:nowrap;border-right:0;border-bottom:1px solid rgba(148,163,184,0.12);}.sidebar .logo{display:inline-block;max-width:170px;margin-bottom:12px;vertical-align:middle;}.sidebar .logo-img{max-width:170px;max-height:46px;}.sidebar .nav-section-label,.sidebar .menu-help,.sidebar .menu-divider,.sidebar .owner-box{display:none;}.sidebar .nav-link{display:inline-block;width:auto;padding:10px 12px;margin:0 6px 0 0;font-size:13px;}.main{padding:20px 16px;width:100%;}.top-bar{position:relative;justify-content:stretch;}.smart-search{width:100%;}.live-alert-strip{width:100%;}.live-alert-header{padding:8px 11px;font-size:11px;}.live-alert-track{padding:5px 0;}.live-alert-loop{gap:14px;animation-duration:48s;}.live-headline{flex-basis:540px;min-height:28px;padding:3px 14px 3px 0;gap:6px;}.live-news-title{font-size:12px;max-width:225px;}.market-news-stocks{display:inline-flex;}.market-news-stocks .live-affected-label{font-size:9px;}.market-news-impact .live-meta{display:none;}.market-news-impact .live-score{font-size:9px;}.summary-grid,.market-grid,.feature-grid,.impact-grid,.radar-summary,.signal-guide-grid,.filter-grid,.trust-strip,.signal-snapshot-grid{grid-template-columns:1fr;}.product-step-grid{grid-template-columns:1fr;}.premium-example-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.premium-brief-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.premium-home-grid{grid-template-columns:repeat(2,minmax(0,1fr));max-width:720px;}.newsletter-cta-card{align-items:flex-start;flex-direction:column;}.hero-card{padding:28px 22px}.hero-card h1{font-size:var(--font-hero);line-height:1.05;}.hero-card .hero-subtitle{font-size:15px;}.hero-actions a,.premium-price-row a{width:100%;text-align:center;}}
-	@media(max-width:640px){.public-header{padding:12px 14px;}.public-header-inner{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px 12px;}.public-header .logo{width:154px;}.public-header .logo-img{max-width:154px;max-height:42px;}.public-nav-links{grid-column:1/-1;justify-content:flex-start;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;}.public-nav-link{padding:9px 6px;font-size:12px;white-space:normal;text-align:center;}.public-nav-primary{grid-column:2;grid-row:1;min-width:86px;}.public-nav-links .public-nav-primary{grid-column:auto;grid-row:auto;}.public-search-card,.product-steps{padding:20px 18px;}.public-search-card .smart-search-row{flex-direction:column;}.public-search-card .smart-search button{width:100%;}.premium-home-card{padding:20px 18px;}.premium-home-header{text-align:left;margin-bottom:14px;}.premium-home-card h2{font-size:clamp(28px,7vw,34px);}.premium-example-header{flex-direction:column;gap:8px;}.premium-example-grid,.premium-home-grid{grid-template-columns:1fr;max-width:none;}.premium-home-feature{min-height:0;padding:16px;}.premium-home-cta-banner{align-items:flex-start;flex-direction:column;gap:6px;width:100%;}.premium-home-cta-banner small{text-align:left;}}
+	@media(max-width:640px){.public-header{padding:12px 14px;}.public-header-inner{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px 12px;}.public-header .logo{width:154px;}.public-header .logo-img{max-width:154px;max-height:42px;}.public-nav-links{grid-column:1/-1;justify-content:flex-start;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;}.public-nav-link{padding:9px 6px;font-size:12px;white-space:normal;text-align:center;}.public-nav-primary{grid-column:2;grid-row:1;min-width:86px;}.public-nav-links .public-nav-primary{grid-column:auto;grid-row:auto;}.product-steps,.free-report-preview{padding:20px 18px;}.hero-search-panel{margin-top:22px;padding-top:20px;}.hero-search-panel .smart-search-row{flex-direction:column;}.hero-search-panel .smart-search button{width:100%;min-height:42px;}.suggested-searches-label{width:100%;}.suggested-search-chip{flex:1 1 calc(50% - 8px);}.free-report-preview-header{gap:12px;}.free-report-preview .cta-primary{width:100%;text-align:center;}.premium-home-card{padding:20px 18px;}.premium-home-header{text-align:left;margin-bottom:14px;}.premium-home-card h2{font-size:clamp(28px,7vw,34px);}.premium-example-header{flex-direction:column;gap:8px;}.premium-example-grid,.premium-home-grid{grid-template-columns:1fr;max-width:none;}.premium-home-feature{min-height:0;padding:16px;}.premium-home-cta-banner{align-items:flex-start;flex-direction:column;gap:6px;width:100%;}.premium-home-cta-banner small{text-align:left;}}
 </style>
 </head>
 <body class="{% if is_public_home %}public-home{% else %}dashboard-view{% endif %}" data-public-home="{{ 'true' if is_public_home else 'false' }}">
@@ -6773,50 +6830,75 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
     </div>
     {% endif %}
 
-	    <div class="card hero-card" id="investment-compass-card">
+	    <div class="card hero-card {% if is_public_home %}public-hero{% endif %}" id="investment-compass-card">
+        {% if is_public_home %}
+	        <h1>Learn to think like an investor.</h1>
+	        <p class="hero-subtitle">Search any stock or ETF and get a clear, plain-English research summary in seconds.</p>
+            <section class="hero-search-panel" id="stock-search" aria-labelledby="stock-search-heading">
+                <h2 id="stock-search-heading">Start with a company you already know</h2>
+                <p>Search any stock or ETF.</p>
+                <form class="smart-search" onsubmit="return runSmartSearch(event)">
+                    <label for="smartSearchInput">Search a stock or ETF</label>
+                    <div class="smart-search-row">
+                        <input id="smartSearchInput" type="search" placeholder="Try Microsoft, Apple, SPY or MSFT" autocomplete="off" aria-label="Search a stock or ETF">
+                        <button type="submit">View free report</button>
+                    </div>
+                    <div id="searchMessage" class="search-message" role="status"></div>
+                </form>
+                <div class="suggested-searches" aria-label="Suggested example reports">
+                    <span class="suggested-searches-label">Try an example</span>
+                    <a class="suggested-search-chip" href="/stock/MSFT">Microsoft — MSFT</a>
+                    <a class="suggested-search-chip" href="/stock/AAPL">Apple — AAPL</a>
+                    <a class="suggested-search-chip" href="/stock/AMZN">Amazon — AMZN</a>
+                    <a class="suggested-search-chip" href="/stock/SPY">S&amp;P 500 ETF — SPY</a>
+                </div>
+                <p class="example-reassurance">New to investing? Start with a company or fund you already recognise.</p>
+            </section>
+        {% else %}
 	        <p style="color:#4adea3;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 12px;">AI-assisted market research</p>
 	        <h1>Learn to think like an investor.</h1>
 	        <p class="hero-subtitle">We help people become better investors through plain-English market signals, practical decision support and investing education—without the noise.</p>
-	        {% if is_public_home %}
-	        <p style="color:#91a3b4;font-size:14px;line-height:1.6;margin:18px 0 0;">Start with one company or ETF. See the current signal, understand the basic report and use it as a prompt for your own research.</p>
-	        {% else %}
 	        <p style="color:#91a3b4;font-size:14px;line-height:1.6;margin:18px 0 0;">Start free with StockRadar Weekly, explore the live signal dashboard, then upgrade when you want the reasoning and risk read behind each signal.</p>
-	        {% endif %}
-        <div class="hero-actions">
-            {% if is_public_home %}
-            <a class="cta-primary" href="#stock-search">Search a stock</a>
-            {% else %}
-            <a class="cta-primary" href="/newsletter">Join Free</a>
-            <a class="cta-secondary" href="/upgrade">Upgrade to Premium — £5/month</a>
-            <a class="cta-secondary" href="/?tab=signals">Explore Signals</a>
-            {% endif %}
-        </div>
-        <p style="color:#91a3b4;font-size:13px;line-height:1.6;margin:18px 0 0;">Signals are research prompts, not financial advice. <a href="/how-it-works">How it works</a></p>
+            <div class="hero-actions">
+                <a class="cta-primary" href="/newsletter">Join Free</a>
+                <a class="cta-secondary" href="/upgrade">Upgrade to Premium — £5/month</a>
+                <a class="cta-secondary" href="/?tab=signals">Explore Signals</a>
+            </div>
+            <p style="color:#91a3b4;font-size:13px;line-height:1.6;margin:18px 0 0;">Signals are research prompts, not financial advice. <a href="/how-it-works">How it works</a></p>
+        {% endif %}
     </div>
 
     {% if is_public_home %}
-    <section class="card public-search-card" id="stock-search" aria-labelledby="stock-search-heading">
-        <form class="smart-search" onsubmit="return runSmartSearch(event)">
-            <label id="stock-search-heading" for="smartSearchInput">Search a stock or ETF</label>
-            <div class="smart-search-row">
-                <input id="smartSearchInput" type="search" placeholder="Try Microsoft, Apple, SPY or MSFT" autocomplete="off" aria-label="Search by company name, ticker or ETF">
-                <button type="submit">View report</button>
-            </div>
-            <div class="search-hint">Start with a company or fund you already know. Major indexes remain supported.</div>
-            <div id="searchMessage" class="search-message" role="status"></div>
-        </form>
-    </section>
-
     <section class="card product-steps" id="how-stockradar-works" aria-labelledby="product-steps-heading">
         <div class="product-steps-header">
             <h2 id="product-steps-heading">Start with one stock</h2>
-            <p>Use each signal as a starting point for independent research.</p>
         </div>
         <div class="product-step-grid">
-            <div class="product-step"><span class="product-step-number">1</span><strong>Search a stock</strong><span>Enter a company, ticker or ETF.</span></div>
-            <div class="product-step"><span class="product-step-number">2</span><strong>See the free signal and basic report</strong><span>Review the current research prompt in plain English.</span></div>
-            <div class="product-step"><span class="product-step-number">3</span><strong>Learn what evidence to research next</strong><span>Check the context and make your own decision.</span></div>
+            <div class="product-step"><span class="product-step-number">1</span><strong>Search</strong><span>Choose a company or fund you recognise.</span></div>
+            <div class="product-step"><span class="product-step-number">2</span><strong>Understand</strong><span>See the current signal in plain English.</span></div>
+            <div class="product-step"><span class="product-step-number">3</span><strong>Research</strong><span>Learn what evidence and risks may matter next.</span></div>
         </div>
+    </section>
+
+    <section class="card free-report-preview" id="free-report-preview" aria-labelledby="free-report-preview-heading">
+        <div class="free-report-preview-header">
+            <div>
+                <h2 id="free-report-preview-heading">See a free report in action</h2>
+                <strong class="free-report-preview-name">{{ free_report_preview.company_name }}</strong>
+                <span class="free-report-preview-ticker">{{ free_report_preview.ticker }}</span>
+            </div>
+            {% if free_report_preview.is_current %}
+            <span class="free-report-signal {{ free_report_preview.signal|lower }}">{{ free_report_preview.signal }}</span>
+            {% else %}
+            <span class="free-report-signal">Live report</span>
+            {% endif %}
+        </div>
+        {% if free_report_preview.is_current %}
+        <p class="free-report-meta">Signal strength: {{ free_report_preview.strength }}</p>
+        {% endif %}
+        <p class="free-report-explanation">{{ free_report_preview.explanation }}</p>
+        <p class="free-report-next"><strong>Research next:</strong> {{ free_report_preview.research_next }}</p>
+        <a class="cta-primary" href="/stock/MSFT">View Microsoft’s free report</a>
     </section>
     {% endif %}
 
@@ -8655,6 +8737,9 @@ def dashboard():
         not request.args.get("tab")
         and not data["owner_logged_in"]
         and not data["has_premium_access"]
+    )
+    data["free_report_preview"] = build_homepage_free_report_preview(
+        data.get("recommendations", [])
     )
     data["active_tab"] = active_tab
     data["quick_search_query"] = quick_search_query
