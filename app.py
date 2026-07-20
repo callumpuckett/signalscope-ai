@@ -1924,6 +1924,31 @@ DIVIDEND_ETF_TICKERS = {
 }
 
 
+INCOME_STATUS_AVAILABLE = "available"
+INCOME_STATUS_ABSENT = "absent"
+INCOME_STATUS_UNAVAILABLE = "unavailable"
+
+INCOME_NUMERIC_SIGNAL_FIELDS = (
+    "dividendYield",
+    "trailingAnnualDividendYield",
+    "dividendRate",
+    "forwardAnnualDividendRate",
+    "trailingAnnualDividendRate",
+    "payoutRatio",
+    "lastDividendValue",
+)
+INCOME_DATE_SIGNAL_FIELDS = (
+    "exDividendDate",
+    "lastDividendDate",
+)
+PROVIDER_MARKET_PROFILE_FIELDS = (
+    "currentPrice",
+    "regularMarketPrice",
+    "previousClose",
+    "marketCap",
+)
+
+
 FUNDAMENTAL_CURRENCY_SYMBOLS = {
     "USD": "$",
     "GBP": "£",
@@ -2073,6 +2098,104 @@ def build_key_fundamentals(info, is_etf=False, now=None):
     return metrics
 
 
+def provider_instrument_is_etf(info, universe_item=None):
+    info = info if isinstance(info, dict) else {}
+    universe_item = universe_item if isinstance(universe_item, dict) else {}
+    quote_type = str(info.get("quoteType") or "").strip().upper()
+    if quote_type in {"ETF", "MUTUALFUND"}:
+        return True
+    if quote_type in {"EQUITY", "STOCK"}:
+        return False
+
+    instrument_text = " ".join(
+        str(value or "").strip().upper()
+        for value in (
+            info.get("category"),
+            info.get("legalType"),
+            universe_item.get("sector"),
+            universe_item.get("name"),
+        )
+    )
+    return any(
+        marker in instrument_text
+        for marker in ("ETF", "EXCHANGE TRADED FUND", "MUTUAL FUND", "INDEX FUND")
+    )
+
+
+def classify_income_data(info, provider_response_received):
+    info = info if isinstance(info, dict) else {}
+    if not provider_response_received or not info:
+        return INCOME_STATUS_UNAVAILABLE
+
+    explicit_zero_fields = 0
+    for field in INCOME_NUMERIC_SIGNAL_FIELDS:
+        raw_value = info.get(field)
+        if raw_value in (None, ""):
+            continue
+        number = fundamental_number(raw_value)
+        if number is None or number < 0:
+            return INCOME_STATUS_UNAVAILABLE
+        if number > 0:
+            return INCOME_STATUS_AVAILABLE
+        explicit_zero_fields += 1
+
+    for field in INCOME_DATE_SIGNAL_FIELDS:
+        raw_value = info.get(field)
+        if raw_value in (None, ""):
+            continue
+        if isinstance(raw_value, datetime):
+            timestamp = raw_value.timestamp()
+        else:
+            timestamp = fundamental_number(raw_value)
+        if timestamp is None or timestamp < 0:
+            return INCOME_STATUS_UNAVAILABLE
+        if timestamp > 0:
+            return INCOME_STATUS_AVAILABLE
+        explicit_zero_fields += 1
+
+    quote_type = str(info.get("quoteType") or "").strip()
+    has_market_profile = any(
+        (fundamental_number(info.get(field)) or 0) > 0
+        for field in PROVIDER_MARKET_PROFILE_FIELDS
+    )
+    if (quote_type and has_market_profile) or explicit_zero_fields >= 2:
+        return INCOME_STATUS_ABSENT
+    return INCOME_STATUS_UNAVAILABLE
+
+
+def income_status_from_context(dividend_context):
+    context = dividend_context if isinstance(dividend_context, dict) else {}
+    status = str(context.get("income_status") or "").strip().lower()
+    if status in {
+        INCOME_STATUS_AVAILABLE,
+        INCOME_STATUS_ABSENT,
+        INCOME_STATUS_UNAVAILABLE,
+    }:
+        return status
+    if context.get("has_dividend_data"):
+        return INCOME_STATUS_AVAILABLE
+    if context.get("data_available") is False:
+        return INCOME_STATUS_UNAVAILABLE
+    return INCOME_STATUS_ABSENT
+
+
+def income_summary_text(dividend_context):
+    context = dividend_context if isinstance(dividend_context, dict) else {}
+    if income_status_from_context(context) == INCOME_STATUS_AVAILABLE:
+        label = context.get("dividend_label", "Dividend")
+        return (
+            f"{label} yield: {context.get('dividend_yield', 'Not available')}. "
+            f"Annual {str(label).lower()}: "
+            f"{context.get('annual_dividend', 'Not available')}."
+        )
+    return context.get("no_data_message") or (
+        "Dividend or distribution data is temporarily unavailable."
+    )
+
+
+app.jinja_env.globals["income_status_from_context"] = income_status_from_context
+
+
 def get_dividend_context(symbol):
     cleaned_symbol = canonical_stock_symbol(symbol)
     now = time.time()
@@ -2092,32 +2215,27 @@ def get_dividend_context(symbol):
         or SECTOR_MAP.get(cleaned_symbol, "")
     ).strip()
     info = {}
-    info_loaded = False
+    provider_response_received = False
 
     if yf is not None and cleaned_symbol:
         try:
             ticker_object = yf.Ticker(cleaned_symbol)
             get_info = getattr(ticker_object, "get_info", None)
             if callable(get_info):
-                info = get_info() or {}
+                provider_info = get_info()
             else:
-                info = getattr(ticker_object, "info", {}) or {}
-            info_loaded = isinstance(info, dict)
-            if not info_loaded:
-                info = {}
+                provider_info = getattr(ticker_object, "info", None)
+            provider_response_received = isinstance(provider_info, dict)
+            if provider_response_received:
+                info = provider_info
         except Exception:
             app.logger.info("Dividend metadata unavailable for %s.", cleaned_symbol)
-            info = {}
 
-    quote_type = str(info.get("quoteType") or "").strip().upper()
-    category = str(info.get("category") or "").strip()
-    fund_markers = ("ETF", "FUND", "INDEX")
-    sector_category_text = f"{sector} {category}".upper()
-    is_etf = (
-        cleaned_symbol in DIVIDEND_ETF_TICKERS
-        or quote_type in {"ETF", "MUTUALFUND"}
-        or any(marker in sector_category_text for marker in fund_markers)
-    )
+    instrument_profile = dict(universe_item)
+    if sector and not instrument_profile.get("sector"):
+        instrument_profile["sector"] = sector
+    is_etf = provider_instrument_is_etf(info, instrument_profile)
+    income_status = classify_income_data(info, provider_response_received)
 
     def percentage_text(value):
         number = fundamental_number(value)
@@ -2130,7 +2248,11 @@ def get_dividend_context(symbol):
         number = fundamental_number(value)
         if number is None or number < 0:
             return "Not available"
-        return f"{number:.4f}".rstrip("0").rstrip(".") + " per share annually"
+        formatted = format_fundamental_currency(
+            number,
+            fundamental_currency(info),
+        )
+        return formatted + " per share annually"
 
     def date_text(value):
         if value is None or value == "":
@@ -2139,7 +2261,7 @@ def get_dividend_context(symbol):
             parsed = value
         else:
             number = fundamental_number(value)
-            if number is None:
+            if number is None or number <= 0:
                 return "Not available"
             try:
                 parsed = datetime.fromtimestamp(number, tz=timezone.utc)
@@ -2149,15 +2271,25 @@ def get_dividend_context(symbol):
 
     reported_yield_value = info.get("dividendYield")
     trailing_yield_value = info.get("trailingAnnualDividendYield")
-    annual_value = (
-        info.get("forwardAnnualDividendRate")
-        if info.get("forwardAnnualDividendRate") is not None
-        else info.get("trailingAnnualDividendRate")
+    annual_value = next(
+        (
+            info.get(field)
+            for field in (
+                "forwardAnnualDividendRate",
+                "trailingAnnualDividendRate",
+                "dividendRate",
+            )
+            if (fundamental_number(info.get(field)) or 0) > 0
+        ),
+        None,
     )
-    market_price = (
-        info.get("currentPrice")
-        if info.get("currentPrice") is not None
-        else info.get("regularMarketPrice")
+    market_price = next(
+        (
+            info.get(field)
+            for field in ("currentPrice", "regularMarketPrice")
+            if (fundamental_number(info.get(field)) or 0) > 0
+        ),
+        None,
     )
     ex_dividend_value = info.get("exDividendDate")
     payout_value = info.get("payoutRatio")
@@ -2178,15 +2310,7 @@ def get_dividend_context(symbol):
         percentage = reported_yield * 100 if reported_yield <= 0.2 else reported_yield
         return f"{percentage:.2f}".rstrip("0").rstrip(".") + "%"
 
-    yield_number = fundamental_number(trailing_yield_value)
-    if yield_number is None:
-        yield_number = fundamental_number(reported_yield_value)
-    annual_number = fundamental_number(annual_value)
-    has_dividend_data = (
-        (yield_number is not None and yield_number > 0)
-        or (annual_number is not None and annual_number > 0)
-        or date_text(ex_dividend_value) != "Not available"
-    )
+    has_dividend_data = income_status == INCOME_STATUS_AVAILABLE
     dividend_label = "Distribution" if is_etf else "Dividend"
 
     if is_etf:
@@ -2196,10 +2320,11 @@ def get_dividend_context(symbol):
             "ETFs may reinvest income inside the fund instead. Distribution amounts can "
             "change over time."
         )
-        no_data_message = (
+        absent_message = (
             "No regular cash distribution found from the available data. Some ETFs "
             "reinvest income or may not currently show distribution data."
         )
+        unavailable_message = "Distribution data is temporarily unavailable."
         frequency_note = (
             "Distribution frequency varies by fund and share class. Check the fund’s "
             "official schedule before relying on a payment date."
@@ -2211,7 +2336,8 @@ def get_dividend_context(symbol):
             "yield can look attractive, but it can also signal risk if the market expects "
             "the payment to be cut."
         )
-        no_data_message = "No regular dividend found for this ticker from the available data."
+        absent_message = "No regular dividend found for this ticker from the available data."
+        unavailable_message = "Dividend data is temporarily unavailable."
         frequency_note = (
             "Payment frequency varies by company and market. Check the company’s official "
             "announcements for the current schedule."
@@ -2220,6 +2346,7 @@ def get_dividend_context(symbol):
     context = {
         "ticker": cleaned_symbol,
         "is_etf": is_etf,
+        "income_status": income_status,
         "has_dividend_data": has_dividend_data,
         "dividend_label": dividend_label,
         "dividend_yield": yield_text(),
@@ -2234,13 +2361,20 @@ def get_dividend_context(symbol):
             "share price or payment amount changes. A high yield is not automatically a "
             "good investment and may indicate elevated risk."
         ),
-        "data_available": info_loaded,
-        "no_data_message": no_data_message,
+        "data_available": income_status != INCOME_STATUS_UNAVAILABLE,
+        "provider_response_received": provider_response_received,
+        "no_data_message": (
+            absent_message
+            if income_status == INCOME_STATUS_ABSENT
+            else unavailable_message
+            if income_status == INCOME_STATUS_UNAVAILABLE
+            else ""
+        ),
         "source_note": (
             "Source: Yahoo Finance data accessed through yfinance. Values may be delayed, "
             "incomplete or unavailable; confirm important details with the company or fund."
-            if info_loaded
-            else "Source data is currently unavailable from yfinance."
+            if income_status != INCOME_STATUS_UNAVAILABLE
+            else "Source data is currently unavailable or incomplete from yfinance."
         ),
     }
     DIVIDEND_CONTEXT_CACHE[cleaned_symbol] = {
@@ -2257,11 +2391,13 @@ def render_dividend_snapshot_html(dividend_context):
     label = context.get("dividend_label") or "Dividend"
     is_etf = bool(context.get("is_etf"))
     section_title = "Distribution snapshot" if is_etf else "Dividend snapshot"
-    has_data = bool(context.get("has_dividend_data"))
-    no_data_message = context.get("no_data_message") or "No regular dividend or distribution found from the available data."
+    income_status = income_status_from_context(context)
+    no_data_message = context.get("no_data_message") or (
+        "Dividend or distribution data is temporarily unavailable."
+    )
 
     rows = ""
-    if has_data:
+    if income_status == INCOME_STATUS_AVAILABLE:
         rows = f"""
         <div class=\"dividend-metric\"><span>{label} yield</span><strong>{context.get('dividend_yield', 'Not available')}</strong></div>
         <div class=\"dividend-metric\"><span>Annual {label.lower()}</span><strong>{context.get('annual_dividend', 'Not available')}</strong></div>
@@ -2585,22 +2721,13 @@ def build_compare_stock_context(symbol):
     premium_report = get_premium_report(cleaned_symbol, ai_context)
     dividend_context = get_dividend_context(cleaned_symbol)
 
-    income_text = dividend_context.get("no_data_message")
-    if dividend_context.get("has_dividend_data"):
-        income_text = (
-            f"{dividend_context.get('dividend_label', 'Dividend')} yield: "
-            f"{dividend_context.get('dividend_yield', 'Not available')}. "
-            f"Annual {dividend_context.get('dividend_label', 'Dividend').lower()}: "
-            f"{dividend_context.get('annual_dividend', 'Not available')}."
-        )
-
     return {
         "symbol": cleaned_symbol,
         "label": stock_display_label(cleaned_symbol),
         "ai": ai_context,
         "report": premium_report,
         "dividend": dividend_context,
-        "income_text": income_text,
+        "income_text": income_summary_text(dividend_context),
         "confidence_value": confidence_number(ai_context.get("confidence", "0%")),
         "signal_rank": compare_signal_rank(ai_context.get("signal")),
     }
@@ -8026,11 +8153,12 @@ stock_detail_html = """
 	{% if not has_premium_access %}<div class="premium-banner stock-locked-preview"><div><small>Premium locked preview</small><h2>Free shows the signal. Premium explains the decision.</h2><p>Premium is the calm education layer behind the {{ ai_context.signal }} prompt. It helps you understand the questions that matter before acting without adding another screen of market noise.</p><div class="premium-preview-grid"><div class="premium-preview-item"><strong>Why is this signal showing?</strong><span>Unlock the plain-English reasoning behind the current research prompt.</span></div><div class="premium-preview-item"><strong>What could weaken it?</strong><span>See which risk evidence would make the case less useful.</span></div><div class="premium-preview-item"><strong>Could it duplicate exposure?</strong><span>Check possible sector, ETF, theme or mega-cap overlap.</span></div><div class="premium-preview-item"><strong>Where might it fit?</strong><span>Review core, growth, defensive, income, cyclical or speculative context.</span></div><div class="premium-preview-item"><strong>What should I watch next?</strong><span>Define the next signal, price or business evidence to review.</span></div><div class="premium-preview-item"><strong>What mistake should I avoid?</strong><span>See the beginner trap linked to this type of signal.</span></div></div></div><div class="premium-cta-box"><strong>Unlock the {{ stock_display_label(symbol) }} Decision Panel</strong><p>Includes signal meaning, risk checks, portfolio fit, a beginner-mistake warning, watch-next trigger and Before You Act checklist.</p><a class="payment-button" href="/upgrade">Upgrade to Premium</a><div class="payment-note"><a href="/premium-decision/{{ symbol }}">View the locked decision-panel preview</a></div><div class="payment-note">Helpful research context only. No investment advice or return promises.</div></div></div>{% endif %}
 
 {% if dividend_context %}
+{% set income_status = income_status_from_context(dividend_context) %}
 <div class="card dividend-card">
     <p class="kicker">Income education</p>
     <h2>{{ "Distribution snapshot" if dividend_context.is_etf else "Dividend snapshot" }}</h2>
 
-    {% if dividend_context.has_dividend_data %}
+    {% if income_status == 'available' %}
     <div class="dividend-grid">
         <div class="dividend-metric">
             <span>{{ dividend_context.dividend_label }} yield</span>
