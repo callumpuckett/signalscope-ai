@@ -1353,6 +1353,264 @@ def get_stock_ai_context(symbol):
     }
 
 
+def build_today_context(stock_context, news_context=None):
+    """Present the existing stock-page context without recalculating it."""
+    context = stock_context or {}
+    signal = str(context.get("signal") or "WATCH").strip().upper()
+    signal_wording = {
+        "BUY": (
+            "The current StockRadar signal is constructive. Existing evidence is positive, "
+            "but the signal remains a research prompt rather than a prediction or instruction."
+        ),
+        "HOLD": (
+            "The current StockRadar signal is balanced. Existing evidence is mixed, so further "
+            "confirmation is needed before reaching a stronger directional conclusion."
+        ),
+        "SELL": (
+            "The current StockRadar signal is cautious. Existing evidence is highlighting weaker "
+            "conditions or downside pressure that require closer research."
+        ),
+        "WATCH": (
+            "This ticker is currently a watchlist research candidate. StockRadar does not yet have "
+            "enough evidence for a stronger directional prompt."
+        ),
+    }
+    confidence = context.get("confidence", "")
+    strength_label = context.get("strength_label", "")
+
+    if isinstance(news_context, dict):
+        news_text = str(
+            news_context.get("context")
+            or news_context.get("summary")
+            or news_context.get("text")
+            or ""
+        ).strip()
+    else:
+        news_text = str(news_context or "").strip()
+
+    return {
+        "signal": signal,
+        "confidence": confidence,
+        "strength_label": strength_label,
+        "confidence_label": " · ".join(
+            str(value).strip() for value in (confidence, strength_label) if str(value).strip()
+        ),
+        "plain_english_summary": signal_wording.get(signal, signal_wording["WATCH"]),
+        "setup_reason": context.get("reason", ""),
+        "risk_today": context.get("risk_view", ""),
+        "watch_next": context.get("watch_next", ""),
+        "momentum_view": context.get("momentum_view", ""),
+        "news_context": news_text,
+    }
+
+
+def build_business_education(symbol, sector, company_name, role_profile=None):
+    """Build stable sector or fund education from locally available identity data."""
+    cleaned_symbol = canonical_stock_symbol(symbol)
+    sector_text = str(sector or "").strip()
+    sector_lower = sector_text.lower()
+    role_profile = role_profile or classify_portfolio_role(cleaned_symbol)
+    role_key = str(role_profile.get("key") or "research").strip().lower()
+    display_name = str(company_name or cleaned_symbol).strip()
+
+    broad_market_etfs = {
+        "SPY", "DIA", "IWM", "VUSA", "VUSA.L", "VUAG", "VUAG.L",
+        "VWRP", "VWRP.L", "VWRL", "VWRL.L",
+    }
+    sector_or_technology_etfs = {"QQQ", "SMH"}
+    bond_etfs = {"TLT", "HYG"}
+    commodity_etfs = {"GLD", "SLV", "USO"}
+    is_etf = (
+        cleaned_symbol in broad_market_etfs
+        or cleaned_symbol in sector_or_technology_etfs
+        or cleaned_symbol in bond_etfs
+        or cleaned_symbol in commodity_etfs
+        or "etf" in sector_lower
+        or role_key in {"broad_market_etf", "core_etf"}
+    )
+
+    common = {
+        "basis_label": "General sector education",
+        "symbol": cleaned_symbol,
+        "company_name": display_name,
+        "sector": sector_text or "General research candidate",
+        "is_etf": is_etf,
+        "holdings_check": "",
+    }
+
+    if is_etf:
+        if cleaned_symbol in broad_market_etfs or role_key == "broad_market_etf":
+            education = {
+                "education_type": "Broad-market ETF",
+                "business_model": "This fund provides exposure to a broad market index through a basket of underlying securities.",
+                "growth_drivers": "Performance usually reflects the underlying companies, index weighting, economic conditions and overall market sentiment.",
+                "business_risks": "Concentration in the largest companies, sector weighting, market declines and overlap with existing holdings.",
+                "holdings_check": "Inspect the largest holdings, sector weights, index method, fees and overlap with other funds or individual stocks.",
+                "research_question": "What are the fund's largest underlying exposures, and do I already own them elsewhere?",
+            }
+        elif cleaned_symbol in bond_etfs or "bond" in sector_lower:
+            education = {
+                "education_type": "Bond ETF",
+                "business_model": "This fund holds a portfolio of bonds or fixed-income securities.",
+                "growth_drivers": "Performance usually reflects interest rates, bond yields, credit quality, maturity profile and economic conditions.",
+                "business_risks": "Interest-rate risk, credit risk, inflation, duration risk and liquidity.",
+                "holdings_check": "Inspect duration, maturity profile, credit quality, fees, yield sources and the largest issuer exposures.",
+                "research_question": "What are the fund's duration, credit quality and main sources of income risk?",
+            }
+        elif cleaned_symbol in commodity_etfs or "commodity" in sector_lower:
+            education = {
+                "education_type": "Commodity ETF",
+                "business_model": "This fund provides exposure to a commodity or commodity-linked instruments.",
+                "growth_drivers": "Performance usually reflects commodity prices, supply and demand, geopolitics, currency movements and futures-market structure.",
+                "business_risks": "High volatility, tracking differences, futures costs and concentration in one commodity.",
+                "holdings_check": "Inspect whether exposure comes from physical assets, futures or related securities, plus fees and long-term tracking differences.",
+                "research_question": "How closely does this fund track the underlying commodity over longer periods?",
+            }
+        else:
+            education = {
+                "education_type": "Sector or technology ETF",
+                "business_model": "This fund provides targeted exposure to one sector, industry or investment theme.",
+                "growth_drivers": "Performance usually reflects the companies within that sector and the market conditions affecting the theme.",
+                "business_risks": "Sector concentration, overlap between holdings, high valuations and stronger volatility than a broad-market fund.",
+                "holdings_check": "Inspect the largest holdings, their weights, sector or theme purity, fees and overlap with funds or stocks already held.",
+                "research_question": "Is this fund adding genuinely new exposure, or increasing a theme I already own?",
+            }
+
+        return {
+            **common,
+            **education,
+            "strengthen_case": "A durable performance case generally needs the underlying exposure and index or fund structure to keep matching the investor's research purpose.",
+            "weaken_case": "The case may weaken if concentration, overlap, tracking, fees or the underlying market exposure no longer match that purpose.",
+        }
+
+    templates = {
+        "technology": {
+            "education_type": "Technology and software",
+            "business_model": "Technology companies may make money through software, cloud services, subscriptions, devices, platforms, advertising or digital services.",
+            "growth_drivers": "Customer adoption, recurring revenue, product development, pricing power and expanding digital demand.",
+            "business_risks": "Competition, regulation, high valuation, product disruption, cyber risk and changing technology cycles.",
+            "strengthen_case": "Durable customer demand, recurring revenue growth, strong margins and evidence of a lasting competitive advantage.",
+            "weaken_case": "Slowing demand, weaker margins, excessive valuation, loss of market share or rising regulatory pressure.",
+            "research_question": "What gives this business a durable advantage over competitors?",
+        },
+        "semiconductors": {
+            "education_type": "Semiconductors",
+            "business_model": "Semiconductor companies may make money by designing, manufacturing or supplying chips and related technology.",
+            "growth_drivers": "Data-centre demand, artificial intelligence, devices, industrial demand, manufacturing capacity and product leadership.",
+            "business_risks": "Industry cycles, supply constraints, customer concentration, competition, geopolitical exposure and capital intensity.",
+            "strengthen_case": "Product leadership, diversified demand, reliable capacity and evidence that investment is producing durable returns.",
+            "weaken_case": "A cycle downturn, lost product leadership, customer concentration, supply disruption or inefficient capital spending.",
+            "research_question": "How dependent is the company on a small number of products, customers or end markets?",
+        },
+        "consumer_staples": {
+            "education_type": "Consumer staples",
+            "business_model": "Consumer-staples companies generally make money from frequently purchased products and established brands.",
+            "growth_drivers": "Pricing power, volume growth, new products, distribution and geographic expansion.",
+            "business_risks": "Input costs, weaker consumer demand, private-label competition, brand weakness and limited growth.",
+            "strengthen_case": "Resilient demand, trusted brands, effective distribution and pricing that protects margins without materially reducing volumes.",
+            "weaken_case": "Persistent volume declines, weaker brands, rising costs, lost shelf space or price increases that damage demand.",
+            "research_question": "Can the company raise prices without materially weakening demand?",
+        },
+        "consumer": {
+            "education_type": "Consumer or retail",
+            "business_model": "Consumer and retail companies make money by selling products or services directly to customers through stores, online platforms or distribution networks.",
+            "growth_drivers": "Customer demand, store or platform growth, pricing, product mix, loyalty and operating efficiency.",
+            "business_risks": "Economic weakness, changing consumer behaviour, competition, inventory problems and margin pressure.",
+            "strengthen_case": "Repeat demand, customer loyalty, healthy inventory, improving efficiency and evidence that pricing and product mix support margins.",
+            "weaken_case": "Falling demand, excess inventory, lost customers, discounting or sustained cost and margin pressure.",
+            "research_question": "What makes customers continue choosing this business over alternatives?",
+        },
+        "banks": {
+            "education_type": "Banks and financials",
+            "business_model": "Banks generally make money through lending, deposits, interest margins, fees and other financial services.",
+            "growth_drivers": "Lending demand, deposit growth, interest margins, fee income and economic activity.",
+            "business_risks": "Credit losses, regulation, economic weakness, funding pressure, market stress and interest-rate changes.",
+            "strengthen_case": "Resilient credit quality, stable funding, disciplined lending and diverse fee or interest income.",
+            "weaken_case": "Rising defaults, deposit pressure, shrinking margins, weak lending demand or greater regulatory and capital strain.",
+            "research_question": "How resilient is the bank if credit conditions weaken?",
+        },
+        "payments": {
+            "education_type": "Payments",
+            "business_model": "Payments businesses may make money by charging transaction, processing, network or service fees.",
+            "growth_drivers": "Transaction growth, digital-payment adoption, international expansion and additional financial services.",
+            "business_risks": "Competition, regulation, fraud, economic weakness, pricing pressure and technological disruption.",
+            "strengthen_case": "Growing transaction volume, reliable networks, disciplined risk controls and services that deepen customer use.",
+            "weaken_case": "Slower volumes, price pressure, fraud losses, regulation or technology that reduces the value of the network.",
+            "research_question": "Does the company benefit from growing transaction volume without taking excessive credit risk?",
+        },
+        "energy": {
+            "education_type": "Energy",
+            "business_model": "Energy companies may make money through producing, refining, transporting or selling energy products and services.",
+            "growth_drivers": "Production, energy demand, commodity prices, project execution and capital discipline.",
+            "business_risks": "Commodity-price volatility, geopolitics, regulation, project costs, environmental liabilities and the economic cycle.",
+            "strengthen_case": "Disciplined spending, reliable projects, resilient cash generation and operations that can withstand weaker commodity prices.",
+            "weaken_case": "Falling commodity prices, cost overruns, weaker production, poor capital discipline or rising regulatory and environmental costs.",
+            "research_question": "How dependent are profits and cash flow on current commodity prices?",
+        },
+        "healthcare": {
+            "education_type": "Healthcare",
+            "business_model": "Healthcare companies may make money through medicines, medical devices, diagnostics, insurance or healthcare services.",
+            "growth_drivers": "Product development, approvals, patient demand, demographic trends and successful commercial execution.",
+            "business_risks": "Clinical failure, regulation, patent expiry, reimbursement pressure and product concentration.",
+            "strengthen_case": "A diverse product base, successful development, durable patient demand and evidence of effective commercial execution.",
+            "weaken_case": "Clinical setbacks, patent loss, reimbursement pressure, regulation or dependence on too few products.",
+            "research_question": "How dependent is the business on one product, treatment or regulatory outcome?",
+        },
+        "industrial": {
+            "education_type": "Industrial or defence",
+            "business_model": "Industrial and defence companies may make money from equipment, engineering, manufacturing, services and long-term contracts.",
+            "growth_drivers": "Order growth, infrastructure spending, government budgets, productivity investment and project execution.",
+            "business_risks": "Contract delays, cost overruns, political changes, economic cycles and supply-chain pressure.",
+            "strengthen_case": "A durable order book, disciplined contract delivery, resilient margins and reliable execution.",
+            "weaken_case": "Delayed orders, cost overruns, weaker budgets, supply disruption or poor contract execution.",
+            "research_question": "How reliable are the company's order book, margins and contract execution?",
+        },
+        "telecoms": {
+            "education_type": "Telecoms",
+            "business_model": "Telecom companies generally make money through mobile, broadband, network and communication services.",
+            "growth_drivers": "Subscriber growth, pricing, network usage, service expansion and operating efficiency.",
+            "business_risks": "High debt, regulation, competition, capital spending and slow growth.",
+            "strengthen_case": "Stable subscribers, sensible pricing, efficient network investment and sustainable cash generation.",
+            "weaken_case": "Customer losses, heavy debt, price competition, weak growth or capital spending that persistently exceeds cash generation.",
+            "research_question": "Can the company fund network investment while maintaining sustainable cash flow?",
+        },
+        "fallback": {
+            "education_type": "General research candidate",
+            "business_model": "This business may earn money by selling products, services or access to assets within its market.",
+            "growth_drivers": "Customer demand, pricing, product or service development, operating efficiency and expansion into relevant markets.",
+            "business_risks": "Competition, weaker demand, rising costs, regulation, execution problems and financial pressure.",
+            "strengthen_case": "Clear customer demand, durable advantages, disciplined execution and resilient cash generation.",
+            "weaken_case": "Lost demand, weaker margins, greater competition, poor execution or a less resilient financial position.",
+            "research_question": "What are the main sources of revenue, and which evidence shows they may be durable?",
+        },
+    }
+
+    if "semiconductor" in sector_lower:
+        template_key = "semiconductors"
+    elif any(word in sector_lower for word in ("technology", "software", "cloud", "data analytics")):
+        template_key = "technology"
+    elif any(word in sector_lower for word in ("consumer staple", "consumer defensive", "staples")) or cleaned_symbol in {"KO", "PEP", "PG"}:
+        template_key = "consumer_staples"
+    elif "payment" in sector_lower:
+        template_key = "payments"
+    elif any(word in sector_lower for word in ("bank", "financial")):
+        template_key = "banks"
+    elif any(word in sector_lower for word in ("energy", "commodity", "materials")):
+        template_key = "energy"
+    elif "healthcare" in sector_lower:
+        template_key = "healthcare"
+    elif any(word in sector_lower for word in ("industrial", "aerospace", "defence", "defense", "space")):
+        template_key = "industrial"
+    elif "telecom" in sector_lower:
+        template_key = "telecoms"
+    elif any(word in sector_lower for word in ("consumer", "retail", "media", "restaurant", "ev")):
+        template_key = "consumer"
+    else:
+        template_key = "fallback"
+
+    return {**common, **templates[template_key]}
+
+
 def classify_portfolio_role(symbol):
     cleaned_symbol = str(symbol or "").strip().upper()
     sector = SECTOR_MAP.get(cleaned_symbol, "").lower()
@@ -7343,6 +7601,15 @@ stock_detail_html = """
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 	<style>
 	.stock-premium-report{margin-bottom:22px;}
+	.stock-today-context{margin-bottom:18px;padding:24px;border-radius:24px;background:linear-gradient(145deg,rgba(14,45,48,0.98),rgba(12,26,39,0.98));border:1px solid rgba(74,222,163,0.27);box-shadow:0 20px 56px rgba(0,0,0,0.28);}
+	.stock-today-context h2{margin:0 0 7px;color:#f8fafc;font-size:clamp(27px,3vw,34px);line-height:1.15;}
+	.stock-today-intro{margin:0;color:#b9cbd7;}
+	.stock-today-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin-top:17px;}
+	.stock-today-item{min-width:0;padding:16px;border-radius:17px;background:rgba(7,17,28,0.52);border:1px solid rgba(148,163,184,0.14);}
+	.stock-today-item:last-child{grid-column:1/-1;}
+	.stock-today-item strong{display:block;color:#f8fafc;font-size:18px;line-height:1.3;overflow-wrap:anywhere;}
+	.stock-today-item p{margin:7px 0 0;color:#b8c7d3;font-size:14px;line-height:1.55;overflow-wrap:anywhere;}
+	.stock-today-note{margin:14px 0 0;color:#99acbb;font-size:12px;line-height:1.5;}
 	.stock-premium-summary{background:linear-gradient(135deg,rgba(12,47,48,0.96),rgba(25,38,50,0.98) 62%,rgba(75,53,27,0.76));border:1px solid rgba(74,222,163,0.30);border-radius:28px;padding:34px;box-shadow:0 26px 72px rgba(0,0,0,0.34);}
 	.stock-premium-summary h2{font-size:clamp(29px,3.5vw,40px);margin:0 0 10px;}
 	.stock-premium-summary .premium-identity{max-width:820px;margin:0 0 18px;}
@@ -7398,6 +7665,16 @@ stock_detail_html = """
 	.stock-psychology-card h4{margin:0 0 9px;color:#f1f5f9;font-size:17px;line-height:1.3;}
 	.stock-psychology-prompt{margin:0;color:#dcebf3;font-weight:850;line-height:1.55;}
 	.stock-psychology-support{margin:9px 0 0;color:#aebdca;font-size:14px;line-height:1.55;}
+	.stock-business-education{margin:16px 0;border-radius:24px;background:linear-gradient(145deg,rgba(20,38,49,0.97),rgba(10,22,34,0.98));border:1px solid rgba(105,201,242,0.21);overflow:hidden;}
+	.stock-business-education>summary{display:flex;align-items:center;min-height:62px;padding:18px 22px;color:#f8fafc;font-size:23px;font-weight:950;cursor:pointer;line-height:1.2;}
+	.stock-business-education>summary:focus-visible{outline:3px solid rgba(105,201,242,0.72);outline-offset:-3px;}
+	.stock-business-body{padding:0 22px 22px;}
+	.stock-business-basis{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;}
+	.stock-business-basis span{display:inline-flex;padding:7px 10px;border-radius:999px;background:rgba(105,201,242,0.08);border:1px solid rgba(105,201,242,0.17);color:#ccebf7;font-size:11px;font-weight:900;line-height:1.2;}
+	.stock-business-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;}
+	.stock-business-item{min-width:0;padding:16px;border-radius:16px;background:rgba(7,17,28,0.47);border:1px solid rgba(148,163,184,0.14);}
+	.stock-business-item h4{margin:0 0 7px;color:#f1f5f9;font-size:15px;line-height:1.35;}
+	.stock-business-item p{margin:0;color:#b8c7d3;font-size:14px;line-height:1.55;overflow-wrap:anywhere;}
 	.stock-supporting-detail{border-radius:24px;padding:24px;margin-top:16px;background:rgba(10,21,33,0.92);border:1px solid rgba(148,163,184,0.16);}
 	.stock-supporting-detail>p{margin:0 0 15px;}
 	.stock-supporting-detail details{background:rgba(7,17,28,0.58);border:1px solid rgba(148,163,184,0.14);border-radius:17px;margin-top:10px;overflow:hidden;}
@@ -7409,7 +7686,7 @@ stock_detail_html = """
 	.stock-score-item{padding:14px;border-radius:14px;background:rgba(148,163,184,0.06);color:#aebdca;line-height:1.55;}.stock-score-item strong{display:block;color:#e9f1f7;margin-bottom:4px;}
 	.stock-identity-note{margin:16px 0 0;color:#9fb0bf;font-size:13px;line-height:1.55;}
 	@media(max-width:900px){.stock-premium-summary{padding:24px 20px;border-radius:24px;}.stock-decision-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.stock-decision-card:last-child{grid-column:1/-1;}.stock-score-grid,.stock-learning-grid{grid-template-columns:1fr;}.stock-portfolio-checklist ul{grid-template-columns:1fr;}}
-	@media(max-width:640px){.stock-decision-grid,.stock-portfolio-grid,.stock-psychology-grid{grid-template-columns:1fr;}.stock-decision-card:last-child{grid-column:auto;}.stock-premium-action{font-size:16px;}.stock-premium-badge{font-size:11px;}.stock-portfolio-builder,.stock-psychology,.stock-supporting-detail{padding:20px 16px;}.stock-detail-body .payment-button{width:100%;text-align:center;}}
+	@media(max-width:640px){.stock-today-grid,.stock-decision-grid,.stock-portfolio-grid,.stock-psychology-grid,.stock-business-grid{grid-template-columns:1fr;}.stock-today-item:last-child,.stock-decision-card:last-child{grid-column:auto;}.stock-premium-action{font-size:16px;}.stock-premium-badge{font-size:11px;}.stock-today-context,.stock-portfolio-builder,.stock-psychology,.stock-supporting-detail{padding:20px 16px;}.stock-business-education>summary{padding:17px 16px;font-size:21px;}.stock-business-body{padding:0 16px 18px;}.stock-detail-body .payment-button{width:100%;text-align:center;}}
 	</style>
 	<style>
 		*{box-sizing:border-box;}:root{--font-hero:clamp(34px,4vw,46px);--font-section:clamp(24px,2.4vw,30px);--font-card-title:18px;--font-body:15px;--font-small:13px;--font-kicker:11px;--font-cta:14px;}body{background:radial-gradient(circle at 12% 6%,rgba(0,255,170,0.11),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;margin:0;min-height:100vh;padding:48px;}.card{background:linear-gradient(180deg,rgba(18,29,42,0.97),rgba(12,22,33,0.97));padding:30px;border-radius:28px;margin-bottom:22px;border:1px solid rgba(148,163,184,0.16);box-shadow:0 22px 65px rgba(0,0,0,0.30);}h1,h2{color:#f1f5f9;line-height:1.12;letter-spacing:0;}h1{font-size:var(--font-hero);}h2{font-size:var(--font-section);}p{color:#b9c5d2;line-height:1.68;font-size:var(--font-body);}a{color:#69c9f2;text-decoration:none;font-weight:bold;}.kicker{color:#4adea3;font-weight:950;text-transform:uppercase;letter-spacing:.1em;font-size:var(--font-kicker);margin:0 0 8px;}.muted{color:#91a3b4;font-size:13px;}.range-row{display:flex;gap:12px;flex-wrap:wrap;margin:22px 0;}.range-button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:12px 16px;border-radius:15px;background:#111d2b;color:#dbe4ee;text-decoration:none;border:1px solid rgba(148,163,184,0.14);font-weight:800;line-height:1.1;text-align:center;}.range-button.active{background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;}.metric-grid,.ai-grid,.example-report-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-bottom:22px;}.metric-grid{grid-template-columns:repeat(4,1fr);}.ai-card,.metric,.example-report-card{background:rgba(14,25,38,0.90);border:1px solid rgba(148,163,184,0.15);border-radius:22px;padding:23px;}.ai-card.warning{background:linear-gradient(145deg,rgba(89,70,28,0.35),rgba(14,25,38,0.94));}.ai-card.risk{background:linear-gradient(145deg,rgba(24,60,78,0.32),rgba(14,25,38,0.94));}.premium-banner,.example-report{background:linear-gradient(135deg,rgba(15,55,50,0.74),rgba(55,42,26,0.60),rgba(20,45,61,0.62));border:1px solid rgba(74,222,163,0.20);border-radius:28px;padding:30px;margin-bottom:22px;}.premium-banner{display:grid;grid-template-columns:1.35fr 0.85fr;gap:24px;align-items:center;box-shadow:0 26px 70px rgba(0,0,0,0.34);}.stock-locked-preview{border-color:rgba(255,184,107,0.34);background:linear-gradient(135deg,rgba(12,47,48,0.92),rgba(81,54,28,0.62),rgba(20,45,61,0.78));}.premium-banner small,.example-report small{display:block;color:#86efac;font-weight:950;text-transform:uppercase;letter-spacing:0.1em;font-size:var(--font-kicker);margin-bottom:8px;}.premium-cta-box{background:rgba(9,18,28,0.84);border:1px solid rgba(255,184,107,0.24);border-radius:22px;padding:22px;text-align:center;}.premium-cta-box strong{display:block;color:#f8fafc;margin-bottom:8px;}.payment-button{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;border-radius:16px;padding:13px 19px;font-size:var(--font-cta);font-weight:950;text-decoration:none;line-height:1.1;}.payment-note{color:#a8b6c6;font-size:13px;margin-top:12px;line-height:1.55;}.signal-badge,.free-strength,.strength-pill{display:inline-block;margin-top:10px;padding:8px 12px;border-radius:999px;background:rgba(148,163,184,0.09);font-weight:900;font-size:12px;text-transform:uppercase;}.confidence-large,.confidence-score{font-size:36px;font-weight:950;}.free-meter,.confidence-meter{font-size:24px;letter-spacing:0;color:#4adea3;font-weight:950;margin:8px 0;}.dividend-card{border:1px solid rgba(74,222,163,0.18);}.dividend-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:16px 0;}.dividend-metric{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:16px;padding:14px;line-height:1.45;}.dividend-metric span{display:block;color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:0.07em;font-weight:900;margin-bottom:6px;}.dividend-metric strong{display:block;color:#e5f4ff;font-size:17px;}.dividend-empty{background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.20);border-radius:16px;padding:14px;color:#fde68a;line-height:1.65;}.dividend-note{color:#cbd5e1;background:rgba(148,163,184,0.07);border-radius:14px;padding:12px 14px;}.dividend-risk{color:#fecaca;background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.16);border-radius:14px;padding:12px 14px;}.chart-card{padding:24px;}.chart-shell{position:relative;width:100%;height:360px;min-height:360px;background:#0a1420;border-radius:18px;padding:16px;overflow:hidden;}.chart-shell canvas{display:block;width:100%!important;height:100%!important;background:transparent;border-radius:12px;padding:0;}.buy{color:#4ade80;font-weight:bold;}.sell{color:#fb7185;font-weight:bold;}.hold{color:#f4c95d;font-weight:bold;}@media(max-width:900px){:root{--font-hero:clamp(32px,9vw,38px);--font-section:clamp(23px,6vw,28px);}body{padding:24px 16px;}.card,.premium-banner,.example-report{padding:24px 20px;border-radius:24px;}.metric-grid,.ai-grid,.premium-banner,.example-report-grid,.dividend-grid{grid-template-columns:1fr;}.payment-button{display:block;text-align:center;}.range-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:18px 0;}.range-button{width:100%;padding:13px 10px;font-size:14px;}.metric{padding:18px;}.metric h2{font-size:24px;line-height:1.12;overflow-wrap:anywhere;}.chart-card{padding:18px 14px;}.chart-shell{height:340px;min-height:340px;padding:12px;border-radius:16px;}}
@@ -7467,6 +7744,41 @@ stock_detail_html = """
 
 	{% if has_premium_access and example_report %}
 	<section class="stock-premium-report" aria-labelledby="stock-premium-summary-heading">
+	    <section class="stock-today-context" aria-labelledby="stock-today-context-heading">
+	        <span class="stock-premium-label">Premium current context</span>
+	        <h2 id="stock-today-context-heading">Today’s Context</h2>
+	        <p class="stock-today-intro">The current StockRadar research prompt, using the same live context shown across this report.</p>
+	        <div class="stock-today-grid">
+	            <article class="stock-today-item">
+	                <span class="stock-premium-label">Current signal</span>
+	                <strong>{{ today_context.signal }}</strong>
+	                <p>{{ today_context.plain_english_summary }}</p>
+	            </article>
+	            <article class="stock-today-item">
+	                <span class="stock-premium-label">Confidence</span>
+	                <strong>{{ today_context.confidence_label }}</strong>
+	                {% if today_context.momentum_view %}<p>{{ today_context.momentum_view }}</p>{% endif %}
+	            </article>
+	            <article class="stock-today-item">
+	                <span class="stock-premium-label">Why this setup is showing</span>
+	                <strong>Existing StockRadar reason</strong>
+	                <p>{{ today_context.setup_reason }}</p>
+	                {% if today_context.news_context %}<p><strong>Relevant news context:</strong> {{ today_context.news_context }}</p>{% endif %}
+	            </article>
+	            <article class="stock-today-item">
+	                <span class="stock-premium-label">Risk today</span>
+	                <strong>Current risk view</strong>
+	                <p>{{ today_context.risk_today }}</p>
+	            </article>
+	            <article class="stock-today-item">
+	                <span class="stock-premium-label">Watch next</span>
+	                <strong>Next research trigger</strong>
+	                <p>{{ today_context.watch_next }}</p>
+	            </article>
+	        </div>
+	        <p class="stock-today-note">Today’s Context can change as price action, signals and relevant news update.</p>
+	    </section>
+
 	    <div class="stock-premium-summary">
 	        <span class="stock-premium-label">Premium decision summary</span>
 	        <h2 id="stock-premium-summary-heading">{{ stock_display_label(symbol) }}</h2>
@@ -7599,6 +7911,49 @@ stock_detail_html = """
 	            </article>
 	        </div>
 	    </section>
+
+	    <details class="stock-business-education">
+	        <summary>Understand the Business</summary>
+	        <div class="stock-business-body">
+	            <div class="stock-business-basis">
+	                <span>{{ business_education.basis_label }}</span>
+	                <span>{{ business_education.education_type }}</span>
+	                <span>{{ business_education.company_name }}</span>
+	            </div>
+	            <div class="stock-business-grid">
+	                <article class="stock-business-item">
+	                    <h4>{{ "What exposure the fund generally provides" if business_education.is_etf else "How the company generally makes money" }}</h4>
+	                    <p>{{ business_education.business_model }}</p>
+	                </article>
+	                <article class="stock-business-item">
+	                    <h4>{{ "What usually drives performance" if business_education.is_etf else "Main growth drivers" }}</h4>
+	                    <p>{{ business_education.growth_drivers }}</p>
+	                </article>
+	                <article class="stock-business-item">
+	                    <h4>{{ "Concentration and overlap risks" if business_education.is_etf else "Main business risks" }}</h4>
+	                    <p>{{ business_education.business_risks }}</p>
+	                </article>
+	                {% if business_education.is_etf %}
+	                <article class="stock-business-item">
+	                    <h4>What to inspect in the holdings</h4>
+	                    <p>{{ business_education.holdings_check }}</p>
+	                </article>
+	                {% endif %}
+	                <article class="stock-business-item">
+	                    <h4>What could strengthen the business case</h4>
+	                    <p>{{ business_education.strengthen_case }}</p>
+	                </article>
+	                <article class="stock-business-item">
+	                    <h4>What could weaken the business case</h4>
+	                    <p>{{ business_education.weaken_case }}</p>
+	                </article>
+	                <article class="stock-business-item">
+	                    <h4>One question to research next</h4>
+	                    <p>{{ business_education.research_question }}</p>
+	                </article>
+	            </div>
+	        </div>
+	    </details>
 
 	    <div class="stock-supporting-detail" aria-labelledby="stock-supporting-heading">
 	        <span class="stock-premium-label">Supporting detail</span>
@@ -8275,6 +8630,36 @@ def stock_detail(symbol):
     ai_context = get_stock_ai_context(cleaned_symbol)
     example_report = get_premium_report(cleaned_symbol, ai_context)
     dividend_context = get_dividend_context(cleaned_symbol)
+    has_premium_access = premium_has_access()
+    today_context = None
+    business_education = None
+
+    if has_premium_access:
+        universe_item = next(
+            (
+                item for item in get_stock_universe()
+                if str(item.get("ticker") or "").strip().upper() == cleaned_symbol
+            ),
+            {},
+        )
+        sector = str(
+            universe_item.get("sector")
+            or SECTOR_MAP.get(cleaned_symbol)
+            or "General research candidate"
+        ).strip()
+        company_name = str(
+            universe_item.get("name")
+            or stock_display_label(cleaned_symbol)
+            or cleaned_symbol
+        ).strip()
+        role_profile = classify_portfolio_role(cleaned_symbol)
+        today_context = build_today_context(ai_context)
+        business_education = build_business_education(
+            cleaned_symbol,
+            sector,
+            company_name,
+            role_profile,
+        )
 
     return render_template_string(
         stock_detail_html,
@@ -8287,7 +8672,9 @@ def stock_detail(symbol):
         ai_context=ai_context,
         example_report=example_report,
         dividend_context=dividend_context,
-        has_premium_access=premium_has_access(),
+        has_premium_access=has_premium_access,
+        today_context=today_context,
+        business_education=business_education,
     )
 
 
