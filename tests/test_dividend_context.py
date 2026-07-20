@@ -195,6 +195,40 @@ def test_empty_or_incomplete_provider_responses_are_unavailable(provider_info):
     assert "No regular dividend found" not in context["no_data_message"]
 
 
+def test_cached_unavailable_context_is_retried_before_successful_data_expires():
+    clear_dividend_cache()
+    unavailable_context = {
+        "income_status": app.INCOME_STATUS_UNAVAILABLE,
+        "no_data_message": "Dividend data is temporarily unavailable.",
+    }
+    app.DIVIDEND_CONTEXT_CACHE["MSFT"] = {
+        "timestamp": 1000,
+        "context": unavailable_context,
+    }
+    info = {
+        "quoteType": "EQUITY",
+        "financialCurrency": "USD",
+        "trailingAnnualDividendYield": 0.009,
+        "trailingAnnualDividendRate": 3.56,
+    }
+
+    with (
+        patch.object(
+            app.time,
+            "time",
+            return_value=(
+                1000 + app.DIVIDEND_CONTEXT_UNAVAILABLE_CACHE_TTL_SECONDS + 1
+            ),
+        ),
+        patch.object(app.yf, "Ticker", return_value=ticker_with_info(info)) as ticker,
+    ):
+        context = app.get_dividend_context("MSFT")
+
+    assert ticker.call_count == 1
+    assert context["income_status"] == app.INCOME_STATUS_AVAILABLE
+    assert context["dividend_yield"] == "0.9%"
+
+
 @pytest.mark.parametrize(
     ("symbol", "universe_item", "expected_title", "expected_message"),
     (

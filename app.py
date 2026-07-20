@@ -680,6 +680,7 @@ STOCK_DISPLAY_LOOKUP_CACHE = {
     "lookup": {},
 }
 DIVIDEND_CONTEXT_CACHE_TTL_SECONDS = 3600
+DIVIDEND_CONTEXT_UNAVAILABLE_CACHE_TTL_SECONDS = 300
 DIVIDEND_CONTEXT_CACHE = {}
 
 TRACKED_STOCK_UNIVERSE = [
@@ -2200,8 +2201,15 @@ def get_dividend_context(symbol):
     cleaned_symbol = canonical_stock_symbol(symbol)
     now = time.time()
     cached = DIVIDEND_CONTEXT_CACHE.get(cleaned_symbol)
-    if cached and now - cached["timestamp"] < DIVIDEND_CONTEXT_CACHE_TTL_SECONDS:
-        return dict(cached["context"])
+    if cached:
+        cached_context = cached["context"]
+        cache_ttl = (
+            DIVIDEND_CONTEXT_UNAVAILABLE_CACHE_TTL_SECONDS
+            if income_status_from_context(cached_context) == INCOME_STATUS_UNAVAILABLE
+            else DIVIDEND_CONTEXT_CACHE_TTL_SECONDS
+        )
+        if now - cached["timestamp"] < cache_ttl:
+            return dict(cached_context)
 
     universe_item = next(
         (
@@ -2228,8 +2236,28 @@ def get_dividend_context(symbol):
             provider_response_received = isinstance(provider_info, dict)
             if provider_response_received:
                 info = provider_info
-        except Exception:
-            app.logger.info("Dividend metadata unavailable for %s.", cleaned_symbol)
+        except Exception as exc:
+            message = str(exc).lower()
+            if isinstance(exc, TimeoutError) or "timed out" in message or "timeout" in message:
+                failure_kind = "timeout"
+            elif "429" in message or "rate limit" in message or "too many requests" in message:
+                failure_kind = "rate-limit"
+            elif any(marker in message for marker in ("http", "401", "403", "404", "502", "503")):
+                failure_kind = "http-error"
+            else:
+                failure_kind = "provider-exception"
+            app.logger.warning(
+                "Dividend metadata unavailable for %s: %s (%s).",
+                cleaned_symbol,
+                type(exc).__name__,
+                failure_kind,
+            )
+
+    if provider_response_received and not info:
+        app.logger.warning(
+            "Dividend metadata unavailable for %s: empty provider response.",
+            cleaned_symbol,
+        )
 
     instrument_profile = dict(universe_item)
     if sector and not instrument_profile.get("sector"):
