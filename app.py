@@ -1924,6 +1924,155 @@ DIVIDEND_ETF_TICKERS = {
 }
 
 
+FUNDAMENTAL_CURRENCY_SYMBOLS = {
+    "USD": "$",
+    "GBP": "£",
+    "EUR": "€",
+    "JPY": "¥",
+    "CAD": "C$",
+    "AUD": "A$",
+}
+
+
+def fundamental_number(value):
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if pd.isna(number) or abs(number) == float("inf"):
+        return None
+    return number
+
+
+def fundamental_currency(info):
+    currency = str(
+        (info or {}).get("financialCurrency")
+        or (info or {}).get("currency")
+        or ""
+    ).strip()
+    return "GBP" if currency.lower() == "gbp" else currency.upper()
+
+
+def format_fundamental_currency(value, currency, compact=False):
+    number = fundamental_number(value)
+    if number is None:
+        return ""
+
+    absolute = abs(number)
+    suffix = ""
+    if compact:
+        for threshold, compact_suffix in (
+            (1_000_000_000_000, "T"),
+            (1_000_000_000, "B"),
+            (1_000_000, "M"),
+        ):
+            if absolute >= threshold:
+                absolute /= threshold
+                suffix = compact_suffix
+                break
+
+    decimals = 1 if suffix else 2
+    formatted = f"{absolute:.{decimals}f}".rstrip("0").rstrip(".") + suffix
+    currency_code = str(currency or "").strip().upper()
+    currency_prefix = FUNDAMENTAL_CURRENCY_SYMBOLS.get(currency_code)
+    if currency_prefix:
+        formatted = f"{currency_prefix}{formatted}"
+    elif currency_code:
+        formatted = f"{currency_code} {formatted}"
+    return f"-{formatted}" if number < 0 else formatted
+
+
+def format_fundamental_decimal(value):
+    number = fundamental_number(value)
+    if number is None:
+        return ""
+    return f"{number:.2f}".rstrip("0").rstrip(".")
+
+
+def format_next_earnings(info, now=None):
+    info = info or {}
+    raw_timestamp = info.get("earningsTimestamp")
+    if raw_timestamp in (None, ""):
+        raw_timestamp = info.get("earningsTimestampStart")
+
+    if isinstance(raw_timestamp, datetime):
+        earnings_date = raw_timestamp
+        if earnings_date.tzinfo is None:
+            earnings_date = earnings_date.replace(tzinfo=timezone.utc)
+    else:
+        timestamp = fundamental_number(raw_timestamp)
+        if timestamp is None or timestamp <= 0:
+            return ""
+        try:
+            earnings_date = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            return ""
+
+    current_time = now or datetime.now(timezone.utc)
+    if current_time.tzinfo is None:
+        current_time = current_time.replace(tzinfo=timezone.utc)
+    if earnings_date <= current_time:
+        return ""
+
+    formatted = earnings_date.strftime("%d %B %Y").lstrip("0")
+    if info.get("isEarningsDateEstimate") is True:
+        formatted += " · Estimated"
+    return formatted
+
+
+def build_key_fundamentals(info, is_etf=False, now=None):
+    info = info if isinstance(info, dict) else {}
+    if is_etf:
+        return []
+
+    metrics = []
+    currency = fundamental_currency(info)
+
+    market_cap = fundamental_number(info.get("marketCap"))
+    if market_cap is not None and market_cap > 0:
+        metrics.append({
+            "key": "market-cap",
+            "label": "Market Cap",
+            "value": format_fundamental_currency(market_cap, currency, compact=True),
+        })
+
+    trailing_pe = fundamental_number(info.get("trailingPE"))
+    if trailing_pe is not None and trailing_pe > 0:
+        metrics.append({
+            "key": "pe-ratio",
+            "label": "P/E Ratio",
+            "value": format_fundamental_decimal(trailing_pe),
+        })
+
+    trailing_eps = fundamental_number(info.get("trailingEps"))
+    if trailing_eps is not None:
+        metrics.append({
+            "key": "trailing-eps",
+            "label": "Trailing EPS",
+            "value": format_fundamental_currency(trailing_eps, currency),
+        })
+
+    beta = fundamental_number(info.get("beta"))
+    if beta is not None:
+        metrics.append({
+            "key": "beta",
+            "label": "Beta",
+            "value": format_fundamental_decimal(beta),
+        })
+
+    earnings_date = format_next_earnings(info, now=now)
+    if earnings_date:
+        metrics.append({
+            "key": "next-earnings",
+            "label": "Next Earnings",
+            "value": earnings_date,
+        })
+
+    return metrics
+
+
 def get_dividend_context(symbol):
     cleaned_symbol = canonical_stock_symbol(symbol)
     now = time.time()
@@ -1970,24 +2119,15 @@ def get_dividend_context(symbol):
         or any(marker in sector_category_text for marker in fund_markers)
     )
 
-    def numeric_value(value):
-        try:
-            number = float(value)
-            if pd.isna(number):
-                return None
-            return number
-        except (TypeError, ValueError):
-            return None
-
     def percentage_text(value):
-        number = numeric_value(value)
+        number = fundamental_number(value)
         if number is None or number < 0:
             return "Not available"
         percentage = number * 100 if number <= 1 else number
         return f"{percentage:.2f}".rstrip("0").rstrip(".") + "%"
 
     def amount_text(value):
-        number = numeric_value(value)
+        number = fundamental_number(value)
         if number is None or number < 0:
             return "Not available"
         return f"{number:.4f}".rstrip("0").rstrip(".") + " per share annually"
@@ -1998,7 +2138,7 @@ def get_dividend_context(symbol):
         if isinstance(value, datetime):
             parsed = value
         else:
-            number = numeric_value(value)
+            number = fundamental_number(value)
             if number is None:
                 return "Not available"
             try:
@@ -2023,25 +2163,25 @@ def get_dividend_context(symbol):
     payout_value = info.get("payoutRatio")
 
     def yield_text():
-        trailing_yield = numeric_value(trailing_yield_value)
+        trailing_yield = fundamental_number(trailing_yield_value)
         if trailing_yield is not None and trailing_yield > 0:
             return percentage_text(trailing_yield)
 
-        annual_amount = numeric_value(annual_value)
-        price = numeric_value(market_price)
+        annual_amount = fundamental_number(annual_value)
+        price = fundamental_number(market_price)
         if annual_amount is not None and annual_amount > 0 and price is not None and price > 0:
             return f"{annual_amount / price * 100:.2f}".rstrip("0").rstrip(".") + "%"
 
-        reported_yield = numeric_value(reported_yield_value)
+        reported_yield = fundamental_number(reported_yield_value)
         if reported_yield is None or reported_yield <= 0:
             return "Not available"
         percentage = reported_yield * 100 if reported_yield <= 0.2 else reported_yield
         return f"{percentage:.2f}".rstrip("0").rstrip(".") + "%"
 
-    yield_number = numeric_value(trailing_yield_value)
+    yield_number = fundamental_number(trailing_yield_value)
     if yield_number is None:
-        yield_number = numeric_value(reported_yield_value)
-    annual_number = numeric_value(annual_value)
+        yield_number = fundamental_number(reported_yield_value)
+    annual_number = fundamental_number(annual_value)
     has_dividend_data = (
         (yield_number is not None and yield_number > 0)
         or (annual_number is not None and annual_number > 0)
@@ -2086,6 +2226,7 @@ def get_dividend_context(symbol):
         "annual_dividend": amount_text(annual_value),
         "ex_dividend_date": date_text(ex_dividend_value),
         "payout_ratio": percentage_text(payout_value),
+        "fundamentals": build_key_fundamentals(info, is_etf=is_etf),
         "dividend_frequency_note": frequency_note,
         "beginner_explanation": beginner_explanation,
         "risk_note": (
@@ -7845,8 +7986,15 @@ stock_detail_html = """
 	.stock-score-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
 	.stock-score-item{padding:14px;border-radius:14px;background:rgba(148,163,184,0.06);color:#aebdca;line-height:1.55;}.stock-score-item strong{display:block;color:#e9f1f7;margin-bottom:4px;}
 	.stock-identity-note{margin:16px 0 0;color:#9fb0bf;font-size:13px;line-height:1.55;}
+	.card.stock-fundamentals{padding:20px 22px;border-color:rgba(105,201,242,0.16);background:linear-gradient(180deg,rgba(14,27,40,0.96),rgba(10,21,33,0.96));}
+	.stock-fundamentals .kicker{margin-bottom:5px;color:#86d8f5;}
+	.stock-fundamentals h2{margin:0 0 12px;font-size:20px;}
+	.stock-fundamentals-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;}
+	.stock-fundamental-metric{min-width:0;padding:10px 12px;border-radius:14px;background:rgba(7,17,28,0.48);border:1px solid rgba(148,163,184,0.13);}
+	.stock-fundamental-metric span{display:block;margin-bottom:4px;color:#91a3b4;font-size:10px;font-weight:950;letter-spacing:0.08em;line-height:1.3;text-transform:uppercase;}
+	.stock-fundamental-metric strong{display:block;color:#edf5fa;font-size:17px;line-height:1.2;overflow-wrap:anywhere;}
 	@media(max-width:900px){.stock-premium-summary{padding:24px 20px;border-radius:24px;}.stock-decision-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.stock-decision-card:last-child{grid-column:1/-1;}.stock-score-grid,.stock-learning-grid{grid-template-columns:1fr;}.stock-portfolio-checklist ul{grid-template-columns:1fr;}}
-	@media(max-width:640px){.stock-today-grid,.stock-decision-grid,.stock-portfolio-grid,.stock-psychology-grid,.stock-business-grid{grid-template-columns:1fr;}.stock-today-item:last-child,.stock-decision-card:last-child{grid-column:auto;}.stock-premium-action{font-size:16px;}.stock-premium-badge{font-size:11px;}.stock-today-context,.stock-portfolio-builder,.stock-psychology,.stock-supporting-detail{padding:20px 16px;}.stock-business-education>summary{padding:17px 16px;font-size:21px;}.stock-business-body{padding:0 16px 18px;}.stock-detail-body .payment-button{width:100%;text-align:center;}}
+	@media(max-width:640px){.stock-today-grid,.stock-decision-grid,.stock-portfolio-grid,.stock-psychology-grid,.stock-business-grid{grid-template-columns:1fr;}.stock-today-item:last-child,.stock-decision-card:last-child{grid-column:auto;}.stock-premium-action{font-size:16px;}.stock-premium-badge{font-size:11px;}.stock-today-context,.stock-portfolio-builder,.stock-psychology,.stock-supporting-detail{padding:20px 16px;}.stock-business-education>summary{padding:17px 16px;font-size:21px;}.stock-business-body{padding:0 16px 18px;}.stock-detail-body .payment-button{width:100%;text-align:center;}.card.stock-fundamentals{padding:16px 14px;}.stock-fundamentals-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}.stock-fundamental-metric{padding:9px 10px;}.stock-fundamental-metric strong{font-size:15px;}}
 	</style>
 	<style>
 		*{box-sizing:border-box;}:root{--font-hero:clamp(34px,4vw,46px);--font-section:clamp(24px,2.4vw,30px);--font-card-title:18px;--font-body:15px;--font-small:13px;--font-kicker:11px;--font-cta:14px;}body{background:radial-gradient(circle at 12% 6%,rgba(0,255,170,0.11),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;margin:0;min-height:100vh;padding:48px;}.card{background:linear-gradient(180deg,rgba(18,29,42,0.97),rgba(12,22,33,0.97));padding:30px;border-radius:28px;margin-bottom:22px;border:1px solid rgba(148,163,184,0.16);box-shadow:0 22px 65px rgba(0,0,0,0.30);}h1,h2{color:#f1f5f9;line-height:1.12;letter-spacing:0;}h1{font-size:var(--font-hero);}h2{font-size:var(--font-section);}p{color:#b9c5d2;line-height:1.68;font-size:var(--font-body);}a{color:#69c9f2;text-decoration:none;font-weight:bold;}.kicker{color:#4adea3;font-weight:950;text-transform:uppercase;letter-spacing:.1em;font-size:var(--font-kicker);margin:0 0 8px;}.muted{color:#91a3b4;font-size:13px;}.range-row{display:flex;gap:12px;flex-wrap:wrap;margin:22px 0;}.range-button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:12px 16px;border-radius:15px;background:#111d2b;color:#dbe4ee;text-decoration:none;border:1px solid rgba(148,163,184,0.14);font-weight:800;line-height:1.1;text-align:center;}.range-button.active{background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;}.metric-grid,.ai-grid,.example-report-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-bottom:22px;}.metric-grid{grid-template-columns:repeat(4,1fr);}.ai-card,.metric,.example-report-card{background:rgba(14,25,38,0.90);border:1px solid rgba(148,163,184,0.15);border-radius:22px;padding:23px;}.ai-card.warning{background:linear-gradient(145deg,rgba(89,70,28,0.35),rgba(14,25,38,0.94));}.ai-card.risk{background:linear-gradient(145deg,rgba(24,60,78,0.32),rgba(14,25,38,0.94));}.premium-banner,.example-report{background:linear-gradient(135deg,rgba(15,55,50,0.74),rgba(55,42,26,0.60),rgba(20,45,61,0.62));border:1px solid rgba(74,222,163,0.20);border-radius:28px;padding:30px;margin-bottom:22px;}.premium-banner{display:grid;grid-template-columns:1.35fr 0.85fr;gap:24px;align-items:center;box-shadow:0 26px 70px rgba(0,0,0,0.34);}.stock-locked-preview{border-color:rgba(255,184,107,0.34);background:linear-gradient(135deg,rgba(12,47,48,0.92),rgba(81,54,28,0.62),rgba(20,45,61,0.78));}.premium-banner small,.example-report small{display:block;color:#86efac;font-weight:950;text-transform:uppercase;letter-spacing:0.1em;font-size:var(--font-kicker);margin-bottom:8px;}.premium-cta-box{background:rgba(9,18,28,0.84);border:1px solid rgba(255,184,107,0.24);border-radius:22px;padding:22px;text-align:center;}.premium-cta-box strong{display:block;color:#f8fafc;margin-bottom:8px;}.payment-button{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;border-radius:16px;padding:13px 19px;font-size:var(--font-cta);font-weight:950;text-decoration:none;line-height:1.1;}.payment-note{color:#a8b6c6;font-size:13px;margin-top:12px;line-height:1.55;}.signal-badge,.free-strength,.strength-pill{display:inline-block;margin-top:10px;padding:8px 12px;border-radius:999px;background:rgba(148,163,184,0.09);font-weight:900;font-size:12px;text-transform:uppercase;}.confidence-large,.confidence-score{font-size:36px;font-weight:950;}.free-meter,.confidence-meter{font-size:24px;letter-spacing:0;color:#4adea3;font-weight:950;margin:8px 0;}.dividend-card{border:1px solid rgba(74,222,163,0.18);}.dividend-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:16px 0;}.dividend-metric{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:16px;padding:14px;line-height:1.45;}.dividend-metric span{display:block;color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:0.07em;font-weight:900;margin-bottom:6px;}.dividend-metric strong{display:block;color:#e5f4ff;font-size:17px;}.dividend-empty{background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.20);border-radius:16px;padding:14px;color:#fde68a;line-height:1.65;}.dividend-note{color:#cbd5e1;background:rgba(148,163,184,0.07);border-radius:14px;padding:12px 14px;}.dividend-risk{color:#fecaca;background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.16);border-radius:14px;padding:12px 14px;}.chart-card{padding:24px;}.chart-shell{position:relative;width:100%;height:360px;min-height:360px;background:#0a1420;border-radius:18px;padding:16px;overflow:hidden;}.chart-shell canvas{display:block;width:100%!important;height:100%!important;background:transparent;border-radius:12px;padding:0;}.buy{color:#4ade80;font-weight:bold;}.sell{color:#fb7185;font-weight:bold;}.hold{color:#f4c95d;font-weight:bold;}@media(max-width:900px){:root{--font-hero:clamp(32px,9vw,38px);--font-section:clamp(23px,6vw,28px);}body{padding:24px 16px;}.card,.premium-banner,.example-report{padding:24px 20px;border-radius:24px;}.metric-grid,.ai-grid,.premium-banner,.example-report-grid,.dividend-grid{grid-template-columns:1fr;}.payment-button{display:block;text-align:center;}.range-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:18px 0;}.range-button{width:100%;padding:13px 10px;font-size:14px;}.metric{padding:18px;}.metric h2{font-size:24px;line-height:1.12;overflow-wrap:anywhere;}.chart-card{padding:18px 14px;}.chart-shell{height:340px;min-height:340px;padding:12px;border-radius:16px;}}
@@ -7858,6 +8006,22 @@ stock_detail_html = """
 <div class="card"><p><a href="/">← Back to Dashboard</a></p><h1>{{ stock_display_label(symbol) }} Stock Detail</h1><p style="color:#94a3b8;">Live chart view for {{ range_label }}. Use the buttons below to change timeframe.</p></div>
 
 	<div class="ai-grid"><div class="ai-card"><small>{% if has_premium_access %}Current Signal{% else %}Free Signal Preview{% endif %}</small><h2 class="{% if ai_context.signal == 'BUY' %}buy{% elif ai_context.signal == 'SELL' %}sell{% elif ai_context.signal == 'HOLD' %}hold{% endif %}">{{ ai_context.signal }}</h2><p>The headline signal shows what the scanner is flagging for {{ stock_display_label(symbol) }}.</p><span class="signal-badge">Live stock page: {{ stock_display_label(symbol) }}</span></div><div class="ai-card warning"><small>{% if has_premium_access %}Current Confidence{% else %}Free Confidence Preview{% endif %}</small><div class="confidence-large">{{ ai_context.confidence }}</div><div class="free-meter">{{ ai_context.confidence_meter }}</div><span class="free-strength">Signal strength: {{ ai_context.strength_label }}</span><p style="margin-top:12px;">The score and meter are a research prompt. Premium explains how to interpret them, what risk to check and what evidence matters next.</p></div><div class="ai-card risk"><small>{% if has_premium_access %}Premium Active{% else %}Premium Preview{% endif %}</small><h2>Decision context</h2>{% if has_premium_access %}<p>The Premium report below puts the simple answer first, followed by practical checks and optional supporting detail.</p><span class="signal-badge">Premium unlocked</span>{% else %}<p>Premium explains the decision layer behind {{ stock_display_label(symbol) }}: risk level, portfolio role, concentration warning and the next trigger to watch.</p><a class="signal-badge" href="/upgrade">Explore Premium</a>{% endif %}</div></div>
+
+{% set fundamentals = dividend_context.get('fundamentals', []) if dividend_context else [] %}
+{% if fundamentals %}
+<section class="card stock-fundamentals" aria-labelledby="stock-fundamentals-heading">
+    <p class="kicker">Supporting data</p>
+    <h2 id="stock-fundamentals-heading">Key fundamentals</h2>
+    <div class="stock-fundamentals-grid">
+        {% for metric in fundamentals %}
+        <div class="stock-fundamental-metric" data-fundamental="{{ metric.key }}">
+            <span>{{ metric.label }}</span>
+            <strong>{{ metric.value }}</strong>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
 
 	{% if not has_premium_access %}<div class="premium-banner stock-locked-preview"><div><small>Premium locked preview</small><h2>Free shows the signal. Premium explains the decision.</h2><p>Premium is the calm education layer behind the {{ ai_context.signal }} prompt. It helps you understand the questions that matter before acting without adding another screen of market noise.</p><div class="premium-preview-grid"><div class="premium-preview-item"><strong>Why is this signal showing?</strong><span>Unlock the plain-English reasoning behind the current research prompt.</span></div><div class="premium-preview-item"><strong>What could weaken it?</strong><span>See which risk evidence would make the case less useful.</span></div><div class="premium-preview-item"><strong>Could it duplicate exposure?</strong><span>Check possible sector, ETF, theme or mega-cap overlap.</span></div><div class="premium-preview-item"><strong>Where might it fit?</strong><span>Review core, growth, defensive, income, cyclical or speculative context.</span></div><div class="premium-preview-item"><strong>What should I watch next?</strong><span>Define the next signal, price or business evidence to review.</span></div><div class="premium-preview-item"><strong>What mistake should I avoid?</strong><span>See the beginner trap linked to this type of signal.</span></div></div></div><div class="premium-cta-box"><strong>Unlock the {{ stock_display_label(symbol) }} Decision Panel</strong><p>Includes signal meaning, risk checks, portfolio fit, a beginner-mistake warning, watch-next trigger and Before You Act checklist.</p><a class="payment-button" href="/upgrade">Upgrade to Premium</a><div class="payment-note"><a href="/premium-decision/{{ symbol }}">View the locked decision-panel preview</a></div><div class="payment-note">Helpful research context only. No investment advice or return promises.</div></div></div>{% endif %}
 
