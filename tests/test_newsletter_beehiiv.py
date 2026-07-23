@@ -12,9 +12,18 @@ def issue_for(date_string="2026-07-10"):
     return {
         "metadata": {
             "issue_date": date_string,
-            "guid": f"stockradar-weekly-{date_string}",
-            "title": "StockRadar Weekly — Friday 10 July 2026",
+            "issue_id": "stockradar-weekly-2026-W28",
+            "issue_key": f"newsletter:{date_string}",
+            "guid": "stockradar-weekly-2026-W28",
+            "title": "StockRadar Weekly – Week 28: This Week’s Market Signals",
             "issue_status_key": "final",
+            "status": "final",
+            "is_final": True,
+            "iso_week": 28,
+            "iso_year": 2026,
+            "window_start_utc": "2026-07-03T08:00:00+00:00",
+            "window_end_utc": "2026-07-10T08:00:00+00:00",
+            "generated_at": "2026-07-10T08:00:00+00:00",
         },
         "summary": "Weekly market brief.",
         "draft": {
@@ -29,29 +38,40 @@ def issue_for(date_string="2026-07-10"):
 
 def configure_state(monkeypatch, tmp_path):
     monkeypatch.setattr(app, "NEWSLETTER_BEEHIIV_STATE_PATH", str(tmp_path / "beehiiv.json"))
+    monkeypatch.setattr(app, "NEWSLETTER_ISSUES_PATH", str(tmp_path / "issues.json"))
+    monkeypatch.setattr(app, "NEWSLETTER_STORY_HISTORY_PATH", str(tmp_path / "stories.json"))
+    monkeypatch.setattr(app, "NEWSLETTER_MARKET_SNAPSHOTS_PATH", str(tmp_path / "snapshots.json"))
     monkeypatch.setattr(app, "NEWSLETTER_SEND_LOCK_DIR", str(tmp_path / "locks"))
 
 
-def test_friday_before_0900_is_not_due():
-    assert not app.newsletter_auto_send_due(datetime(2026, 7, 10, 8, 59, tzinfo=LONDON))
+def test_friday_before_0900_is_not_due_when_previous_issue_exists(monkeypatch):
+    with patch.object(app, "get_finalized_newsletter_issue", return_value=issue_for()):
+        assert not app.newsletter_auto_send_due(datetime(2026, 7, 10, 8, 59, tzinfo=LONDON))
 
 
-def test_friday_at_0900_is_due():
-    assert app.newsletter_auto_send_due(datetime(2026, 7, 10, 9, 0, tzinfo=LONDON))
+def test_friday_at_0900_is_due(monkeypatch):
+    with patch.object(app, "get_finalized_newsletter_issue", return_value=None):
+        assert app.newsletter_auto_send_due(datetime(2026, 7, 10, 9, 0, tzinfo=LONDON))
 
 
-def test_non_friday_is_not_due():
-    assert not app.newsletter_auto_send_due(datetime(2026, 7, 9, 12, 0, tzinfo=LONDON))
+def test_non_friday_catches_up_when_latest_issue_is_missing(monkeypatch):
+    with patch.object(app, "get_finalized_newsletter_issue", return_value=None):
+        assert app.newsletter_auto_send_due(datetime(2026, 7, 9, 12, 0, tzinfo=LONDON))
 
 
-def test_missing_beehiiv_configuration_fails_closed(monkeypatch, tmp_path):
+def test_missing_beehiiv_configuration_does_not_block_generation(monkeypatch, tmp_path):
     configure_state(monkeypatch, tmp_path)
     monkeypatch.setattr(app, "BEEHIIV_API_KEY", "")
     monkeypatch.setattr(app, "BEEHIIV_PUBLICATION_ID", "")
-    with patch.object(app, "beehiiv_api_request") as api_call:
+    with (
+        patch.object(app, "build_weekly_newsletter_issue", return_value=issue_for()) as generate,
+        patch.object(app, "beehiiv_api_request") as api_call,
+    ):
         result = app.run_due_newsletter_automation(now=datetime(2026, 7, 10, 9, 0, tzinfo=LONDON))
-    assert result["status"] == "failed"
-    assert result["reason"] == "beehiiv_not_configured"
+    assert result["status"] == "delivery_unavailable"
+    assert result["content_generation_status"] == "generated"
+    assert result["failure_reason"] == "beehiiv_not_configured"
+    generate.assert_called_once()
     api_call.assert_not_called()
 
 
@@ -144,7 +164,7 @@ def test_newsletter_public_routes_remain_available(monkeypatch):
         "rss_status_label": "Final issue",
     })
     with (
-        patch.object(app, "build_weekly_newsletter_issue", return_value=issue),
+        patch.object(app, "load_or_generate_latest_newsletter_issue", return_value=issue),
         patch.object(app, "render_template_string", return_value="ok"),
         patch.object(app, "render_newsletter_issue_body", return_value="<p>Brief</p>"),
     ):
@@ -228,17 +248,21 @@ def test_health_uses_manual_beehiiv_status_without_sent(monkeypatch, tmp_path):
         content_generation_status="generated",
         failure_reason="beehiiv_http_403",
     )
-    with patch.object(
-        app,
-        "newsletter_london_now",
-        return_value=datetime(2026, 7, 10, 9, 0, tzinfo=LONDON),
+    with (
+        patch.object(
+            app,
+            "newsletter_london_now",
+            return_value=datetime(2026, 7, 10, 9, 0, tzinfo=LONDON),
+        ),
+        patch.object(app, "get_finalized_newsletter_issue", return_value=issue_for()),
+        patch.object(app, "latest_finalized_newsletter_issue", return_value=issue_for()),
     ):
         newsletter = app.app.test_client().get("/health").get_json()["newsletter"]
     assert newsletter["weekly_bulk_sender"] == "beehiiv_manual"
     assert newsletter["beehiiv_configured"] is True
     assert newsletter["beehiiv_create_post_blocked"] is True
     assert newsletter["beehiiv_campaign_status"] == "beehiiv_api_post_blocked"
-    assert newsletter["content_generation_status"] == "generated"
+    assert newsletter["content_generation_status"] == "finalized"
     assert "sent" not in str(newsletter).lower()
 
 
@@ -250,7 +274,7 @@ def test_beehiiv_copy_route_requires_owner_login():
 
 def test_beehiiv_copy_route_contains_export_fields(monkeypatch, tmp_path):
     configure_state(monkeypatch, tmp_path)
-    with patch.object(app, "build_weekly_newsletter_issue", return_value=issue_for()):
+    with patch.object(app, "load_or_generate_latest_newsletter_issue", return_value=issue_for()):
         client = app.app.test_client()
         with client.session_transaction() as current_session:
             current_session["owner_logged_in"] = True

@@ -13,3 +13,10 @@ newsletter_beehiiv_state.json.tmp
 .newsletter_locks/
 newsletter_delivery_log.json
 newsletter_delivery_log.json.tmp
+newsletter_issues.json
+newsletter_issues.json.tmp
+newsletter_story_history.json
+newsletter_story_history.json.tmp
+newsletter_market_snapshots.json
+newsletter_market_snapshots.json.tmp
+.stockradar_data/

@@ -1,24 +1,34 @@
 from flask import Flask, Response, render_template_string, redirect, url_for, request, session, jsonify
 from datetime import datetime, time as dt_time, timedelta, timezone
+from difflib import SequenceMatcher
 from email.utils import format_datetime
 from email.message import EmailMessage
+from contextlib import contextmanager
 from xml.sax.saxutils import escape as xml_escape
 from zoneinfo import ZoneInfo
-from urllib.parse import quote, urlencode
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 from urllib.error import URLError
 import csv
+import copy
+import hashlib
 import json
 import os
 import pandas as pd
 import re
 import smtplib
 import ssl
+import tempfile
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 
 try:
     import certifi
@@ -88,6 +98,85 @@ PRODUCTION_BASE_URL = "https://www.stockradarhq.com"
 RENDER_FALLBACK_BASE_URL = "https://signalscope-ai-1-0v3g.onrender.com"
 APP_ROOT = os.path.dirname(os.path.abspath(__file__))
 PREMIUM_ENTITLEMENTS_PATH = os.path.join(APP_ROOT, "premium_entitlements.json")
+
+
+def path_is_within_directory(path, directory):
+    try:
+        return os.path.commonpath([path, directory]) == directory
+    except (ValueError, TypeError):
+        return False
+
+
+def resolve_stockradar_data_dir(
+    configured_value=None,
+    production=None,
+    app_root=None,
+    create=True,
+):
+    production = IS_PRODUCTION if production is None else bool(production)
+    application_root = os.path.realpath(app_root or APP_ROOT)
+    raw_value = (
+        os.environ.get("STOCKRADAR_DATA_DIR", "")
+        if configured_value is None
+        else str(configured_value or "")
+    ).strip()
+    explicit = bool(raw_value)
+    error = ""
+
+    if "\x00" in raw_value:
+        raw_value = ""
+        explicit = False
+        error = "invalid_data_directory"
+
+    if raw_value:
+        resolved = os.path.realpath(
+            os.path.abspath(os.path.expanduser(raw_value))
+        )
+    elif production:
+        resolved = os.path.join(tempfile.gettempdir(), "stockradar-data")
+        error = error or "data_directory_not_configured"
+    else:
+        resolved = os.path.join(application_root, ".stockradar_data")
+
+    if production and path_is_within_directory(resolved, application_root):
+        resolved = os.path.join(tempfile.gettempdir(), "stockradar-data")
+        explicit = False
+        error = "production_data_directory_inside_application"
+
+    created = False
+    if create:
+        try:
+            os.makedirs(resolved, mode=0o700, exist_ok=True)
+            created = True
+        except OSError:
+            error = "data_directory_unavailable"
+
+    return {
+        "path": resolved,
+        "explicit": explicit,
+        "created": created,
+        "error": error,
+        "production": production,
+    }
+
+
+STOCKRADAR_DATA_DIR_STATE = resolve_stockradar_data_dir()
+STOCKRADAR_DATA_DIR = STOCKRADAR_DATA_DIR_STATE["path"]
+STOCKRADAR_DATA_DIR_EXPLICIT = STOCKRADAR_DATA_DIR_STATE["explicit"]
+PERSISTENCE_CONFIGURATION_ERROR = STOCKRADAR_DATA_DIR_STATE["error"]
+PERSISTENCE_LAST_ERROR = PERSISTENCE_CONFIGURATION_ERROR
+PERSISTENCE_BACKEND = "filesystem_json"
+JSON_STORAGE_THREAD_LOCKS = {}
+JSON_STORAGE_THREAD_LOCKS_GUARD = threading.Lock()
+
+
+def stockradar_data_path(filename):
+    clean_name = os.path.basename(str(filename or "").strip())
+    if not clean_name or clean_name in {".", ".."}:
+        raise ValueError("invalid_data_filename")
+    return os.path.join(STOCKRADAR_DATA_DIR, clean_name)
+
+
 DEFAULT_STRIPE_SUCCESS_URL = (
     f"{PRODUCTION_BASE_URL}/checkout-success?session_id={{CHECKOUT_SESSION_ID}}"
 )
@@ -112,9 +201,12 @@ NEWSLETTER_FROM_EMAIL = (
     or NEWSLETTER_SMTP_USERNAME
 )
 NEWSLETTER_CRON_SECRET = os.environ.get("NEWSLETTER_CRON_SECRET", "").strip()
-NEWSLETTER_SUBSCRIBERS_PATH = os.path.join(APP_ROOT, "newsletter_subscribers.json")
-NEWSLETTER_DELIVERY_LOG_PATH = os.path.join(APP_ROOT, "newsletter_delivery_log.json")
-NEWSLETTER_SEND_LOCK_DIR = os.path.join(APP_ROOT, ".newsletter_locks")
+NEWSLETTER_SUBSCRIBERS_PATH = stockradar_data_path("newsletter_subscribers.json")
+NEWSLETTER_DELIVERY_LOG_PATH = stockradar_data_path("newsletter_delivery_log.json")
+NEWSLETTER_ISSUES_PATH = stockradar_data_path("newsletter_issues.json")
+NEWSLETTER_STORY_HISTORY_PATH = stockradar_data_path("newsletter_story_history.json")
+NEWSLETTER_MARKET_SNAPSHOTS_PATH = stockradar_data_path("newsletter_market_snapshots.json")
+NEWSLETTER_SEND_LOCK_DIR = stockradar_data_path(".newsletter_locks")
 NEWSLETTER_AUTO_SEND_ENABLED = (
     os.environ.get(
         "NEWSLETTER_AUTO_SEND_ENABLED",
@@ -126,6 +218,8 @@ NEWSLETTER_AUTO_SEND_ENABLED = (
 )
 NEWSLETTER_AUTO_SEND_HOUR_LONDON = int(os.environ.get("NEWSLETTER_AUTO_SEND_HOUR_LONDON", "9"))
 NEWSLETTER_AUTO_SEND_MINUTE_LONDON = int(os.environ.get("NEWSLETTER_AUTO_SEND_MINUTE_LONDON", "0"))
+NEWSLETTER_WEEKLY_CUTOFF_HOUR_LONDON = 9
+NEWSLETTER_WEEKLY_CUTOFF_MINUTE_LONDON = 0
 NEWSLETTER_AUTO_SEND_CHECK_INTERVAL_SECONDS = int(
     os.environ.get("NEWSLETTER_AUTO_SEND_CHECK_INTERVAL_SECONDS", "300")
 )
@@ -139,7 +233,15 @@ BEEHIIV_AUTOSEND_ENABLED = (
 )
 BEEHIIV_API_BASE_URL = "https://api.beehiiv.com/v2"
 BEEHIIV_REQUEST_TIMEOUT_SECONDS = 20
-NEWSLETTER_BEEHIIV_STATE_PATH = os.path.join(APP_ROOT, "newsletter_beehiiv_state.json")
+NEWSLETTER_BEEHIIV_STATE_PATH = stockradar_data_path("newsletter_beehiiv_state.json")
+NEWSLETTER_RUNTIME_FILE_NAMES = (
+    "newsletter_issues.json",
+    "newsletter_story_history.json",
+    "newsletter_market_snapshots.json",
+    "newsletter_delivery_log.json",
+    "newsletter_beehiiv_state.json",
+    "newsletter_subscribers.json",
+)
 BEEHIIV_WEEKLY_BULK_SENDER = "beehiiv_manual"
 BEEHIIV_CREATE_POST_BLOCKED = True
 BEEHIIV_EXPORT_SUBJECT = "StockRadar Weekly: This week’s market signals"
@@ -172,6 +274,37 @@ WEEKLY_NEWSLETTER_ISSUE_CACHE = {
     "issue": None,
 }
 WEEKLY_NEWSLETTER_PREVIEW_CACHE_TTL_SECONDS = 900
+NEWSLETTER_WEEKLY_TRACKED_TICKERS = (
+    "SPY", "QQQ", "DIA", "IWM", "SMH", "VUSA.L", "^GSPC", "^FTSE",
+    "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA",
+    "BP.L", "AZN.L",
+)
+NEWSLETTER_MARKET_TRACKER_TICKERS = (
+    "SPY", "^GSPC", "VUSA.L", "QQQ", "DIA", "IWM", "SMH", "^FTSE",
+)
+NEWSLETTER_NEWS_QUERY = (
+    '("stock market" OR equities OR earnings OR "interest rates" OR inflation '
+    'OR "Federal Reserve" OR "Bank of England" OR semiconductors OR "AI stocks")'
+)
+NEWSLETTER_INVESTOR_LESSONS = (
+    "A one-week move is context, not a complete investment case. Check valuation, risk and longer-term evidence before acting.",
+    "Market leadership can rotate quickly. Compare broad participation with a handful of large winners before drawing conclusions.",
+    "A weaker week does not automatically invalidate a business, but it can be a useful prompt to review risk and position size.",
+    "News matters most when price action and company evidence confirm it. Treat headlines as context rather than instructions.",
+)
+LAST_NEWSLETTER_NEWS_STATUS = {
+    "status": "not_started",
+    "provider_errors": [],
+    "last_error": "",
+    "stale_excluded": 0,
+    "duplicates_excluded": 0,
+}
+LAST_NEWSLETTER_MARKET_STATUS = {
+    "status": "not_started",
+    "last_error": "",
+    "latest_snapshot_at": "",
+    "previous_snapshot_at": "",
+}
 
 # --- Helper for fetching JSON from URL with fallback for local SSL certificate errors ---
 def fetch_url_json(url, timeout=8):
@@ -4478,6 +4611,359 @@ def fetch_live_market_news(limit=8):
     return []
 
 
+def parse_newsletter_timestamp(value):
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        parsed = None
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            for pattern in (
+                "%Y%m%dT%H%M%SZ",
+                "%Y%m%d%H%M%S",
+                "%Y-%m-%d %H:%M:%S",
+            ):
+                try:
+                    parsed = datetime.strptime(text, pattern).replace(tzinfo=timezone.utc)
+                    break
+                except ValueError:
+                    continue
+        if parsed is None:
+            return None
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def normalize_newsletter_title(title):
+    text = re.sub(r"\s+", " ", str(title or "")).strip().lower()
+    text = re.sub(r"[^\w\s]", " ", text, flags=re.UNICODE)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def canonical_newsletter_url(value):
+    raw_url = str(value or "").strip()
+    try:
+        parsed = urlsplit(raw_url)
+    except ValueError:
+        return ""
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+        return ""
+
+    ignored_query_keys = {
+        "fbclid", "gclid", "mc_cid", "mc_eid", "ref", "source",
+    }
+    clean_query = []
+    for key, item_value in parse_qsl(parsed.query, keep_blank_values=True):
+        lowered = key.lower()
+        if lowered.startswith("utm_") or lowered in ignored_query_keys:
+            continue
+        clean_query.append((key, item_value))
+
+    normalized_path = re.sub(r"/+", "/", parsed.path or "/")
+    if normalized_path != "/":
+        normalized_path = normalized_path.rstrip("/")
+    return urlunsplit((
+        parsed.scheme.lower(),
+        parsed.netloc.lower(),
+        normalized_path,
+        urlencode(sorted(clean_query)),
+        "",
+    ))
+
+
+def newsletter_title_hash(normalized_title):
+    return hashlib.sha256(str(normalized_title or "").encode("utf-8")).hexdigest()
+
+
+def newsletter_story_fingerprint(article):
+    provider_id = str(article.get("provider_article_id") or "").strip()
+    canonical_url = str(article.get("canonical_url") or "").strip()
+    title_hash = str(article.get("normalized_title_hash") or "").strip()
+    identity = (
+        f"provider:{article.get('provider')}:{provider_id}"
+        if provider_id
+        else f"url:{canonical_url}"
+        if canonical_url
+        else f"title:{title_hash}"
+    )
+    return hashlib.sha256(identity.encode("utf-8")).hexdigest()
+
+
+def normalize_weekly_news_article(article, provider, fetched_at=None):
+    title = re.sub(r"\s+", " ", str(article.get("title") or "")).strip()
+    normalized_title = normalize_newsletter_title(title)
+    published_at = parse_newsletter_timestamp(
+        article.get("published_at")
+        or article.get("publishedAt")
+        or article.get("seendate")
+    )
+    url = str(article.get("url") or "").strip()
+    canonical_url = canonical_newsletter_url(url)
+    if not title or not normalized_title or published_at is None or not canonical_url:
+        return None
+
+    source_value = article.get("source")
+    if isinstance(source_value, dict):
+        source_value = source_value.get("name")
+    title_hash = newsletter_title_hash(normalized_title)
+    normalized = {
+        "provider": str(provider or "unknown").strip().lower(),
+        "provider_article_id": str(
+            article.get("provider_article_id")
+            or article.get("id")
+            or article.get("uri")
+            or ""
+        ).strip(),
+        "title": title,
+        "normalized_title": normalized_title,
+        "url": url,
+        "canonical_url": canonical_url,
+        "source": str(source_value or article.get("domain") or "Market News").strip(),
+        "published_at": published_at.isoformat(),
+        "fetched_at": (
+            parse_newsletter_timestamp(fetched_at) or datetime.now(timezone.utc)
+        ).isoformat(),
+        "normalized_title_hash": title_hash,
+    }
+    normalized["story_fingerprint"] = newsletter_story_fingerprint(normalized)
+    return normalized
+
+
+def fetch_newsapi_weekly_articles(window, limit=20):
+    if not NEWSAPI_KEY:
+        return []
+    params = urlencode({
+        "q": NEWSLETTER_NEWS_QUERY,
+        "language": "en",
+        "sortBy": "publishedAt",
+        "pageSize": limit,
+        "from": window["window_start_utc"],
+        "to": window["window_end_utc"],
+        "apiKey": NEWSAPI_KEY,
+    })
+    payload = fetch_url_json(f"https://newsapi.org/v2/everything?{params}", timeout=8)
+    if payload.get("status") not in {None, "ok"}:
+        raise RuntimeError(str(payload.get("message") or "newsapi_error"))
+    return payload.get("articles", [])
+
+
+def fetch_gdelt_weekly_articles(window, limit=20):
+    start_utc = parse_newsletter_timestamp(window["window_start_utc"])
+    end_utc = parse_newsletter_timestamp(window["window_end_utc"])
+    params = urlencode({
+        "query": NEWSLETTER_NEWS_QUERY,
+        "mode": "artlist",
+        "format": "json",
+        "maxrecords": limit,
+        "sort": "datedesc",
+        "startdatetime": start_utc.strftime("%Y%m%d%H%M%S"),
+        "enddatetime": end_utc.strftime("%Y%m%d%H%M%S"),
+    })
+    payload = fetch_url_json(
+        f"https://api.gdeltproject.org/api/v2/doc/doc?{params}",
+        timeout=8,
+    )
+    return payload.get("articles", [])
+
+
+def newsletter_titles_equivalent(first, second):
+    first_title = normalize_newsletter_title(first)
+    second_title = normalize_newsletter_title(second)
+    if not first_title or not second_title:
+        return False
+    if first_title == second_title:
+        return True
+
+    first_tokens = set(first_title.split())
+    second_tokens = set(second_title.split())
+    union = first_tokens | second_tokens
+    token_similarity = len(first_tokens & second_tokens) / len(union) if union else 0
+    sequence_similarity = SequenceMatcher(None, first_title, second_title).ratio()
+    return token_similarity >= 0.86 or sequence_similarity >= 0.92
+
+
+def newsletter_story_event_tokens(title):
+    ignored = {
+        "a", "an", "and", "as", "at", "after", "before", "by", "for", "from",
+        "in", "into", "is", "its", "of", "on", "the", "to", "with",
+        "stock", "stocks", "market", "markets", "shares", "latest", "update",
+        "announces", "approves", "rejects", "confirms", "completes", "launches",
+        "files", "reports", "decision", "final", "new", "today",
+    }
+    return {
+        token for token in normalize_newsletter_title(title).split()
+        if len(token) > 2 and token not in ignored
+    }
+
+
+def newsletter_stories_describe_same_event(first, second):
+    first_tokens = newsletter_story_event_tokens(first)
+    second_tokens = newsletter_story_event_tokens(second)
+    if len(first_tokens) < 2 or len(second_tokens) < 2:
+        return False
+    shared = first_tokens & second_tokens
+    return len(shared) >= 2 and (
+        len(shared) / min(len(first_tokens), len(second_tokens))
+    ) >= 0.65
+
+
+def newsletter_story_identifiers_match(article, previous):
+    provider_id = str(article.get("provider_article_id") or "").strip()
+    previous_provider_id = str(previous.get("provider_article_id") or "").strip()
+    if (
+        provider_id
+        and previous_provider_id
+        and str(article.get("provider") or "") == str(previous.get("provider") or "")
+        and provider_id == previous_provider_id
+    ):
+        return True
+    if (
+        article.get("canonical_url")
+        and article.get("canonical_url") == previous.get("canonical_url")
+    ):
+        return True
+    if (
+        article.get("normalized_title_hash")
+        and article.get("normalized_title_hash") == previous.get("normalized_title_hash")
+    ):
+        return True
+    if newsletter_titles_equivalent(
+        article.get("normalized_title"),
+        previous.get("normalized_title"),
+    ):
+        return True
+    return newsletter_stories_describe_same_event(
+        article.get("normalized_title"),
+        previous.get("normalized_title"),
+    )
+
+
+def newsletter_story_is_meaningful_update(article, previous):
+    current_time = parse_newsletter_timestamp(article.get("published_at"))
+    previous_time = parse_newsletter_timestamp(previous.get("published_at"))
+    if not current_time or not previous_time or current_time <= previous_time:
+        return False
+    if article.get("canonical_url") == previous.get("canonical_url"):
+        return False
+    if newsletter_titles_equivalent(
+        article.get("normalized_title"),
+        previous.get("normalized_title"),
+    ):
+        return False
+
+    development_terms = {
+        "announces", "approves", "rejects", "confirms", "completes", "launches",
+        "files", "reports", "results", "earnings", "decision", "ruling",
+        "raises", "cuts", "wins", "loses", "settles", "signs",
+    }
+    changed_terms = set(str(article.get("normalized_title") or "").split()) - set(
+        str(previous.get("normalized_title") or "").split()
+    )
+    return (
+        current_time - previous_time >= timedelta(hours=6)
+        and bool(changed_terms & development_terms)
+    )
+
+
+def filter_weekly_news_articles(raw_articles, provider, window, fetched_at=None):
+    start_utc = parse_newsletter_timestamp(window["window_start_utc"])
+    end_utc = parse_newsletter_timestamp(window["window_end_utc"])
+    included = []
+    excluded = 0
+    for raw_article in raw_articles:
+        article = normalize_weekly_news_article(raw_article, provider, fetched_at)
+        if article is None:
+            excluded += 1
+            continue
+        published_at = parse_newsletter_timestamp(article["published_at"])
+        if not (start_utc <= published_at < end_utc):
+            excluded += 1
+            continue
+        included.append(article)
+    return included, excluded
+
+
+def fetch_weekly_news_articles(window, limit=12):
+    fetched_at = datetime.now(timezone.utc)
+    candidates = []
+    provider_errors = []
+    stale_excluded = 0
+    providers_attempted = 0
+
+    if NEWSAPI_KEY:
+        providers_attempted += 1
+        try:
+            raw_articles = fetch_newsapi_weekly_articles(window, max(limit * 2, 20))
+            filtered, excluded = filter_weekly_news_articles(
+                raw_articles, "newsapi", window, fetched_at
+            )
+            candidates.extend(filtered)
+            stale_excluded += excluded
+        except Exception as error:
+            provider_errors.append(f"newsapi:{sanitise_newsletter_error(error)}")
+
+    providers_attempted += 1
+    try:
+        raw_articles = fetch_gdelt_weekly_articles(window, max(limit * 2, 20))
+        filtered, excluded = filter_weekly_news_articles(
+            raw_articles, "gdelt", window, fetched_at
+        )
+        candidates.extend(filtered)
+        stale_excluded += excluded
+    except Exception as error:
+        provider_errors.append(f"gdelt:{sanitise_newsletter_error(error)}")
+
+    history = load_newsletter_story_history().get("stories", {})
+    previous_stories = list(history.values())
+    selected = []
+    duplicates_excluded = 0
+    for article in sorted(
+        candidates,
+        key=lambda item: item.get("published_at", ""),
+        reverse=True,
+    ):
+        matches = [
+            previous for previous in [*selected, *previous_stories]
+            if newsletter_story_identifiers_match(article, previous)
+        ]
+        if matches and not any(
+            newsletter_story_is_meaningful_update(article, previous)
+            for previous in matches
+        ):
+            duplicates_excluded += 1
+            continue
+        selected.append(article)
+        if len(selected) >= limit:
+            break
+
+    coverage_status = (
+        "verified"
+        if selected
+        else "unavailable"
+        if provider_errors and len(provider_errors) >= providers_attempted
+        else "verified_no_stories"
+    )
+    LAST_NEWSLETTER_NEWS_STATUS.update({
+        "status": coverage_status,
+        "provider_errors": provider_errors,
+        "last_error": provider_errors[-1] if provider_errors else "",
+        "stale_excluded": stale_excluded,
+        "duplicates_excluded": duplicates_excluded,
+    })
+    return selected, {
+        "coverage_status": coverage_status,
+        "provider_errors": provider_errors,
+        "stale_stories_excluded": stale_excluded,
+        "duplicate_stories_excluded": duplicates_excluded,
+    }
+
+
 def sentiment_from_direction(direction):
     if "Bullish" in direction:
         return "positive", "BUY / Positive impact"
@@ -4977,7 +5463,6 @@ def newsletter_headline_is_relevant(article):
 
 
 NEWSLETTER_MEGA_CAP_TECH_TICKERS = {"AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA"}
-NEWSLETTER_MARKET_TRACKER_TICKERS = ("SPY", "^GSPC", "VUSA.L", "QQQ", "DIA", "IWM", "SMH", "^FTSE")
 
 
 def newsletter_item_sector(item, ticker=""):
@@ -5226,157 +5711,546 @@ def build_newsletter_watchlist(recommendations, limit=8):
     return watchlist
 
 
-def build_free_weekly_newsletter():
-    recommendations = build_newsletter_recommendation_universe()
-    buy_count, hold_count, sell_count, _ = calculate_counts(recommendations)
-    total_count = len(recommendations)
-    highlights = build_newsletter_signal_highlights(recommendations)
-
-    sector_strength = {}
-    sector_risk = {}
-    for item in recommendations:
-        sector = str(item.get("sector") or "Other").strip()
-        signal = clean_signal(item.get("signal"), item.get("confidence"))
-        if signal == "BUY":
-            sector_strength[sector] = sector_strength.get(sector, 0) + 1
-        elif signal == "SELL":
-            sector_risk[sector] = sector_risk.get(sector, 0) + 1
-
-    best_area = (
-        max(sector_strength, key=sector_strength.get)
-        if sector_strength
-        else "Signal pending"
-    )
-    risk_area = (
-        max(sector_risk, key=sector_risk.get)
-        if sector_risk
-        else "No concentrated risk signal"
-    )
-
-    if not total_count:
-        market_mood = "Data unavailable"
-        market_pulse = "StockRadar tracked stock universe data is currently unavailable. No market direction is inferred."
-    elif buy_count > sell_count * 1.5:
-        market_mood = "Constructive, with selectivity"
-        market_pulse = (
-            f"{buy_count} constructive patterns, {hold_count} steady patterns and "
-            f"{sell_count} caution patterns appear across the StockRadar tracked stock universe."
-        )
-    elif sell_count > buy_count:
-        market_mood = "Cautious"
-        market_pulse = (
-            f"Caution patterns ({sell_count}) outnumber constructive patterns ({buy_count}). "
-            f"{hold_count} names remain steady or unresolved across the StockRadar tracked stock universe."
-        )
+def newsletter_weekly_window(now=None):
+    london_timezone = ZoneInfo("Europe/London")
+    london_now = now or datetime.now(london_timezone)
+    if london_now.tzinfo is None:
+        london_now = london_now.replace(tzinfo=london_timezone)
     else:
-        market_mood = "Mixed"
-        market_pulse = (
-            f"The StockRadar tracked stock universe is balanced: {buy_count} constructive, "
-            f"{hold_count} steady and {sell_count} caution patterns."
-        )
+        london_now = london_now.astimezone(london_timezone)
 
+    days_since_friday = (london_now.weekday() - 4) % 7
+    cutoff_date = london_now.date() - timedelta(days=days_since_friday)
+    end_local = datetime.combine(
+        cutoff_date,
+        newsletter_auto_send_time(),
+        tzinfo=london_timezone,
+    )
+    if london_now < end_local:
+        end_local -= timedelta(days=7)
+    start_local = end_local - timedelta(days=7)
+    start_utc = start_local.astimezone(timezone.utc)
+    end_utc = end_local.astimezone(timezone.utc)
+    iso_year, iso_week, _ = end_local.date().isocalendar()
+    issue_id = f"stockradar-weekly-{iso_year}-W{iso_week:02d}"
+    return {
+        "issue_id": issue_id,
+        "issue_key": f"newsletter:{end_local.date().isoformat()}",
+        "issue_date": end_local.date().isoformat(),
+        "iso_week": iso_week,
+        "iso_year": iso_year,
+        "window_start_local": start_local.isoformat(),
+        "window_end_local": end_local.isoformat(),
+        "window_start_utc": start_utc.isoformat(),
+        "window_end_utc": end_utc.isoformat(),
+        "window_start_local_dt": start_local,
+        "window_end_local_dt": end_local,
+        "window_start_utc_dt": start_utc,
+        "window_end_utc_dt": end_utc,
+    }
+
+
+def serializable_newsletter_window(window):
+    return {
+        key: value for key, value in window.items()
+        if not key.endswith("_dt")
+    }
+
+
+def newsletter_snapshot_store_key(cutoff):
+    parsed = parse_newsletter_timestamp(cutoff)
+    return parsed.isoformat() if parsed else ""
+
+
+def fetch_newsletter_market_point(ticker, cutoff_local):
+    cutoff_utc = cutoff_local.astimezone(timezone.utc)
     try:
-        live_articles = fetch_live_market_news(limit=12)
-    except Exception:
-        live_articles = []
+        history = safe_history(
+            ticker,
+            start=(cutoff_local - timedelta(days=10)).date().isoformat(),
+            end=(cutoff_local + timedelta(days=1)).date().isoformat(),
+            interval="1h",
+            timeout=8,
+        )
+        prices = extract_history_price_series(history, ticker)
+        candidates = []
+        for index, value in prices.items():
+            point_time = parse_newsletter_timestamp(
+                index.to_pydatetime() if hasattr(index, "to_pydatetime") else index
+            )
+            if point_time and point_time <= cutoff_utc:
+                candidates.append((point_time, float(value)))
+        if not candidates:
+            raise ValueError("no_price_at_or_before_cutoff")
+        price_time, price = max(candidates, key=lambda item: item[0])
+        return {
+            "price": round(price, 6),
+            "price_timestamp": price_time.isoformat(),
+            "availability": "live",
+            "source": "Yahoo Finance via yfinance",
+            "error": "",
+        }
+    except Exception as error:
+        return {
+            "price": None,
+            "price_timestamp": "",
+            "availability": "unavailable",
+            "source": "Yahoo Finance via yfinance",
+            "error": sanitise_newsletter_error(error),
+        }
 
-    relevant_articles = [
-        article for article in live_articles
-        if newsletter_headline_is_relevant(article)
+
+def collect_newsletter_market_snapshot(cutoff_local, force_refresh=False):
+    cutoff_utc = cutoff_local.astimezone(timezone.utc)
+    snapshot_key = newsletter_snapshot_store_key(cutoff_utc)
+    stored = load_newsletter_market_snapshots()
+    existing = stored["snapshots"].get(snapshot_key)
+    if existing and not force_refresh:
+        return existing
+
+    universe_lookup = {
+        str(item.get("ticker") or "").strip().upper(): item
+        for item in get_stock_universe()
+    }
+    instruments = []
+    errors = []
+    for ticker in NEWSLETTER_WEEKLY_TRACKED_TICKERS:
+        universe_item = universe_lookup.get(ticker, {})
+        market_point = fetch_newsletter_market_point(ticker, cutoff_local)
+        if market_point["error"]:
+            errors.append(f"{ticker}:{market_point['error']}")
+        instruments.append({
+            "ticker": ticker,
+            "name": str(universe_item.get("name") or stock_display_label(ticker) or ticker),
+            "sector": str(
+                universe_item.get("sector")
+                or SECTOR_MAP.get(ticker)
+                or "Diversified"
+            ),
+            "snapshot_timestamp": cutoff_utc.isoformat(),
+            "price": market_point["price"],
+            "price_timestamp": market_point["price_timestamp"],
+            "signal": None,
+            "confidence": None,
+            "risk_state": None,
+            "source": market_point["source"],
+            "availability": market_point["availability"],
+            "signal_source": "unavailable",
+        })
+
+    fingerprint_payload = [
+        {
+            "ticker": item["ticker"],
+            "price": item["price"],
+            "price_timestamp": item["price_timestamp"],
+            "availability": item["availability"],
+        }
+        for item in instruments
     ]
+    snapshot_id = "snapshot-" + hashlib.sha256(
+        json.dumps(
+            {
+                "cutoff": cutoff_utc.isoformat(),
+                "instruments": fingerprint_payload,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()[:20]
+    snapshot = {
+        "snapshot_id": snapshot_id,
+        "cutoff_local": cutoff_local.isoformat(),
+        "cutoff_utc": cutoff_utc.isoformat(),
+        "collected_at": newsletter_storage_timestamp(),
+        "instruments": instruments,
+        "available_count": sum(
+            1 for item in instruments if item["availability"] != "unavailable"
+        ),
+        "errors": errors,
+    }
+    persisted = {"snapshot": snapshot}
+
+    def store_snapshot(data):
+        snapshots = data.setdefault("snapshots", {})
+        if snapshot_key in snapshots and not force_refresh:
+            persisted["snapshot"] = snapshots[snapshot_key]
+            return False
+        snapshots[snapshot_key] = snapshot
+        return True
+
+    if not update_json_storage(
+        NEWSLETTER_MARKET_SNAPSHOTS_PATH,
+        {"snapshots": {}},
+        store_snapshot,
+    ):
+        raise RuntimeError("newsletter_market_snapshot_persistence_failed")
+    snapshot = persisted["snapshot"]
+    LAST_NEWSLETTER_MARKET_STATUS.update({
+        "status": "available" if snapshot["available_count"] else "unavailable",
+        "last_error": errors[-1] if errors else "",
+    })
+    return snapshot
+
+
+def compare_newsletter_market_snapshots(previous_snapshot, current_snapshot):
+    previous_by_ticker = {
+        item["ticker"]: item for item in previous_snapshot.get("instruments", [])
+    }
+    current_by_ticker = {
+        item["ticker"]: item for item in current_snapshot.get("instruments", [])
+    }
+    comparisons = []
+    signal_changes = []
+    sector_breadth = {}
+    for ticker, current in current_by_ticker.items():
+        previous = previous_by_ticker.get(ticker)
+        if not previous:
+            continue
+        previous_price = previous.get("price")
+        current_price = current.get("price")
+        if (
+            previous.get("availability") == "unavailable"
+            or current.get("availability") == "unavailable"
+            or previous_price in {None, 0}
+            or current_price is None
+        ):
+            continue
+        weekly_change = ((float(current_price) - float(previous_price)) / float(previous_price)) * 100
+        row = {
+            "ticker": ticker,
+            "name": current.get("name") or previous.get("name") or ticker,
+            "sector": current.get("sector") or previous.get("sector") or "Diversified",
+            "previous_price": round(float(previous_price), 6),
+            "current_price": round(float(current_price), 6),
+            "weekly_change_percent": round(weekly_change, 2),
+            "weekly_change_label": f"{weekly_change:+.2f}%",
+            "source": current.get("source", ""),
+            "availability": current.get("availability", "unavailable"),
+        }
+        comparisons.append(row)
+        breadth = sector_breadth.setdefault(
+            row["sector"], {"positive": 0, "negative": 0, "unchanged": 0}
+        )
+        if weekly_change > 0:
+            breadth["positive"] += 1
+        elif weekly_change < 0:
+            breadth["negative"] += 1
+        else:
+            breadth["unchanged"] += 1
+
+        previous_signal = previous.get("signal")
+        current_signal = current.get("signal")
+        reliable_signal = (
+            previous.get("signal_source") not in {"", None, "deterministic", "static", "unavailable"}
+            and current.get("signal_source") not in {"", None, "deterministic", "static", "unavailable"}
+        )
+        previous_confidence = confidence_number(previous.get("confidence"))
+        current_confidence = confidence_number(current.get("confidence"))
+        signal_changed = (
+            reliable_signal
+            and previous_signal
+            and current_signal
+            and previous_signal != current_signal
+        )
+        confidence_changed = (
+            reliable_signal
+            and previous.get("confidence") is not None
+            and current.get("confidence") is not None
+            and previous_confidence != current_confidence
+        )
+        if signal_changed or confidence_changed:
+            change_parts = []
+            if signal_changed:
+                change_parts.append(
+                    f"signal changed from {previous_signal} to {current_signal}"
+                )
+            if confidence_changed:
+                change_parts.append(
+                    f"confidence changed by {current_confidence - previous_confidence:+.0f} points"
+                )
+            signal_changes.append({
+                "ticker": ticker,
+                "name": row["name"],
+                "sector": row["sector"],
+                "previous_signal": previous_signal,
+                "current_signal": current_signal,
+                "previous_confidence": previous_confidence,
+                "current_confidence": current_confidence,
+                "confidence_change": round(
+                    current_confidence - previous_confidence, 2
+                ),
+                "reason": (
+                    "; ".join(change_parts).capitalize()
+                    + " during the weekly comparison."
+                ),
+            })
+
+    strongest = sorted(
+        [item for item in comparisons if item["weekly_change_percent"] > 0],
+        key=lambda item: item["weekly_change_percent"],
+        reverse=True,
+    )
+    weakest = sorted(
+        [item for item in comparisons if item["weekly_change_percent"] < 0],
+        key=lambda item: item["weekly_change_percent"],
+    )
+    tracker = [
+        item for item in comparisons
+        if item["ticker"] in NEWSLETTER_MARKET_TRACKER_TICKERS
+    ]
+    sector_strength = sorted(
+        [
+            {"sector": sector, **counts}
+            for sector, counts in sector_breadth.items()
+            if counts["positive"] > counts["negative"]
+        ],
+        key=lambda item: (item["positive"] - item["negative"], item["positive"]),
+        reverse=True,
+    )
+    sector_weakness = sorted(
+        [
+            {"sector": sector, **counts}
+            for sector, counts in sector_breadth.items()
+            if counts["negative"] > counts["positive"]
+        ],
+        key=lambda item: (item["negative"] - item["positive"], item["negative"]),
+        reverse=True,
+    )
+    return {
+        "comparisons": comparisons,
+        "strongest": strongest,
+        "weakest": weakest,
+        "market_tracker": tracker,
+        "signal_changes": signal_changes,
+        "sector_breadth": sector_breadth,
+        "sector_strength": sector_strength,
+        "sector_weakness": sector_weakness,
+        "previous_snapshot_id": previous_snapshot.get("snapshot_id", ""),
+        "current_snapshot_id": current_snapshot.get("snapshot_id", ""),
+    }
+
+
+def newsletter_weekly_mover_item(item, positive=True):
+    return {
+        "ticker": item["ticker"],
+        "name": item["name"],
+        "signal": "WEEKLY STRENGTH" if positive else "WEEKLY CAUTION",
+        "confidence": item["weekly_change_label"],
+        "sector": item["sector"],
+        "reason": (
+            f"Moved {item['weekly_change_label']} from the previous Friday cutoff "
+            f"to the current Friday cutoff using verified market-price data."
+        ),
+        "weekly_change_label": item["weekly_change_label"],
+        "source": item.get("source", ""),
+    }
+
+
+def build_free_weekly_newsletter(
+    window=None,
+    articles=None,
+    news_status=None,
+    comparison=None,
+):
+    window = window or newsletter_weekly_window()
+    articles = articles or []
+    news_status = news_status or {
+        "coverage_status": "unavailable",
+        "provider_errors": [],
+        "stale_stories_excluded": 0,
+        "duplicate_stories_excluded": 0,
+    }
+    comparison = comparison or {
+        "comparisons": [],
+        "strongest": [],
+        "weakest": [],
+        "market_tracker": [],
+        "signal_changes": [],
+        "sector_breadth": {},
+        "sector_strength": [],
+        "sector_weakness": [],
+        "previous_snapshot_id": "",
+        "current_snapshot_id": "",
+    }
+    verified_articles = [
+        article for article in articles
+        if newsletter_headline_is_relevant(article)
+    ][:3]
     trending = [
         {
-            "headline": str(article.get("title") or "Headline unavailable").strip(),
-            "source": str(article.get("source") or "Market News").strip(),
+            "headline": article["title"],
+            "source": article["source"],
+            "published_at": article["published_at"],
+            "url": article["canonical_url"],
         }
-        for article in relevant_articles[:3]
-        if article.get("title")
+        for article in verified_articles
     ]
-
     if not trending:
         trending = [{
-            "headline": "No relevant market headlines are available",
-            "source": "StockRadar feed check",
+            "headline": "Verified weekly news coverage was unavailable for this reporting window.",
+            "source": "StockRadar weekly verification",
+            "published_at": "",
+            "url": "",
         }]
 
-    market_week_summary = build_newsletter_market_week_summary(trending, best_area, risk_area)
-    market_tracker = build_newsletter_market_tracker(recommendations)
-    what_looked_strong = build_balanced_newsletter_items(recommendations, ("BUY",), 4)
-    what_looked_weak = build_newsletter_caution_items(recommendations, 4)
-
-    forecasting = []
-    if best_area != "Signal pending":
-        forecasting.append(
-            f"{best_area} has the largest cluster of constructive patterns, so confirmation or fading strength may matter next."
-        )
-    else:
-        forecasting.append("Sector-strength forecasting is pending because recommendation data is unavailable.")
-
-    if risk_area != "No concentrated risk signal":
-        forecasting.append(
-            f"{risk_area} has the largest cluster of caution patterns, making it an area to review for weakening sentiment."
-        )
-    else:
-        forecasting.append("No single sector currently dominates the caution signals.")
-
-    if relevant_articles:
-        forecasting.append(
-            "Repeated headlines can change sentiment quickly; watch whether the current news themes begin to alter signal strength."
-        )
-    else:
-        forecasting.append(
-            "Live news is unavailable, so the forecast view is limited to existing StockRadar signal data."
-        )
-
-    risk_notes = []
-    if sell_count:
-        risk_notes.append(
-            f"{sell_count} caution patterns are present. They are research prompts to examine downside risk, not instructions to sell."
-        )
-    else:
-        risk_notes.append("No SELL-pattern concentration is visible in the current feed.")
-    if not relevant_articles:
-        risk_notes.append("No relevant market headlines passed the current filter, so headline-driven risks may be incomplete.")
-    risk_notes.append(
-        "SPCX remains high-growth, high-volatility satellite exposure with limited public-market history."
+    comparisons = comparison["comparisons"]
+    average_change = (
+        sum(item["weekly_change_percent"] for item in comparisons) / len(comparisons)
+        if comparisons else None
     )
+    if average_change is None:
+        market_mood = "Verified movement data unavailable"
+    elif average_change > 0.5:
+        market_mood = "Constructive"
+    elif average_change < -0.5:
+        market_mood = "Cautious"
+    else:
+        market_mood = "Mixed"
 
+    positive_count = sum(
+        1 for item in comparisons if item["weekly_change_percent"] > 0
+    )
+    negative_count = sum(
+        1 for item in comparisons if item["weekly_change_percent"] < 0
+    )
+    if comparisons:
+        market_pulse = (
+            f"{positive_count} tracked instruments rose and {negative_count} fell "
+            f"between the two Friday cutoffs; {len(comparisons)} had comparable verified prices."
+        )
+    else:
+        market_pulse = (
+            "Reliable prices were unavailable for a Friday-to-Friday comparison, "
+            "so no winners or losers are inferred."
+        )
+
+    if verified_articles:
+        market_week_summary = (
+            "Verified developments inside the reporting window included: "
+            + "; ".join(item["title"] for item in verified_articles)
+            + "."
+        )
+    else:
+        market_week_summary = (
+            "Verified weekly news coverage was unavailable. StockRadar has not padded "
+            "this issue with stale headlines."
+        )
+    if comparison.get("sector_strength"):
+        market_week_summary += (
+            f" {comparison['sector_strength'][0]['sector']} had the broadest "
+            "positive participation among the tracked names."
+        )
+    if comparison.get("sector_weakness"):
+        market_week_summary += (
+            f" {comparison['sector_weakness'][0]['sector']} had the broadest "
+            "negative participation among the tracked names."
+        )
+
+    strong_items = [
+        newsletter_weekly_mover_item(item, positive=True)
+        for item in comparison["strongest"][:4]
+    ]
+    weak_items = [
+        newsletter_weekly_mover_item(item, positive=False)
+        for item in comparison["weakest"][:4]
+    ]
+    market_tracker = [
+        {
+            **newsletter_weekly_mover_item(
+                item,
+                positive=item["weekly_change_percent"] >= 0,
+            ),
+            "reason": (
+                f"Friday-to-Friday change {item['weekly_change_label']} "
+                f"from {item['previous_price']:.2f} to {item['current_price']:.2f}."
+            ),
+        }
+        for item in comparison["market_tracker"]
+    ]
+    signal_changes = comparison["signal_changes"]
+    forecasting = [
+        "Watch whether this week’s strongest moves persist after the new Friday cutoff.",
+        "Review whether broad-market participation confirms or challenges the largest individual moves.",
+    ]
+    if not verified_articles:
+        forecasting.append(
+            "News context is incomplete because no provider returned verified in-window stories."
+        )
+
+    risk_notes = [
+        "Weekly percentage changes are historical observations, not predictions or instructions.",
+    ]
+    if not comparisons:
+        risk_notes.append(
+            "Unavailable market data was excluded rather than replaced with deterministic fallback values."
+        )
+    if news_status.get("coverage_status") != "verified":
+        risk_notes.append(
+            "News coverage was incomplete, and stale or unverifiable stories were excluded."
+        )
+
+    issue_title = (
+        f"StockRadar Weekly – Week {int(window['iso_week']):02d}: "
+        "This Week’s Market Signals"
+    )
+    lesson = NEWSLETTER_INVESTOR_LESSONS[
+        (int(window["iso_week"]) - 1) % len(NEWSLETTER_INVESTOR_LESSONS)
+    ]
     draft = {
-        "title": "StockRadar Weekly Brief",
-        "generated_at": datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC"),
-        "opening_line": "Your Friday market brief is ready.",
+        "title": issue_title,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "opening_line": "Your Friday-to-Friday market brief is ready.",
         "opening_note": (
-            "StockRadar turns market noise into plain-English signal checks across stocks, "
-            "ETFs and index-style market proxies where supported."
+            "This issue covers verified developments from "
+            f"{window['window_start_local']} up to, but not including, "
+            f"{window['window_end_local']}."
         ),
         "market_mood": market_mood,
         "main_theme": (
-            trending[0]["headline"]
-            if relevant_articles
-            else "Signals first while relevant market headlines are unavailable"
+            verified_articles[0]["title"]
+            if verified_articles
+            else "Verified weekly news coverage unavailable"
         ),
-        "best_looking_area": best_area,
-        "risk_area": risk_area,
+        "best_looking_area": (
+            comparison["sector_strength"][0]["sector"]
+            if comparison.get("sector_strength") else "Verified data unavailable"
+        ),
+        "risk_area": (
+            comparison["sector_weakness"][0]["sector"]
+            if comparison.get("sector_weakness") else "Verified data unavailable"
+        ),
         "market_pulse": market_pulse,
         "market_week_summary": market_week_summary,
-        "tracked_universe_count": total_count,
+        "tracked_universe_count": len(comparisons),
         "market_tracker": market_tracker,
-        "what_looked_strong": what_looked_strong,
-        "what_looked_weak": what_looked_weak,
-        "signal_highlights": highlights,
+        "what_looked_strong": strong_items,
+        "what_looked_weak": weak_items,
+        "signal_highlights": signal_changes,
+        "signal_watch": {
+            "changes": signal_changes,
+            "strongest_buy": [],
+            "notable_hold": [],
+            "caution_sell": [],
+            "highest_conviction": [],
+        },
         "trending_vs_forecasting": {
             "trending": trending,
             "forecasting": forecasting,
         },
-        "watchlist": build_newsletter_watchlist(recommendations),
+        "watchlist": [],
+        "investor_lesson": lesson,
         "risk_check": risk_notes,
+        "news_coverage_status": news_status.get("coverage_status", "unavailable"),
         "disclaimer": (
             "StockRadar provides educational market information and research tools only. "
-            "It is not personal financial advice. BUY, HOLD, and SELL signals are research "
-            "prompts, not instructions or promises."
+            "It is not personal financial advice. Weekly changes and signals are research "
+            "prompts, not buy/sell instructions or promises."
+        ),
+        "premium_note": (
+            "Premium adds the reasoning layer behind StockRadar research prompts. "
+            "It does not provide personal financial advice or guaranteed outcomes."
         ),
     }
-    draft["plain_text"] = build_newsletter_plain_text(draft)
     return draft
 
 
@@ -5384,53 +6258,52 @@ def build_newsletter_plain_text(draft):
     lines = [
         draft["title"],
         f"Issue date: {draft.get('issue_date_label', 'Not available')}",
-        f"Issue status: {draft.get('issue_status', 'Preview')}",
+        f"Issue status: {draft.get('issue_status', 'Final')}",
         f"Last refreshed: {draft.get('last_refreshed', draft['generated_at'])}",
         "",
         "OPENING",
-        draft.get("opening_line", "Your Friday market brief is ready."),
+        draft.get("opening_line", "Your Friday-to-Friday market brief is ready."),
         draft.get("opening_note", ""),
         "",
         "THIS WEEK IN THE MARKET",
         f"Mood: {draft['market_mood']}",
         draft["market_pulse"],
         draft.get("market_week_summary", ""),
-        f"Main theme: {draft['main_theme']}",
-        f"Best-looking area: {draft['best_looking_area']}",
-        f"Risk area: {draft['risk_area']}",
         "",
-        "WHAT LOOKED STRONG",
+        "STOCKS SHOWING STRENGTH",
     ]
 
-    strong_items = draft.get("what_looked_strong") or draft.get("signal_highlights") or []
+    strong_items = draft.get("what_looked_strong") or []
     if strong_items:
         for item in strong_items:
             lines.extend([
-                f"- {item['name']} — {item['badge']} · {item['status']} · confidence: {item['data_confidence']}",
-                f"  Why: {item['reason']}",
-                f"  Plain English: {item['plain_english_takeaway']}",
+                f"- {item['name']} — {item.get('weekly_change_label', item.get('confidence', ''))}",
+                f"  {item['reason']}",
             ])
     else:
-        lines.append("- Signal data unavailable.")
+        lines.append("- No verified positive weekly movers were available.")
 
-    lines.extend(["", "WHAT LOOKED WEAK / CAUTION ZONE"])
+    lines.extend(["", "CAUTION ZONE"])
     caution_items = draft.get("what_looked_weak") or []
     if caution_items:
         for item in caution_items:
             lines.extend([
-                f"- {item['name']} — {item['badge']} · {item['status']} · confidence: {item['data_confidence']}",
-                f"  Review: {item['reason']}",
+                f"- {item['name']} — {item.get('weekly_change_label', item.get('confidence', ''))}",
+                f"  {item['reason']}",
             ])
     else:
-        lines.append("- No caution examples are available in the current signal set.")
+        lines.append("- No verified negative weekly movers were available.")
 
     lines.extend(["", "MARKET TRACKER"])
-    for item in draft.get("market_tracker", []):
-        lines.append(
-            f"- {item['name']} — {item['signal']} · {item['confidence']}: {item['reason']}"
-        )
+    if draft.get("market_tracker"):
+        for item in draft["market_tracker"]:
+            lines.append(
+                f"- {item['name']} — {item.get('weekly_change_label', item.get('confidence', ''))}: {item['reason']}"
+            )
+    else:
+        lines.append("- Verified tracker comparisons were unavailable.")
 
-    lines.extend(["", "NEWS-FEED THEMES"])
+    lines.extend(["", "VERIFIED WEEKLY NEWS"])
     for item in draft["trending_vs_forecasting"]["trending"]:
         lines.append(f"- {item['headline']} ({item['source']})")
 
@@ -5438,11 +6311,17 @@ def build_newsletter_plain_text(draft):
     for item in draft["trending_vs_forecasting"]["forecasting"]:
         lines.append(f"- {item}")
 
-    lines.extend(["", "STOCKRADAR SIGNAL WATCHLIST"])
-    for item in draft["watchlist"]:
-        lines.append(
-            f"- {item['name']} — {item['badge']} · {item['status']}: {item['reason']}"
-        )
+    lines.extend(["", "SIGNAL WATCHLIST"])
+    signal_changes = draft.get("signal_watch", {}).get("changes", [])
+    if signal_changes:
+        for item in signal_changes:
+            lines.append(
+                f"- {item['name']}: {item['previous_signal']} → {item['current_signal']}"
+            )
+    else:
+        lines.append("- No verified signal changes were available.")
+
+    lines.extend(["", "INVESTOR LESSON", draft.get("investor_lesson", "")])
 
     lines.extend(["", "RISK CHECK"])
     for item in draft["risk_check"]:
@@ -5464,88 +6343,29 @@ def build_newsletter_plain_text(draft):
 
 
 def get_weekly_newsletter_issue_date(now=None):
-    """Return the Friday issue date used for StockRadar Weekly."""
-    london_timezone = ZoneInfo("Europe/London")
-    london_now = now or datetime.now(london_timezone)
-
-    if london_now.tzinfo is None:
-        london_now = london_now.replace(tzinfo=london_timezone)
-    else:
-        london_now = london_now.astimezone(london_timezone)
-
-    today = london_now.date()
-    weekday = today.weekday()
-
-    if weekday <= 4:
-        return today + timedelta(days=4 - weekday)
-
-    return today - timedelta(days=weekday - 4)
+    """Return the most recently completed Friday 09:00 Europe/London cutoff."""
+    return newsletter_weekly_window(now)["window_end_local_dt"].date()
 
 
 def get_weekly_newsletter_status(now=None):
-    london_timezone = ZoneInfo("Europe/London")
-    london_now = now or datetime.now(london_timezone)
-    if london_now.tzinfo is None:
-        london_now = london_now.replace(tzinfo=london_timezone)
-    else:
-        london_now = london_now.astimezone(london_timezone)
-
-    weekday = london_now.weekday()
-    if weekday < 4:
-        issue_date = get_weekly_newsletter_issue_date(london_now)
-        return {
-            "key": "preview",
-            "label": "Preview",
-            "message": f"Preview for Friday {issue_date.strftime('%d %B %Y')}",
-            "rss_label": "Preview issue",
-            "is_final": False,
-        }
-    if weekday == 4 and london_now.time() < newsletter_auto_send_time():
-        return {
-            "key": "friday_preview",
-            "label": "Friday preview",
-            "message": "Friday issue in progress",
-            "rss_label": "Preview issue",
-            "is_final": False,
-        }
     return {
         "key": "final",
-        "label": "Final end-of-week issue",
-        "message": "Final end-of-week issue",
-        "rss_label": "Final end-of-week issue",
+        "label": "Final Friday-to-Friday issue",
+        "message": "Finalized Friday-to-Friday issue",
+        "rss_label": "Final Friday-to-Friday issue",
         "is_final": True,
     }
 
 
 def newsletter_cache_is_fresh(issue_date, issue_status, now=None):
     cached_issue = WEEKLY_NEWSLETTER_ISSUE_CACHE.get("issue")
-    cached_generated_at = WEEKLY_NEWSLETTER_ISSUE_CACHE.get("generated_at")
     if (
         cached_issue is None
-        or cached_generated_at is None
         or WEEKLY_NEWSLETTER_ISSUE_CACHE.get("issue_date") != issue_date
         or WEEKLY_NEWSLETTER_ISSUE_CACHE.get("issue_status") != issue_status["key"]
     ):
         return False
-
-    if issue_status["is_final"]:
-        return True
-
-    london_timezone = ZoneInfo("Europe/London")
-    london_now = now or datetime.now(london_timezone)
-    if london_now.tzinfo is None:
-        london_now = london_now.replace(tzinfo=london_timezone)
-    else:
-        london_now = london_now.astimezone(london_timezone)
-
-    generated_at = cached_generated_at
-    if generated_at.tzinfo is None:
-        generated_at = generated_at.replace(tzinfo=london_timezone)
-    else:
-        generated_at = generated_at.astimezone(london_timezone)
-
-    age_seconds = (london_now - generated_at).total_seconds()
-    return 0 <= age_seconds <= WEEKLY_NEWSLETTER_PREVIEW_CACHE_TTL_SECONDS
+    return bool(cached_issue.get("metadata", {}).get("is_final"))
 
 
 def newsletter_issue_date(now=None):
@@ -5553,43 +6373,112 @@ def newsletter_issue_date(now=None):
 
 
 def newsletter_issue_metadata(now=None, generated_at=None, issue_status=None):
-    london_timezone = ZoneInfo("Europe/London")
-    london_now = now or datetime.now(london_timezone)
-    if london_now.tzinfo is None:
-        london_now = london_now.replace(tzinfo=london_timezone)
-    else:
-        london_now = london_now.astimezone(london_timezone)
-
-    issue_date = get_weekly_newsletter_issue_date(london_now)
+    london_now = newsletter_london_now(now)
+    window = newsletter_weekly_window(london_now)
     status = issue_status or get_weekly_newsletter_status(london_now)
-    refreshed_at = generated_at or london_now
+    refreshed_at = parse_newsletter_timestamp(generated_at or london_now)
+    issue_date = window["window_end_local_dt"].date()
+    title = (
+        f"StockRadar Weekly – Week {int(window['iso_week']):02d}: "
+        "This Week’s Market Signals"
+    )
     return {
-        "title": f"StockRadar Weekly — Friday {issue_date.strftime('%d %B %Y')}",
-        "guid": f"stockradar-weekly-{issue_date.isoformat()}",
-        "published_at": refreshed_at,
-        "issue_date": issue_date.isoformat(),
+        **serializable_newsletter_window(window),
+        "title": title,
+        "guid": window["issue_id"],
+        "published_at": refreshed_at.isoformat(),
         "issue_date_label": f"Friday {issue_date.strftime('%d %B %Y')}",
         "issue_status": status["label"],
         "issue_status_key": status["key"],
         "issue_status_message": status["message"],
         "rss_status_label": status["rss_label"],
         "is_final": status["is_final"],
-        "generated_at": refreshed_at,
-        "generated_at_label": refreshed_at.strftime("%d %B %Y, %H:%M %Z"),
+        "status": "final",
+        "generated_at": refreshed_at.isoformat(),
+        "generated_at_label": refreshed_at.strftime("%d %B %Y, %H:%M UTC"),
     }
 
 
-def build_weekly_newsletter_issue(now=None, force_refresh=False):
-    london_timezone = ZoneInfo("Europe/London")
-    london_now = now or datetime.now(london_timezone)
-    if london_now.tzinfo is None:
-        london_now = london_now.replace(tzinfo=london_timezone)
-    else:
-        london_now = london_now.astimezone(london_timezone)
+def newsletter_content_fingerprint(issue):
+    metadata = issue.get("metadata", {})
+    draft = issue.get("draft", {})
+    payload = {
+        "issue_id": metadata.get("issue_id"),
+        "issue_key": metadata.get("issue_key"),
+        "window_start_utc": metadata.get("window_start_utc"),
+        "window_end_utc": metadata.get("window_end_utc"),
+        "articles": [
+            item.get("story_fingerprint") for item in issue.get("articles", [])
+        ],
+        "market_snapshot_ids": issue.get("market_snapshot_ids", []),
+        "content": {
+            key: value for key, value in draft.items()
+            if key not in {"generated_at", "last_refreshed", "plain_text"}
+        },
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
 
+
+def record_newsletter_story_usage(issue):
+    issue_id = str(issue.get("metadata", {}).get("issue_id") or "")
+    if not issue_id:
+        return False
+    now = newsletter_storage_timestamp()
+
+    def update_history(history):
+        stories = history.setdefault("stories", {})
+        for article in issue.get("articles", []):
+            fingerprint = article.get("story_fingerprint")
+            if not fingerprint:
+                continue
+            current = stories.get(fingerprint, {})
+            issue_ids = list(current.get("issue_ids_used_in", []))
+            if issue_id not in issue_ids:
+                issue_ids.append(issue_id)
+            stories[fingerprint] = {
+                "provider": article.get("provider", ""),
+                "provider_article_id": article.get("provider_article_id", ""),
+                "title": article.get("title", ""),
+                "normalized_title": article.get("normalized_title", ""),
+                "canonical_url": article.get("canonical_url", ""),
+                "normalized_title_hash": article.get("normalized_title_hash", ""),
+                "story_fingerprint": fingerprint,
+                "first_seen_at": current.get("first_seen_at") or article.get("fetched_at") or now,
+                "last_seen_at": article.get("fetched_at") or now,
+                "issue_ids_used_in": issue_ids,
+                "published_at": article.get("published_at", ""),
+            }
+
+    return update_json_storage(
+        NEWSLETTER_STORY_HISTORY_PATH,
+        {"stories": {}},
+        update_history,
+    )
+
+
+def _build_weekly_newsletter_issue_without_generation_lock(
+    now=None,
+    force_refresh=False,
+):
+    london_now = newsletter_london_now(now)
+    window = newsletter_weekly_window(london_now)
     status = get_weekly_newsletter_status(london_now)
     metadata = newsletter_issue_metadata(london_now, issue_status=status)
-    issue_date = metadata["issue_date"]
+    issue_date = window["issue_date"]
+
+    persisted_issue = get_finalized_newsletter_issue(window["issue_id"])
+    if persisted_issue:
+        WEEKLY_NEWSLETTER_ISSUE_CACHE.update({
+            "issue_date": issue_date,
+            "issue_status": "final",
+            "generated_at": parse_newsletter_timestamp(
+                persisted_issue["metadata"].get("generated_at")
+            ),
+            "issue": persisted_issue,
+        })
+        return persisted_issue
 
     if (
         not force_refresh
@@ -5597,86 +6486,150 @@ def build_weekly_newsletter_issue(now=None, force_refresh=False):
     ):
         return WEEKLY_NEWSLETTER_ISSUE_CACHE["issue"]
 
-    refreshed_at = london_now
+    previous_snapshot = collect_newsletter_market_snapshot(
+        window["window_start_local_dt"]
+    )
+    current_snapshot = collect_newsletter_market_snapshot(
+        window["window_end_local_dt"]
+    )
+    comparison = compare_newsletter_market_snapshots(
+        previous_snapshot,
+        current_snapshot,
+    )
+    articles, news_status = fetch_weekly_news_articles(window, limit=12)
+    articles = [
+        article for article in articles
+        if newsletter_headline_is_relevant(article)
+    ][:3]
+    if not articles and news_status.get("coverage_status") == "verified":
+        news_status["coverage_status"] = "verified_no_relevant_stories"
+    draft = build_free_weekly_newsletter(
+        window=window,
+        articles=articles,
+        news_status=news_status,
+        comparison=comparison,
+    )
+    generated_at = parse_newsletter_timestamp(london_now)
     metadata = newsletter_issue_metadata(
         london_now,
-        generated_at=refreshed_at,
+        generated_at=generated_at,
         issue_status=status,
     )
-    draft = build_free_weekly_newsletter()
-    recommendations = build_newsletter_recommendation_universe()
-    buy_rows, hold_rows, sell_rows, conviction_rows = split_rows(recommendations)
-    full_signal_rows = {
-        signal: [
-            item for item in recommendations
-            if clean_signal(item.get("signal"), item.get("confidence")) == signal
-        ]
-        for signal in ("BUY", "HOLD", "SELL")
-    }
+    metadata["finalized_at"] = generated_at.isoformat()
+    metadata["generation_status"] = "finalized"
+    metadata["story_count"] = len(articles)
+    metadata["market_snapshot_count"] = current_snapshot.get("available_count", 0)
+    metadata["duplicate_stories_excluded"] = news_status.get(
+        "duplicate_stories_excluded", 0
+    )
+    metadata["stale_stories_excluded"] = news_status.get(
+        "stale_stories_excluded", 0
+    )
 
-    def issue_signal_rows(rows, limit):
-        output = []
-        ranked_rows = sorted(
-            rows,
-            key=lambda item: confidence_number(item.get("confidence")),
-            reverse=True,
-        )
-        for item in ranked_rows[:limit]:
-            ticker = str(item.get("ticker") or "").strip().upper()
-            if not ticker:
-                continue
-            output.append({
-                "ticker": ticker,
-                "name": stock_display_label(ticker),
-                "signal": clean_signal(item.get("signal"), item.get("confidence")),
-                "confidence": normalise_confidence(item.get("confidence")),
-                "reason": newsletter_reader_safe_reason(item, ticker),
-            })
-        return output
-
-    draft["title"] = metadata["title"]
     draft["issue_date_label"] = metadata["issue_date_label"]
     draft["issue_status"] = metadata["issue_status"]
     draft["issue_status_message"] = metadata["issue_status_message"]
     draft["is_final"] = metadata["is_final"]
     draft["last_refreshed"] = metadata["generated_at_label"]
-    draft["preview_refresh_note"] = (
-        "This preview refreshes as StockRadar signals, market news and tracked-stock "
-        "data update before the Friday end-of-week issue."
-        if not metadata["is_final"]
-        else ""
-    )
-    draft["market_tracker"] = build_newsletter_market_tracker(recommendations)
-    draft["what_looked_strong"] = build_balanced_newsletter_items(recommendations, ("BUY",), 4)
-    draft["what_looked_weak"] = build_newsletter_caution_items(recommendations, 4)
-    draft["signal_watch"] = {
-        "strongest_buy": build_balanced_newsletter_items(full_signal_rows["BUY"] or buy_rows, ("BUY",), 3),
-        "notable_hold": build_balanced_newsletter_items(full_signal_rows["HOLD"] or hold_rows, ("HOLD",), 3),
-        "caution_sell": build_newsletter_caution_items(full_signal_rows["SELL"] or sell_rows, 3),
-        "highest_conviction": issue_signal_rows(conviction_rows, 3),
-    }
-    draft["premium_note"] = (
-        "Premium adds the reasoning layer behind these signals: risk read, decision context, "
-        "portfolio-fit checks and what to review before acting. It does not provide personal "
-        "financial advice or guaranteed outcomes."
-    )
-    draft["disclaimer"] = (
-        "StockRadar provides educational market information and research tools only. "
-        "It is not personal financial advice. BUY, HOLD, and SELL signals are research "
-        "prompts, not buy/sell instructions or promises."
-    )
+    draft["preview_refresh_note"] = ""
     draft["plain_text"] = build_newsletter_plain_text(draft)
 
     issue = {
         "draft": draft,
         "metadata": metadata,
         "summary": draft.get("market_pulse") or "Market pulse data unavailable.",
+        "articles": articles,
+        "included_article_fingerprints": [
+            article["story_fingerprint"] for article in articles
+        ],
+        "market_snapshot_ids": [
+            previous_snapshot.get("snapshot_id", ""),
+            current_snapshot.get("snapshot_id", ""),
+        ],
+        "subject": BEEHIIV_EXPORT_SUBJECT,
+        "preview_text": BEEHIIV_EXPORT_PREVIEW,
+        "generation_status": "finalized",
+        "generated_at": generated_at.isoformat(),
+        "finalized_at": generated_at.isoformat(),
     }
-    WEEKLY_NEWSLETTER_ISSUE_CACHE["issue_date"] = issue_date
-    WEEKLY_NEWSLETTER_ISSUE_CACHE["issue_status"] = status["key"]
-    WEEKLY_NEWSLETTER_ISSUE_CACHE["generated_at"] = refreshed_at
-    WEEKLY_NEWSLETTER_ISSUE_CACHE["issue"] = issue
-    return issue
+    issue["content_fingerprint"] = newsletter_content_fingerprint(issue)
+    issue["metadata"]["content_fingerprint"] = issue["content_fingerprint"]
+    finalized_issue = persist_finalized_newsletter_issue(issue)
+    record_newsletter_story_usage(finalized_issue)
+
+    WEEKLY_NEWSLETTER_ISSUE_CACHE.update({
+        "issue_date": issue_date,
+        "issue_status": status["key"],
+        "generated_at": generated_at,
+        "issue": finalized_issue,
+    })
+    LAST_NEWSLETTER_MARKET_STATUS.update({
+        "latest_snapshot_at": current_snapshot.get("cutoff_utc", ""),
+        "previous_snapshot_at": previous_snapshot.get("cutoff_utc", ""),
+    })
+    return finalized_issue
+
+
+def build_weekly_newsletter_issue(now=None, force_refresh=False):
+    window = newsletter_weekly_window(now)
+    persisted = get_finalized_newsletter_issue(window["issue_id"])
+    if persisted:
+        record_newsletter_story_usage(persisted)
+        return persisted
+
+    if newsletter_persistence_status()["persistence_status"] != "ready":
+        raise RuntimeError("newsletter_persistence_degraded")
+
+    lock_path = acquire_newsletter_issue_lock(
+        f"generation-{window['issue_id']}"
+    )
+    if lock_path is None:
+        for _ in range(100):
+            persisted = get_finalized_newsletter_issue(window["issue_id"])
+            if persisted:
+                record_newsletter_story_usage(persisted)
+                return persisted
+            time.sleep(0.02)
+        raise RuntimeError("newsletter_generation_in_progress")
+
+    try:
+        persisted = get_finalized_newsletter_issue(window["issue_id"])
+        if persisted:
+            record_newsletter_story_usage(persisted)
+            return persisted
+        return _build_weekly_newsletter_issue_without_generation_lock(
+            now=now,
+            force_refresh=force_refresh,
+        )
+    finally:
+        release_newsletter_issue_lock(lock_path)
+
+
+def load_or_generate_latest_newsletter_issue(now=None):
+    window = newsletter_weekly_window(now)
+    finalized = get_finalized_newsletter_issue(window["issue_id"])
+    if finalized:
+        return finalized
+    try:
+        return build_weekly_newsletter_issue(now=now)
+    except Exception:
+        latest = latest_finalized_newsletter_issue()
+        if latest:
+            app.logger.exception(
+                "Current newsletter generation failed; serving the latest finalized issue."
+            )
+            return latest
+        cached = WEEKLY_NEWSLETTER_ISSUE_CACHE.get("issue")
+        if (
+            isinstance(cached, dict)
+            and cached.get("metadata", {}).get("is_final") is True
+            and cached.get("metadata", {}).get("status") == "final"
+        ):
+            app.logger.exception(
+                "Current newsletter generation failed; serving the cached finalized issue."
+            )
+            return cached
+        raise
 
 
 newsletter_issue_body_html = """
@@ -5696,31 +6649,31 @@ newsletter_issue_body_html = """
 <p>{{ draft.market_week_summary }}</p>
 </section>
 <section>
-<h2>What looked strong</h2>
+<h2>Stocks Showing Strength</h2>
 {% if draft.what_looked_strong %}
 {% for item in draft.what_looked_strong %}
 <article>
 <h3>{{ item.name }}</h3>
-<p><strong>{{ item.signal }} research prompt</strong> · Confidence: {{ item.confidence }} · {{ item.sector }}</p>
-<p><strong>Why it appears:</strong> {{ item.reason }}</p>
+<p><strong>Friday-to-Friday change: {{ item.weekly_change_label }}</strong> · {{ item.sector }}</p>
+<p>{{ item.reason }}</p>
 </article>
 {% endfor %}
 {% else %}
-<p>Strong-signal examples are unavailable in the current feed.</p>
+<p>No verified positive weekly movers were available.</p>
 {% endif %}
 </section>
 <section>
-<h2>What looked weak / caution zone</h2>
+<h2>Caution Zone</h2>
 {% if draft.what_looked_weak %}
 {% for item in draft.what_looked_weak %}
 <article>
 <h3>{{ item.name }}</h3>
-<p><strong>{{ item.signal }} research prompt</strong> · Confidence: {{ item.confidence }} · {{ item.sector }}</p>
-<p><strong>Review risk:</strong> {{ item.reason }}</p>
+<p><strong>Friday-to-Friday change: {{ item.weekly_change_label }}</strong> · {{ item.sector }}</p>
+<p>{{ item.reason }}</p>
 </article>
 {% endfor %}
 {% else %}
-<p>Caution examples are unavailable in the current feed.</p>
+<p>No verified negative weekly movers were available.</p>
 {% endif %}
 </section>
 <section>
@@ -5728,38 +6681,29 @@ newsletter_issue_body_html = """
 {% if draft.market_tracker %}
 <ul>
 {% for item in draft.market_tracker %}
-<li><strong>{{ item.name }}</strong> — {{ item.signal }} · {{ item.confidence }}: {{ item.reason }}</li>
+<li><strong>{{ item.name }}</strong> — {{ item.weekly_change_label }}: {{ item.reason }}</li>
 {% endfor %}
 </ul>
 {% else %}
-<p>Broad market proxy data is unavailable in the current feed.</p>
+<p>Verified Friday-to-Friday market tracker data was unavailable.</p>
 {% endif %}
 </section>
 <section>
 <h2>StockRadar signal watchlist</h2>
-{% set signal_groups = [
-    ("Stronger BUY research prompts", draft.signal_watch.strongest_buy),
-    ("Notable HOLD / watchlist names", draft.signal_watch.notable_hold),
-    ("Caution / SELL research prompts", draft.signal_watch.caution_sell)
-] %}
-{% for group_title, items in signal_groups %}
-{% if items %}
-<h3>{{ group_title }}</h3>
-{% for item in items[:2] %}
+{% if draft.signal_watch.changes %}
+{% for item in draft.signal_watch.changes %}
 <article>
 <h3>{{ item.name }}</h3>
-<p><strong>{{ item.signal }} research prompt</strong> · Confidence: {{ item.confidence }}</p>
-<p><strong>Why it appears:</strong> {{ item.reason }}</p>
+<p><strong>{{ item.previous_signal }} → {{ item.current_signal }}</strong></p>
+<p>{{ item.reason }}</p>
 </article>
 {% endfor %}
-{% endif %}
-{% endfor %}
-{% if not draft.signal_watch.strongest_buy and not draft.signal_watch.notable_hold and not draft.signal_watch.caution_sell %}
-<p>Signal data unavailable.</p>
+{% else %}
+<p>No verified signal changes were available for this comparison.</p>
 {% endif %}
 </section>
 <section>
-<h2>News-feed themes</h2>
+<h2>Verified weekly news</h2>
 <ul>
 {% for item in draft.trending_vs_forecasting.trending %}
 <li>{{ item.headline }} — {{ item.source }}</li>
@@ -5773,12 +6717,8 @@ newsletter_issue_body_html = """
 </ul>
 </section>
 <section>
-<h2>Balanced signal examples</h2>
-<ul>
-{% for item in draft.watchlist %}
-<li><strong>{{ item.name }}</strong> — {{ item.badge }} · {{ item.status }}: {{ item.reason }}</li>
-{% endfor %}
-</ul>
+<h2>Investor Lesson</h2>
+<p>{{ draft.investor_lesson }}</p>
 </section>
 <section>
 <h2>Risk check</h2>
@@ -5814,33 +6754,322 @@ def newsletter_storage_timestamp():
     return datetime.now(timezone.utc).isoformat()
 
 
-def load_json_storage(path, default):
+def set_persistence_last_error(error_code):
+    global PERSISTENCE_LAST_ERROR
+    PERSISTENCE_LAST_ERROR = str(error_code or "").strip()[:120]
+
+
+def json_storage_default(default):
+    return copy.deepcopy(default)
+
+
+def json_storage_thread_lock(path):
+    normalized_path = os.path.realpath(path)
+    with JSON_STORAGE_THREAD_LOCKS_GUARD:
+        lock = JSON_STORAGE_THREAD_LOCKS.get(normalized_path)
+        if lock is None:
+            lock = threading.RLock()
+            JSON_STORAGE_THREAD_LOCKS[normalized_path] = lock
+    return lock
+
+
+@contextmanager
+def json_storage_lock(path):
+    thread_lock = json_storage_thread_lock(path)
+    lock_handle = None
+    thread_lock.acquire()
+    try:
+        directory = os.path.dirname(path)
+        if directory:
+            os.makedirs(directory, mode=0o700, exist_ok=True)
+        lock_handle = open(f"{path}.lock", "a+", encoding="utf-8")
+        if fcntl is not None:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+        yield
+    finally:
+        if lock_handle is not None:
+            if fcntl is not None:
+                try:
+                    fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+                except OSError:
+                    pass
+            lock_handle.close()
+        thread_lock.release()
+
+
+def _read_json_storage_unlocked(path, default, strict=False):
     try:
         with open(path, "r", encoding="utf-8") as handle:
             data = json.load(handle)
     except FileNotFoundError:
-        return default
-    except Exception:
-        app.logger.exception("Failed to read JSON storage: %s", path)
-        return default
+        return json_storage_default(default)
+    except (OSError, ValueError, TypeError):
+        error_code = "corrupt_json_store"
+        set_persistence_last_error(error_code)
+        app.logger.error("Newsletter persistence read failed: %s", error_code)
+        if strict:
+            raise RuntimeError(error_code)
+        return json_storage_default(default)
 
-    return data if isinstance(data, dict) else default
+    if not isinstance(data, dict):
+        error_code = "invalid_json_store_shape"
+        set_persistence_last_error(error_code)
+        app.logger.error("Newsletter persistence read failed: %s", error_code)
+        if strict:
+            raise RuntimeError(error_code)
+        return json_storage_default(default)
+    return data
+
+
+def load_json_storage(path, default):
+    try:
+        with json_storage_lock(path):
+            return _read_json_storage_unlocked(path, default)
+    except OSError:
+        error_code = "persistence_store_unavailable"
+        set_persistence_last_error(error_code)
+        app.logger.error("Newsletter persistence read failed: %s", error_code)
+        return json_storage_default(default)
+
+
+def _atomic_write_json_unlocked(path, data, preserve_existing=True):
+    temp_path = ""
+    try:
+        directory = os.path.dirname(path)
+        if directory:
+            os.makedirs(directory, mode=0o700, exist_ok=True)
+
+        if preserve_existing and os.path.exists(path):
+            _read_json_storage_unlocked(path, {}, strict=True)
+
+        file_descriptor, temp_path = tempfile.mkstemp(
+            prefix=f".{os.path.basename(path)}.",
+            suffix=".tmp",
+            dir=directory or ".",
+            text=True,
+        )
+        with os.fdopen(file_descriptor, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, path)
+        temp_path = ""
+        if directory:
+            try:
+                directory_descriptor = os.open(directory, os.O_RDONLY)
+                try:
+                    os.fsync(directory_descriptor)
+                finally:
+                    os.close(directory_descriptor)
+            except OSError:
+                pass
+        set_persistence_last_error(PERSISTENCE_CONFIGURATION_ERROR)
+        return True
+    except Exception as error:
+        error_code = (
+            str(error)
+            if isinstance(error, RuntimeError)
+            and str(error) in {"corrupt_json_store", "invalid_json_store_shape"}
+            else "persistence_write_failed"
+        )
+        set_persistence_last_error(error_code)
+        app.logger.error("Newsletter persistence write failed: %s", error_code)
+        return False
+    finally:
+        if temp_path:
+            try:
+                os.remove(temp_path)
+            except FileNotFoundError:
+                pass
+            except OSError:
+                set_persistence_last_error("persistence_temp_cleanup_failed")
 
 
 def save_json_storage(path, data):
     try:
-        directory = os.path.dirname(path)
-        if directory:
-            os.makedirs(directory, exist_ok=True)
-        temp_path = f"{path}.tmp"
-        with open(temp_path, "w", encoding="utf-8") as handle:
-            json.dump(data, handle, indent=2, sort_keys=True)
-            handle.write("\n")
-        os.replace(temp_path, path)
-        return True
-    except Exception:
-        app.logger.exception("Failed to write JSON storage: %s", path)
+        with json_storage_lock(path):
+            return _atomic_write_json_unlocked(path, data)
+    except OSError:
+        error_code = "persistence_store_unavailable"
+        set_persistence_last_error(error_code)
+        app.logger.error("Newsletter persistence write failed: %s", error_code)
         return False
+
+
+def update_json_storage(path, default, updater):
+    try:
+        with json_storage_lock(path):
+            data = _read_json_storage_unlocked(path, default, strict=True)
+            should_write = updater(data)
+            if should_write is False:
+                return True
+            return _atomic_write_json_unlocked(path, data)
+    except (OSError, RuntimeError):
+        if not PERSISTENCE_LAST_ERROR:
+            set_persistence_last_error("persistence_store_unavailable")
+        app.logger.error(
+            "Newsletter persistence update failed: %s",
+            PERSISTENCE_LAST_ERROR or "persistence_store_unavailable",
+        )
+        return False
+
+
+def migrate_legacy_newsletter_storage(legacy_root=None):
+    source_root = os.path.realpath(legacy_root or APP_ROOT)
+    result = {
+        "migrated": [],
+        "skipped_existing": [],
+        "skipped_missing": [],
+        "failed": [],
+    }
+    for filename in NEWSLETTER_RUNTIME_FILE_NAMES:
+        source_path = os.path.join(source_root, filename)
+        destination_path = stockradar_data_path(filename)
+        if os.path.realpath(source_path) == os.path.realpath(destination_path):
+            result["skipped_existing"].append(filename)
+            continue
+        try:
+            with json_storage_lock(destination_path):
+                if os.path.exists(destination_path):
+                    result["skipped_existing"].append(filename)
+                    continue
+                if not os.path.exists(source_path):
+                    result["skipped_missing"].append(filename)
+                    continue
+                try:
+                    with open(source_path, "r", encoding="utf-8") as handle:
+                        legacy_data = json.load(handle)
+                except (OSError, ValueError, TypeError):
+                    set_persistence_last_error("legacy_store_migration_failed")
+                    result["failed"].append(filename)
+                    continue
+                if not isinstance(legacy_data, dict):
+                    set_persistence_last_error("legacy_store_migration_failed")
+                    result["failed"].append(filename)
+                    continue
+                if _atomic_write_json_unlocked(
+                    destination_path,
+                    legacy_data,
+                    preserve_existing=True,
+                ):
+                    result["migrated"].append(filename)
+                else:
+                    result["failed"].append(filename)
+        except OSError:
+            set_persistence_last_error("legacy_store_migration_failed")
+            result["failed"].append(filename)
+    return result
+
+
+def load_newsletter_issues():
+    data = load_json_storage(
+        NEWSLETTER_ISSUES_PATH,
+        {"issues": {}, "latest_issue_id": ""},
+    )
+    if not isinstance(data.get("issues"), dict):
+        data["issues"] = {}
+    if not isinstance(data.get("latest_issue_id"), str):
+        data["latest_issue_id"] = ""
+    return data
+
+
+def save_newsletter_issues(data):
+    return save_json_storage(NEWSLETTER_ISSUES_PATH, data)
+
+
+def get_finalized_newsletter_issue(issue_id):
+    issue = load_newsletter_issues()["issues"].get(str(issue_id or ""))
+    if not isinstance(issue, dict):
+        return None
+    metadata = issue.get("metadata", {})
+    if metadata.get("is_final") is not True or metadata.get("status") != "final":
+        return None
+    return issue
+
+
+def latest_finalized_newsletter_issue():
+    data = load_newsletter_issues()
+    latest_issue = get_finalized_newsletter_issue(data.get("latest_issue_id"))
+    if latest_issue:
+        return latest_issue
+    candidates = [
+        issue for issue in data["issues"].values()
+        if isinstance(issue, dict)
+        and issue.get("metadata", {}).get("is_final") is True
+        and issue.get("metadata", {}).get("status") == "final"
+    ]
+    return max(
+        candidates,
+        key=lambda issue: str(
+            issue.get("metadata", {}).get("window_end_utc") or ""
+        ),
+        default=None,
+    )
+
+
+def persist_finalized_newsletter_issue(issue):
+    metadata = issue.get("metadata", {})
+    issue_id = str(metadata.get("issue_id") or "")
+    if not issue_id or metadata.get("is_final") is not True:
+        raise ValueError("finalized_issue_metadata_required")
+
+    result = {"issue": issue, "conflict": False}
+
+    def finalize(data):
+        issues = data.setdefault("issues", {})
+        existing = issues.get(issue_id)
+        if existing:
+            if existing.get("metadata", {}).get("status") == "final":
+                result["issue"] = existing
+                return False
+            result["conflict"] = True
+            return False
+
+        issues[issue_id] = issue
+        current_latest = issues.get(data.get("latest_issue_id", ""), {})
+        if (
+            not current_latest
+            or str(metadata.get("window_end_utc") or "")
+            >= str(current_latest.get("metadata", {}).get("window_end_utc") or "")
+        ):
+            data["latest_issue_id"] = issue_id
+        return True
+
+    if not update_json_storage(
+        NEWSLETTER_ISSUES_PATH,
+        {"issues": {}, "latest_issue_id": ""},
+        finalize,
+    ):
+        raise RuntimeError("newsletter_issue_persistence_failed")
+    if result["conflict"]:
+        raise RuntimeError("newsletter_issue_id_conflict")
+    return result["issue"]
+
+
+def load_newsletter_story_history():
+    data = load_json_storage(NEWSLETTER_STORY_HISTORY_PATH, {"stories": {}})
+    if not isinstance(data.get("stories"), dict):
+        data["stories"] = {}
+    return data
+
+
+def save_newsletter_story_history(data):
+    return save_json_storage(NEWSLETTER_STORY_HISTORY_PATH, data)
+
+
+def load_newsletter_market_snapshots():
+    data = load_json_storage(
+        NEWSLETTER_MARKET_SNAPSHOTS_PATH,
+        {"snapshots": {}},
+    )
+    if not isinstance(data.get("snapshots"), dict):
+        data["snapshots"] = {}
+    return data
+
+
+def save_newsletter_market_snapshots(data):
+    return save_json_storage(NEWSLETTER_MARKET_SNAPSHOTS_PATH, data)
 
 
 def valid_newsletter_email(email):
@@ -5876,7 +7105,11 @@ def beehiiv_configured():
 
 
 def newsletter_issue_key(issue):
-    issue_date = str(issue.get("metadata", {}).get("issue_date") or "").strip()
+    metadata = issue.get("metadata", {})
+    explicit_key = str(metadata.get("issue_key") or "").strip()
+    if explicit_key:
+        return explicit_key
+    issue_date = str(metadata.get("issue_date") or "").strip()
     return f"newsletter:{issue_date}" if issue_date else ""
 
 
@@ -5891,6 +7124,84 @@ def save_newsletter_beehiiv_state(data):
     return save_json_storage(NEWSLETTER_BEEHIIV_STATE_PATH, data)
 
 
+def persistence_directory_is_writable():
+    probe_path = ""
+    try:
+        os.makedirs(STOCKRADAR_DATA_DIR, mode=0o700, exist_ok=True)
+        probe_descriptor, probe_path = tempfile.mkstemp(
+            prefix=".persistence-probe.",
+            dir=STOCKRADAR_DATA_DIR,
+        )
+        os.close(probe_descriptor)
+        os.remove(probe_path)
+        probe_path = ""
+        return True
+    except OSError:
+        set_persistence_last_error("persistence_directory_not_writable")
+        return False
+    finally:
+        if probe_path:
+            try:
+                os.remove(probe_path)
+            except OSError:
+                pass
+
+
+def json_store_is_available(path, default):
+    try:
+        with json_storage_lock(path):
+            _read_json_storage_unlocked(path, default, strict=True)
+        return True
+    except (OSError, RuntimeError):
+        return False
+
+
+def newsletter_persistence_status():
+    directory_writable = persistence_directory_is_writable()
+    configured = bool(
+        directory_writable
+        and (not IS_PRODUCTION or STOCKRADAR_DATA_DIR_EXPLICIT)
+        and not PERSISTENCE_CONFIGURATION_ERROR
+    )
+    issue_store_available = (
+        directory_writable
+        and json_store_is_available(
+            NEWSLETTER_ISSUES_PATH,
+            {"issues": {}, "latest_issue_id": ""},
+        )
+    )
+    story_history_store_available = (
+        directory_writable
+        and json_store_is_available(
+            NEWSLETTER_STORY_HISTORY_PATH,
+            {"stories": {}},
+        )
+    )
+    market_snapshot_store_available = (
+        directory_writable
+        and json_store_is_available(
+            NEWSLETTER_MARKET_SNAPSHOTS_PATH,
+            {"snapshots": {}},
+        )
+    )
+    ready = bool(
+        configured
+        and issue_store_available
+        and story_history_store_available
+        and market_snapshot_store_available
+    )
+    return {
+        "persistence_configured": configured,
+        "persistence_directory_writable": directory_writable,
+        "persistence_backend": PERSISTENCE_BACKEND,
+        "issue_store_available": issue_store_available,
+        "story_history_store_available": story_history_store_available,
+        "market_snapshot_store_available": market_snapshot_store_available,
+        "persistence_status": "ready" if ready else "degraded",
+        "persistence_last_error": PERSISTENCE_LAST_ERROR,
+    }
+
+
 def sanitise_newsletter_error(error):
     message = str(error or "unknown_error")
     if BEEHIIV_API_KEY:
@@ -5900,14 +7211,24 @@ def sanitise_newsletter_error(error):
 
 
 def record_beehiiv_issue_state(issue_key, **updates):
-    data = load_newsletter_beehiiv_state()
-    current = data["issues"].get(issue_key, {})
-    current.update(updates)
-    current["issue_key"] = issue_key
-    current["updated_at"] = newsletter_storage_timestamp()
-    data["issues"][issue_key] = current
-    save_newsletter_beehiiv_state(data)
-    return current
+    result = {}
+
+    def update_state(data):
+        issues = data.setdefault("issues", {})
+        current = issues.get(issue_key, {})
+        current.update(updates)
+        current["issue_key"] = issue_key
+        current["updated_at"] = newsletter_storage_timestamp()
+        issues[issue_key] = current
+        result.update(current)
+
+    if not update_json_storage(
+        NEWSLETTER_BEEHIIV_STATE_PATH,
+        {"issues": {}},
+        update_state,
+    ):
+        raise RuntimeError("newsletter_beehiiv_state_persistence_failed")
+    return result
 
 
 def beehiiv_api_request(method, path, payload=None, query=None):
@@ -6139,9 +7460,8 @@ def newsletter_issue_lock_path(issue_guid):
 
 def acquire_newsletter_issue_lock(issue_guid):
     lock_path = newsletter_issue_lock_path(issue_guid)
-    os.makedirs(NEWSLETTER_SEND_LOCK_DIR, exist_ok=True)
-
     try:
+        os.makedirs(NEWSLETTER_SEND_LOCK_DIR, mode=0o700, exist_ok=True)
         fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     except FileExistsError:
         try:
@@ -6154,12 +7474,29 @@ def acquire_newsletter_issue_lock(issue_guid):
         except FileExistsError:
             return None
         except Exception:
-            app.logger.exception("Failed to inspect newsletter send lock: %s", lock_path)
+            app.logger.exception("Failed to inspect newsletter send lock")
             return None
+    except OSError:
+        set_persistence_last_error("persistence_lock_unavailable")
+        app.logger.error(
+            "Newsletter persistence lock failed: persistence_lock_unavailable"
+        )
+        return None
 
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        handle.write(newsletter_storage_timestamp())
-        handle.write("\n")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(newsletter_storage_timestamp())
+            handle.write("\n")
+    except OSError:
+        set_persistence_last_error("persistence_lock_unavailable")
+        app.logger.error(
+            "Newsletter persistence lock failed: persistence_lock_unavailable"
+        )
+        try:
+            os.remove(lock_path)
+        except OSError:
+            pass
+        return None
     return lock_path
 
 
@@ -6171,16 +7508,15 @@ def release_newsletter_issue_lock(lock_path):
     except FileNotFoundError:
         return
     except Exception:
-        app.logger.exception("Failed to release newsletter send lock: %s", lock_path)
+        app.logger.exception("Failed to release newsletter send lock")
 
 
 def record_newsletter_run(summary, delivery_type, status=None):
-    data = load_newsletter_delivery_log()
     run_status = status
     if not run_status:
         run_status = "completed_with_failures" if summary.get("failed") else "completed"
 
-    data["runs"].append({
+    run_record = {
         "issue_guid": summary.get("issue_guid", ""),
         "issue_title": summary.get("issue_title", ""),
         "delivery_type": delivery_type,
@@ -6189,8 +7525,17 @@ def record_newsletter_run(summary, delivery_type, status=None):
         "skipped": int(summary.get("skipped") or 0),
         "failed": int(summary.get("failed") or 0),
         "completed_at": newsletter_storage_timestamp(),
-    })
-    return save_newsletter_delivery_log(data)
+    }
+
+    def append_run(data):
+        data.setdefault("deliveries", [])
+        data.setdefault("runs", []).append(run_record)
+
+    return update_json_storage(
+        NEWSLETTER_DELIVERY_LOG_PATH,
+        {"deliveries": [], "runs": []},
+        append_run,
+    )
 
 
 def newsletter_london_now(now=None):
@@ -6203,18 +7548,17 @@ def newsletter_london_now(now=None):
 
 def newsletter_auto_send_time():
     return dt_time(
-        hour=NEWSLETTER_AUTO_SEND_HOUR_LONDON,
-        minute=NEWSLETTER_AUTO_SEND_MINUTE_LONDON,
+        hour=NEWSLETTER_WEEKLY_CUTOFF_HOUR_LONDON,
+        minute=NEWSLETTER_WEEKLY_CUTOFF_MINUTE_LONDON,
     )
 
 
 def newsletter_auto_send_due(now=None):
     london_now = newsletter_london_now(now)
-    status = get_weekly_newsletter_status(london_now)
+    window = newsletter_weekly_window(london_now)
     return (
-        london_now.weekday() == 4
-        and london_now.time() >= newsletter_auto_send_time()
-        and status["is_final"]
+        london_now >= window["window_end_local_dt"]
+        and get_finalized_newsletter_issue(window["issue_id"]) is None
     )
 
 
@@ -6234,30 +7578,20 @@ def next_newsletter_auto_send_at(now=None):
 
 def newsletter_status_snapshot(now=None):
     london_now = newsletter_london_now(now)
-    issue_status = get_weekly_newsletter_status(london_now)
-    metadata = newsletter_issue_metadata(london_now, issue_status=issue_status)
-    delivery_log = load_newsletter_delivery_log()
-    deliveries = delivery_log.get("deliveries", [])
-    runs = delivery_log.get("runs", [])
-    current_issue_deliveries = [
-        item for item in deliveries
-        if str(item.get("issue_guid") or "") == metadata["guid"]
-    ]
-    last_delivery = max(
-        deliveries,
-        key=lambda item: str(item.get("sent_at") or ""),
-        default={},
+    window = newsletter_weekly_window(london_now)
+    persistence = newsletter_persistence_status()
+    current_issue = (
+        get_finalized_newsletter_issue(window["issue_id"])
+        or latest_finalized_newsletter_issue()
     )
-    last_run = max(
-        runs,
-        key=lambda item: str(item.get("completed_at") or ""),
-        default={},
+    metadata = (
+        current_issue.get("metadata", {})
+        if current_issue
+        else newsletter_issue_metadata(london_now)
     )
     beehiiv_issues = load_newsletter_beehiiv_state().get("issues", {})
-    current_beehiiv = beehiiv_issues.get(
-        f"newsletter:{metadata['issue_date']}",
-        {},
-    )
+    issue_key = str(metadata.get("issue_key") or window["issue_key"])
+    current_beehiiv = beehiiv_issues.get(issue_key, {})
     published_issues = [
         item for item in beehiiv_issues.values()
         if item.get("status") == "beehiiv_published"
@@ -6267,27 +7601,64 @@ def newsletter_status_snapshot(now=None):
         key=lambda item: str(item.get("last_successful_publish_at") or ""),
         default={},
     )
+    finalized = bool(metadata.get("is_final") and metadata.get("status") == "final")
+    generation_status = (
+        "finalized"
+        if finalized
+        else "due"
+        if newsletter_auto_send_due(london_now)
+        else "not_due"
+    )
+    delivery_status = current_beehiiv.get(
+        "status",
+        "beehiiv_api_post_blocked" if BEEHIIV_CREATE_POST_BLOCKED else "not_due",
+    )
 
     return {
+        **persistence,
         "weekly_bulk_sender": BEEHIIV_WEEKLY_BULK_SENDER,
-        "content_generation_status": current_beehiiv.get("content_generation_status", "not_due"),
+        "newsletter_generation_status": generation_status,
+        "content_generation_status": generation_status,
         "beehiiv_configured": beehiiv_configured(),
         "beehiiv_create_post_blocked": (
             BEEHIIV_CREATE_POST_BLOCKED
             or current_beehiiv.get("status") == "beehiiv_api_post_blocked"
         ),
-        "beehiiv_campaign_status": current_beehiiv.get(
-            "status",
-            "beehiiv_api_post_blocked" if BEEHIIV_CREATE_POST_BLOCKED else "not_due",
-        ),
+        "beehiiv_campaign_status": delivery_status,
+        "beehiiv_delivery_status": delivery_status,
         "transactional_smtp_configured": newsletter_email_configured(),
         "last_successful_beehiiv_publish_at": last_published.get("last_successful_publish_at", ""),
         "last_failure_reason": sanitise_newsletter_error(current_beehiiv.get("failure_reason", "")),
         "auto_send_enabled": NEWSLETTER_AUTO_SEND_ENABLED,
         "cron_secret_configured": bool(NEWSLETTER_CRON_SECRET),
-        "current_issue_guid": metadata["guid"],
-        "current_issue_status": issue_status["key"],
-        "current_issue_is_final": issue_status["is_final"],
+        "current_issue_guid": metadata.get("guid", window["issue_id"]),
+        "current_issue_id": metadata.get("issue_id", window["issue_id"]),
+        "current_issue_iso_week": metadata.get("iso_week", window["iso_week"]),
+        "current_issue_iso_year": metadata.get("iso_year", window["iso_year"]),
+        "current_issue_status": metadata.get("issue_status_key", "final" if finalized else "due"),
+        "current_issue_is_final": finalized,
+        "current_issue_finalized": finalized,
+        "current_issue_durable": bool(
+            finalized and persistence["persistence_status"] == "ready"
+        ),
+        "current_issue_window_start": metadata.get("window_start_utc", window["window_start_utc"]),
+        "current_issue_window_end": metadata.get("window_end_utc", window["window_end_utc"]),
+        "current_issue_generated_at": metadata.get("generated_at", ""),
+        "current_issue_story_count": int(metadata.get("story_count") or 0),
+        "current_issue_market_snapshot_count": int(metadata.get("market_snapshot_count") or 0),
+        "duplicate_stories_excluded": int(metadata.get("duplicate_stories_excluded") or 0),
+        "stale_stories_excluded": int(metadata.get("stale_stories_excluded") or 0),
+        "latest_market_snapshot_at": (
+            metadata.get("window_end_utc", "")
+            if metadata.get("market_snapshot_count") else ""
+        ),
+        "previous_market_snapshot_at": (
+            metadata.get("window_start_utc", "")
+            if metadata.get("market_snapshot_count") else ""
+        ),
+        "last_news_provider_error": LAST_NEWSLETTER_NEWS_STATUS.get("last_error", ""),
+        "last_market_data_error": LAST_NEWSLETTER_MARKET_STATUS.get("last_error", ""),
+        "next_expected_friday_cutoff": next_newsletter_auto_send_at(london_now).isoformat(),
         "next_expected_friday_send_at": next_newsletter_auto_send_at(london_now).isoformat(),
     }
 
@@ -6311,18 +7682,31 @@ def record_newsletter_delivery(email, issue, delivery_type):
     if not clean_email or not issue_guid:
         return False
 
-    data = load_newsletter_delivery_log()
-    if newsletter_already_delivered(clean_email, issue_guid):
-        return True
-
-    data["deliveries"].append({
+    delivery_record = {
         "email": clean_email,
         "issue_guid": issue_guid,
         "issue_title": issue.get("metadata", {}).get("title", ""),
         "delivery_type": delivery_type,
         "sent_at": newsletter_storage_timestamp(),
-    })
-    return save_newsletter_delivery_log(data)
+    }
+
+    def append_delivery(data):
+        deliveries = data.setdefault("deliveries", [])
+        data.setdefault("runs", [])
+        if any(
+            normalize_email(item.get("email")) == clean_email
+            and str(item.get("issue_guid") or "") == issue_guid
+            for item in deliveries
+        ):
+            return False
+        deliveries.append(delivery_record)
+        return True
+
+    return update_json_storage(
+        NEWSLETTER_DELIVERY_LOG_PATH,
+        {"deliveries": [], "runs": []},
+        append_delivery,
+    )
 
 
 def upsert_newsletter_subscriber(email):
@@ -6514,30 +7898,28 @@ def newsletter_automation_not_due_summary(reason, now=None):
 
 
 def run_due_newsletter_automation(delivery_type="auto", now=None):
-    if not newsletter_auto_send_due(now):
-        return newsletter_automation_not_due_summary("not_due", now)
     london_now = newsletter_london_now(now)
-    metadata = newsletter_issue_metadata(london_now)
-    issue_key = f"newsletter:{metadata['issue_date']}"
+    window = newsletter_weekly_window(london_now)
+    if london_now < window["window_end_local_dt"]:
+        return newsletter_automation_not_due_summary("not_due", now)
+    issue_key = window["issue_key"]
     existing_state = load_newsletter_beehiiv_state()["issues"].get(issue_key, {})
-    if (
-        existing_state.get("status") == "beehiiv_api_post_blocked"
-        and existing_state.get("content_generation_status") == "generated"
-    ):
+    if existing_state.get("status") in {
+        "beehiiv_api_post_blocked",
+        "beehiiv_draft_created",
+        "beehiiv_scheduled",
+        "beehiiv_published",
+    } and existing_state.get("content_generation_status") == "generated":
         return dict(
             existing_state,
             automation_due=True,
             duplicate=True,
-            reason="manual_beehiiv_handoff_required",
+            reason=(
+                "manual_beehiiv_handoff_required"
+                if existing_state.get("status") == "beehiiv_api_post_blocked"
+                else "workflow_already_completed"
+            ),
         )
-    if not beehiiv_configured():
-        state = record_beehiiv_issue_state(
-            issue_key,
-            status="failed",
-            content_generation_status="not_due",
-            failure_reason="beehiiv_not_configured",
-        )
-        return dict(state, automation_due=True, reason="beehiiv_not_configured")
 
     lock_path = acquire_newsletter_issue_lock(issue_key)
     if lock_path is None:
@@ -6550,41 +7932,58 @@ def run_due_newsletter_automation(delivery_type="auto", now=None):
             reason="workflow_in_progress",
         )
 
-    record_beehiiv_issue_state(
-        issue_key,
-        status="generating",
-        content_generation_status="generating",
-        failure_reason="",
-    )
     try:
-        issue = build_weekly_newsletter_issue(now=london_now)
+        issue = get_finalized_newsletter_issue(window["issue_id"])
+        if issue is None:
+            record_beehiiv_issue_state(
+                issue_key,
+                status="generating",
+                content_generation_status="generating",
+                failure_reason="",
+            )
+            issue = build_weekly_newsletter_issue(now=london_now)
         record_beehiiv_issue_state(
             issue_key,
             status="generated",
             content_generation_status="generated",
+            generation_status="finalized",
+            current_issue_id=issue.get("metadata", {}).get("issue_id", ""),
+            failure_reason="",
         )
-        if BEEHIIV_CREATE_POST_BLOCKED:
+        if not beehiiv_configured():
+            result = record_beehiiv_issue_state(
+                issue_key,
+                status="delivery_unavailable",
+                content_generation_status="generated",
+                generation_status="finalized",
+                delivery_status="unavailable",
+                failure_reason="beehiiv_not_configured",
+            )
+        elif BEEHIIV_CREATE_POST_BLOCKED:
             result = record_beehiiv_issue_state(
                 issue_key,
                 status="beehiiv_api_post_blocked",
                 content_generation_status="generated",
+                generation_status="finalized",
+                delivery_status="manual_handoff_required",
                 failure_reason="beehiiv_http_403",
             )
         else:
             result = create_beehiiv_issue(issue)
         result["automation_due"] = True
         result["content_generation_status"] = "generated"
+        result["generation_status"] = "finalized"
         return result
     except Exception as error:
         safe_reason = sanitise_newsletter_error(error)
-        app.logger.error("Beehiiv newsletter workflow failed: %s", safe_reason)
+        app.logger.error("Newsletter generation or Beehiiv workflow failed: %s", safe_reason)
+        generated = get_finalized_newsletter_issue(window["issue_id"]) is not None
         state = record_beehiiv_issue_state(
             issue_key,
             status="failed",
-            content_generation_status=(
-                "generated" if load_newsletter_beehiiv_state()["issues"].get(issue_key, {}).get("content_generation_status") == "generated"
-                else "failed"
-            ),
+            content_generation_status="generated" if generated else "failed",
+            generation_status="finalized" if generated else "failed",
+            delivery_status="failed" if generated else "not_due",
             failure_reason=safe_reason,
         )
         return dict(state, automation_due=True, reason=safe_reason)
@@ -6723,75 +8122,66 @@ newsletter_latest_html = """
 </header>
 <section class="section">
 <h2>This Week in the Market</h2>
-<h3>News-feed themes</h3>
+<h3>Verified weekly news</h3>
 <ul>{% for item in draft.trending_vs_forecasting.trending %}<li>{{ item.headline }} — {{ item.source }}</li>{% endfor %}</ul>
 <h3>What may matter next</h3>
 <ul>{% for item in draft.trending_vs_forecasting.forecasting %}<li>{{ item }}</li>{% endfor %}</ul>
 </section>
 <section class="section">
-<h2>What Looked Strong</h2>
+<h2>Stocks Showing Strength</h2>
 {% if draft.what_looked_strong %}
 {% for item in draft.what_looked_strong %}
 <article class="signal">
 <h3>{{ item.name }}</h3>
-<p><strong>{{ item.signal }} research prompt · {{ item.confidence }}</strong></p>
+<p><strong>Friday-to-Friday change: {{ item.weekly_change_label }}</strong></p>
 <p><strong>Area:</strong> {{ item.sector }}</p>
-<p><strong>Why it appears:</strong> {{ item.reason }}</p>
+<p>{{ item.reason }}</p>
 </article>
 {% endfor %}
 {% else %}
-<p>Strong-signal examples are unavailable in the current feed.</p>
+<p>No verified positive weekly movers were available.</p>
 {% endif %}
 </section>
 <section class="section">
-<h2>What Looked Weak / Caution Zone</h2>
+<h2>Caution Zone</h2>
 {% if draft.what_looked_weak %}
 {% for item in draft.what_looked_weak %}
 <article class="signal">
 <h3>{{ item.name }}</h3>
-<p><strong>{{ item.signal }} research prompt · {{ item.confidence }}</strong></p>
+<p><strong>Friday-to-Friday change: {{ item.weekly_change_label }}</strong></p>
 <p><strong>Area:</strong> {{ item.sector }}</p>
-<p><strong>Review risk:</strong> {{ item.reason }}</p>
+<p>{{ item.reason }}</p>
 </article>
 {% endfor %}
 {% else %}
-<p>Caution examples are unavailable in the current feed.</p>
+<p>No verified negative weekly movers were available.</p>
 {% endif %}
 </section>
 <section class="section">
 <h2>Market Tracker</h2>
 {% if draft.market_tracker %}
-<ul>{% for item in draft.market_tracker %}<li><strong>{{ item.name }}</strong> — {{ item.signal }} · {{ item.confidence }}: {{ item.reason }}</li>{% endfor %}</ul>
+<ul>{% for item in draft.market_tracker %}<li><strong>{{ item.name }}</strong> — {{ item.weekly_change_label }}: {{ item.reason }}</li>{% endfor %}</ul>
 {% else %}
-<p>Broad market proxy data is unavailable in the current feed.</p>
+<p>Verified Friday-to-Friday market tracker data was unavailable.</p>
 {% endif %}
 </section>
 <section class="section">
 <h2>StockRadar Signal Watchlist</h2>
-{% set signal_groups = [
-    ("Stronger BUY research prompts", draft.signal_watch.strongest_buy),
-    ("Notable HOLD / watchlist names", draft.signal_watch.notable_hold),
-    ("Caution / SELL research prompts", draft.signal_watch.caution_sell)
-] %}
-{% for group_title, items in signal_groups %}
-{% if items %}
-<h3>{{ group_title }}</h3>
-{% for item in items[:2] %}
+{% if draft.signal_watch.changes %}
+{% for item in draft.signal_watch.changes %}
 <article class="signal">
 <h3>{{ item.name }}</h3>
-<p><strong>{{ item.signal }} research prompt · {{ item.confidence }}</strong></p>
-<p><strong>Why it appears:</strong> {{ item.reason }}</p>
+<p><strong>{{ item.previous_signal }} → {{ item.current_signal }}</strong></p>
+<p>{{ item.reason }}</p>
 </article>
 {% endfor %}
-{% endif %}
-{% endfor %}
-{% if not draft.signal_watch.strongest_buy and not draft.signal_watch.notable_hold and not draft.signal_watch.caution_sell %}
-<p>Signal data unavailable.</p>
+{% else %}
+<p>No verified signal changes were available for this comparison.</p>
 {% endif %}
 </section>
 <section class="section">
-<h2>Balanced Signal Examples</h2>
-<ul>{% for item in draft.watchlist %}<li><strong>{{ item.name }}</strong> — {{ item.badge }} · {{ item.status }}: {{ item.reason }}</li>{% endfor %}</ul>
+<h2>Investor Lesson</h2>
+<p>{{ draft.investor_lesson }}</p>
 </section>
 <section class="section">
 <h2>Risk check</h2>
@@ -8790,7 +10180,7 @@ def newsletter():
 
 @app.route("/newsletter/latest")
 def newsletter_latest():
-    weekly_issue = build_weekly_newsletter_issue()
+    weekly_issue = load_or_generate_latest_newsletter_issue()
     return render_template_string(
         newsletter_latest_html,
         draft=weekly_issue["draft"],
@@ -8800,9 +10190,13 @@ def newsletter_latest():
 
 @app.route("/newsletter/rss")
 def newsletter_rss():
-    weekly_issue = build_weekly_newsletter_issue()
+    weekly_issue = load_or_generate_latest_newsletter_issue()
     draft = weekly_issue["draft"]
     issue = weekly_issue["metadata"]
+    published_at = (
+        parse_newsletter_timestamp(issue.get("published_at"))
+        or datetime.now(timezone.utc)
+    )
     feed_url = f"{PRODUCTION_BASE_URL}/newsletter"
     item_url = f"{PRODUCTION_BASE_URL}/newsletter/latest"
     issue_body = render_newsletter_issue_body(draft).replace("]]>", "]]&gt;")
@@ -8817,12 +10211,12 @@ def newsletter_rss():
 <link>{xml_escape(feed_url)}</link>
 <description>The 5-minute market signal for investors who want clarity without noise.</description>
 <language>en-gb</language>
-<lastBuildDate>{format_datetime(issue["published_at"])}</lastBuildDate>
+<lastBuildDate>{format_datetime(published_at)}</lastBuildDate>
 <item>
 <title>{xml_escape(issue["title"])}</title>
 <link>{xml_escape(item_url)}</link>
 <guid isPermaLink="false">{xml_escape(issue["guid"])}</guid>
-<pubDate>{format_datetime(issue["published_at"])}</pubDate>
+<pubDate>{format_datetime(published_at)}</pubDate>
 <description>{xml_escape(rss_description)}</description>
 <content:encoded><![CDATA[{issue_body}]]></content:encoded>
 </item>
@@ -8837,7 +10231,7 @@ def admin_newsletter_preview():
     if not owner_has_access():
         return redirect(url_for("login", next=request.path))
 
-    draft = build_free_weekly_newsletter()
+    draft = load_or_generate_latest_newsletter_issue()["draft"]
     return render_template_string(newsletter_preview_html, draft=draft)
 
 
@@ -8881,7 +10275,7 @@ def admin_newsletter_beehiiv_copy():
     if not owner_has_access():
         return redirect(url_for("login", next=request.path))
 
-    issue = build_weekly_newsletter_issue()
+    issue = load_or_generate_latest_newsletter_issue()
     export = build_beehiiv_manual_export(issue)
     state = load_newsletter_beehiiv_state()["issues"].get(export["issue_key"], {})
     beehiiv_status = state.get("status", "beehiiv_api_post_blocked")
@@ -9695,6 +11089,7 @@ def logout():
     return redirect(url_for("dashboard"))
 
 
+NEWSLETTER_STORAGE_MIGRATION_RESULT = migrate_legacy_newsletter_storage()
 start_newsletter_auto_send_scheduler()
 
 
