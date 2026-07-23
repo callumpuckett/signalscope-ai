@@ -377,6 +377,11 @@ def test_finalized_issue_is_persisted_immutable_and_survives_restart(
     )
     assert first["draft"]["opening_line"] == "Your Friday market brief is ready."
     assert first["draft"]["issue_status_message"] == "Latest issue"
+    assert first["draft"]["market_pulse"] == (
+        "1 tracked instruments rose and 0 fell between the two Friday cutoffs; "
+        "1 had comparable verified prices."
+    )
+    assert normalized_article["title"] in first["draft"]["market_week_summary"]
 
     app.WEEKLY_NEWSLETTER_ISSUE_CACHE["issue"] = None
     with (

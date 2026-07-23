@@ -6650,26 +6650,36 @@ def load_or_generate_latest_newsletter_issue(now=None):
 
 def newsletter_issue_for_website_display(issue):
     display_issue = copy.deepcopy(issue)
-    draft = display_issue.get("draft", {})
-    metadata = display_issue.get("metadata", {})
     replacements = (
         (
             "Your Friday-to-Friday market brief is ready",
             "Your Friday market brief is ready",
         ),
         ("Finalized Friday-to-Friday issue", "Latest issue"),
+        ("Friday-to-Friday", "weekly"),
+        ("inside the reporting window", "this week"),
+        ("for this reporting window", "for this week"),
+        ("Reporting window", "Week"),
+        ("reporting window", "week"),
     )
-    for container, field in (
-        (draft, "opening_line"),
-        (draft, "issue_status_message"),
-        (metadata, "issue_status_message"),
-    ):
-        value = container.get(field)
+
+    def update_public_copy(value):
+        if isinstance(value, dict):
+            return {
+                key: update_public_copy(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [update_public_copy(item) for item in value]
         if not isinstance(value, str):
-            continue
+            return value
         for legacy_text, current_text in replacements:
             value = value.replace(legacy_text, current_text)
-        container[field] = value
+        return value
+
+    display_issue["draft"] = update_public_copy(
+        display_issue.get("draft", {})
+    )
     return display_issue
 
 
@@ -8340,15 +8350,9 @@ newsletter_latest_html = """
 <div class="wrap">
 <nav class="top-links"><a href="/newsletter">← Newsletter signup</a><a href="/newsletter/rss">RSS feed</a></nav>
 <header class="header">
-<div class="kicker">The 5-minute market signal</div>
 <h1>{{ issue.title }}</h1>
-<p class="meta">Issue date: {{ issue.issue_date_label }}</p>
-<p class="meta">Issue status: {{ issue.issue_status }}</p>
-<p><strong>{{ issue.issue_status_message }}</strong></p>
-<p class="meta">Last refreshed: {{ issue.generated_at_label }}</p>
-{% if draft.preview_refresh_note %}<p>{{ draft.preview_refresh_note }}</p>{% endif %}
-<p><strong>{{ draft.opening_line }}</strong></p>
-<p>{{ draft.opening_note }}</p>
+<p><strong>Your Friday market brief is ready</strong></p>
+<p class="meta">Last updated: {{ issue.generated_at_label }}</p>
 <p style="margin-bottom:16px;"><strong>Market mood:</strong> {{ draft.market_mood }}.</p>
 <p style="margin-top:0;">{{ draft.market_pulse }}</p>
 <p>{{ draft.market_week_summary }}</p>
@@ -8366,7 +8370,7 @@ newsletter_latest_html = """
 {% for item in draft.what_looked_strong %}
 <article class="signal">
 <h3>{{ item.name }}</h3>
-<p><strong>Friday-to-Friday change: {{ item.weekly_change_label }}</strong></p>
+<p><strong>Weekly change: {{ item.weekly_change_label }}</strong></p>
 <p><strong>Area:</strong> {{ item.sector }}</p>
 <p>{{ item.reason }}</p>
 </article>
@@ -8381,7 +8385,7 @@ newsletter_latest_html = """
 {% for item in draft.what_looked_weak %}
 <article class="signal">
 <h3>{{ item.name }}</h3>
-<p><strong>Friday-to-Friday change: {{ item.weekly_change_label }}</strong></p>
+<p><strong>Weekly change: {{ item.weekly_change_label }}</strong></p>
 <p><strong>Area:</strong> {{ item.sector }}</p>
 <p>{{ item.reason }}</p>
 </article>
@@ -8395,7 +8399,7 @@ newsletter_latest_html = """
 {% if draft.market_tracker %}
 <ul>{% for item in draft.market_tracker %}<li><strong>{{ item.name }}</strong> — {{ item.weekly_change_label }}: {{ item.reason }}</li>{% endfor %}</ul>
 {% else %}
-<p>Verified Friday-to-Friday market tracker data was unavailable.</p>
+<p>Verified weekly market tracker data was unavailable.</p>
 {% endif %}
 </section>
 <section class="section">

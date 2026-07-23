@@ -526,23 +526,44 @@ def test_startup_catch_up_requests_latest_issue(monkeypatch):
     generate.assert_called_once_with()
 
 
-def test_latest_route_triggers_catch_up_generation(monkeypatch):
+def test_latest_route_simplifies_persisted_issue_without_mutation(monkeypatch):
+    backend, database = postgres_backend()
+    monkeypatch.setattr(app, "NEWSLETTER_STORAGE", backend)
     issue = issue_for()
     issue["metadata"].update({
+        "generated_at_label": "24 July 2026 at 09:01 BST",
+        "issue_date_label": "Friday 24 July 2026",
+        "issue_status": "Final issue",
         "issue_status_message": "Finalized Friday-to-Friday issue",
+        "generation_status": "finalized",
     })
     issue["draft"].update({
         "issue_date_label": "Friday 24 July 2026",
         "issue_status": "Final",
         "issue_status_message": "Finalized Friday-to-Friday issue",
         "last_refreshed": "24 July 2026",
-        "preview_refresh_note": "",
+        "preview_refresh_note": "Internal preview refresh note.",
         "opening_line": "Your Friday-to-Friday market brief is ready.",
-        "opening_note": "Context",
+        "opening_note": (
+            "This issue covers verified developments from "
+            "2026-07-17T09:00:00+01:00 up to, but not including, "
+            "2026-07-24T09:00:00+01:00."
+        ),
         "market_mood": "Mixed",
-        "market_pulse": "Pulse",
-        "market_week_summary": "Summary",
-        "what_looked_strong": [],
+        "market_pulse": (
+            "8 tracked instruments rose and 9 fell between the two Friday "
+            "cutoffs; 17 had comparable verified prices."
+        ),
+        "market_week_summary": (
+            "Verified developments inside the reporting window included: "
+            "Example weekly headline."
+        ),
+        "what_looked_strong": [{
+            "name": "Example plc",
+            "weekly_change_label": "+5.0%",
+            "sector": "Technology",
+            "reason": "Friday-to-Friday change +5.0% from 100.00 to 105.00.",
+        }],
         "what_looked_weak": [],
         "market_tracker": [],
         "signal_watch": {"changes": []},
@@ -552,20 +573,59 @@ def test_latest_route_triggers_catch_up_generation(monkeypatch):
         "disclaimer": "Educational only.",
         "premium_note": "",
     })
-    persisted_issue = copy.deepcopy(issue)
+    app.persist_finalized_newsletter_issue(issue)
+    persisted_issue = copy.deepcopy(
+        database.tables["issues"]["stockradar-weekly-2026-W30"]
+    )
     with patch.object(
         app,
         "load_or_generate_latest_newsletter_issue",
-        return_value=issue,
+        side_effect=lambda: backend.load_issue_by_id(
+            "stockradar-weekly-2026-W30"
+        ),
     ) as generate:
         response = app.app.test_client().get("/newsletter/latest")
     assert response.status_code == 200
     rendered = response.get_data(as_text=True)
-    assert "Your Friday market brief is ready." in rendered
-    assert "Latest issue" in rendered
-    assert "Your Friday-to-Friday market brief is ready" not in rendered
-    assert "Finalized Friday-to-Friday issue" not in rendered
-    assert issue == persisted_issue
+    title_position = rendered.index("<h1>StockRadar Weekly</h1>")
+    opening_position = rendered.index("Your Friday market brief is ready")
+    updated_position = rendered.index(
+        "Last updated: 24 July 2026 at 09:01 BST"
+    )
+    mood_position = rendered.index("Market mood:</strong> Mixed.")
+    pulse_position = rendered.index("8 tracked instruments rose and 9 fell")
+    summary_position = rendered.index(
+        "Verified developments this week included: "
+        "Example weekly headline."
+    )
+    assert (
+        title_position
+        < opening_position
+        < updated_position
+        < mood_position
+        < pulse_position
+        < summary_position
+    )
+    assert "Weekly change: +5.0%" in rendered
+    assert "weekly change +5.0% from 100.00 to 105.00." in rendered
+    for unwanted in (
+        "Friday-to-Friday",
+        "Issue date:",
+        "Issue status",
+        "Final issue",
+        "Generation status",
+        "Internal preview refresh note",
+        "This issue covers verified developments",
+        "Reporting window",
+        "reporting window",
+        "2026-07-17T09:00:00+01:00 up to, but not including, "
+        "2026-07-24T09:00:00+01:00",
+    ):
+        assert unwanted not in rendered
+    assert (
+        database.tables["issues"]["stockradar-weekly-2026-W30"]
+        == persisted_issue
+    )
     generate.assert_called_once_with()
 
 
