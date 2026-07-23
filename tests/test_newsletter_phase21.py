@@ -54,6 +54,16 @@ def snapshot(cutoff, price, signal=None, signal_source="unavailable", available=
     }
 
 
+def recommendation(ticker, signal, confidence, reason=None):
+    return {
+        "ticker": ticker,
+        "signal": signal,
+        "confidence": confidence,
+        "reason": reason or f"Current {signal} context for {ticker}.",
+        "sector": "Technology",
+    }
+
+
 def test_weekly_window_normal_bst_week():
     window = app.newsletter_weekly_window(
         datetime(2026, 7, 24, 10, 0, tzinfo=LONDON)
@@ -335,6 +345,119 @@ def test_unavailable_and_deterministic_market_values_are_not_presented_as_change
     assert deterministic["signal_changes"] == []
 
 
+def test_current_signal_watchlist_ranks_buy_hold_and_sell_by_confidence():
+    watchlist = app.build_newsletter_current_signal_watchlist([
+        recommendation("BUY1", "BUY", "70%"),
+        recommendation("BUY2", "BUY", "91%"),
+        recommendation("HOLD1", "HOLD", "82%"),
+        recommendation("HOLD2", "HOLD", "55%"),
+        recommendation("SELL1", "SELL", "64%"),
+        recommendation("SELL2", "SELL", "79%"),
+        recommendation("BUY2", "BUY", "40%", reason="Lower duplicate."),
+        recommendation("UNKNOWN", "MAYBE", "99%"),
+    ])
+    assert [item["ticker"] for item in watchlist] == [
+        "BUY2",
+        "HOLD1",
+        "SELL2",
+    ]
+    assert [item["signal"] for item in watchlist] == [
+        "BUY",
+        "HOLD",
+        "SELL",
+    ]
+    assert [item["confidence"] for item in watchlist] == [
+        "91%",
+        "82%",
+        "79%",
+    ]
+    assert len({item["ticker"] for item in watchlist}) == len(watchlist)
+    assert watchlist[0]["reason"] == "Current BUY context for BUY2."
+
+
+def test_current_signal_watchlist_uses_weakest_hold_when_sell_is_absent():
+    watchlist = app.build_newsletter_current_signal_watchlist([
+        recommendation("BUY1", "BUY", "88%"),
+        recommendation("HOLD1", "HOLD", "76%"),
+        recommendation("HOLD2", "HOLD", "43%"),
+        recommendation("HOLD3", "HOLD", "61%"),
+    ])
+    assert [item["ticker"] for item in watchlist] == [
+        "BUY1",
+        "HOLD1",
+        "HOLD2",
+    ]
+    assert watchlist[-1]["signal"] == "HOLD"
+    assert watchlist[-1]["watch_role"] == "caution"
+    assert len({item["ticker"] for item in watchlist}) == 3
+
+
+def test_current_signal_watchlist_uses_next_valid_signal_when_hold_is_absent():
+    watchlist = app.build_newsletter_current_signal_watchlist([
+        recommendation("BUY1", "BUY", "92%"),
+        recommendation("BUY2", "BUY", "81%"),
+        recommendation("SELL1", "SELL", "74%"),
+        recommendation("SELL2", "SELL", "63%"),
+    ])
+    assert [item["ticker"] for item in watchlist] == [
+        "BUY1",
+        "SELL1",
+        "BUY2",
+    ]
+    assert len({item["ticker"] for item in watchlist}) == 3
+
+
+def test_signal_watchlist_has_reader_facing_message_when_current_data_is_absent():
+    draft = app.build_free_weekly_newsletter(
+        window=app.newsletter_weekly_window(
+            datetime(2026, 7, 24, 10, 0, tzinfo=LONDON)
+        ),
+        current_recommendations=[],
+    )
+    with app.app.app_context():
+        rendered = app.render_newsletter_issue_body(draft)
+    assert (
+        "Current StockRadar signals were unavailable when this issue was generated."
+        in rendered
+    )
+    assert "No verified signal changes were available" not in rendered
+
+
+def test_verified_signal_changes_remain_the_only_signal_watchlist_output():
+    comparison = app.compare_newsletter_market_snapshots(
+        snapshot(
+            "2026-07-17T08:00:00+00:00",
+            100,
+            signal="HOLD",
+            signal_source="verified",
+        ),
+        snapshot(
+            "2026-07-24T08:00:00+00:00",
+            105,
+            signal="BUY",
+            signal_source="verified",
+        ),
+    )
+    draft = app.build_free_weekly_newsletter(
+        window=app.newsletter_weekly_window(
+            datetime(2026, 7, 24, 10, 0, tzinfo=LONDON)
+        ),
+        comparison=comparison,
+        current_recommendations=[
+            recommendation("BUY1", "BUY", "90%"),
+            recommendation("HOLD1", "HOLD", "80%"),
+            recommendation("SELL1", "SELL", "70%"),
+        ],
+    )
+    with app.app.app_context():
+        rendered = app.render_newsletter_issue_body(draft)
+    assert draft["signal_watch"]["changes"]
+    assert draft["signal_watch"]["current_signals"] == []
+    assert "HOLD → BUY" in rendered
+    assert "No tracked signals changed this week" not in rendered
+    assert "BUY1" not in rendered
+
+
 def test_finalized_issue_is_persisted_immutable_and_survives_restart(
     monkeypatch,
     tmp_path,
@@ -363,6 +486,15 @@ def test_finalized_issue_is_persisted_immutable_and_survives_restart(
                 "duplicate_stories_excluded": 0,
             }),
         ),
+        patch.object(
+            app,
+            "get_recommendations",
+            return_value=[
+                recommendation("BUY1", "BUY", "90%"),
+                recommendation("HOLD1", "HOLD", "80%"),
+                recommendation("SELL1", "SELL", "70%"),
+            ],
+        ),
     ):
         first = app.build_weekly_newsletter_issue(now=now)
 
@@ -382,6 +514,14 @@ def test_finalized_issue_is_persisted_immutable_and_survives_restart(
         "1 had comparable verified prices."
     )
     assert normalized_article["title"] in first["draft"]["market_week_summary"]
+    assert [
+        item["ticker"]
+        for item in first["draft"]["signal_watch"]["current_signals"]
+    ] == ["BUY1", "HOLD1", "SELL1"]
+    assert (
+        "No tracked signals changed this week. Current signals to watch:"
+        in first["draft"]["plain_text"]
+    )
 
     app.WEEKLY_NEWSLETTER_ISSUE_CACHE["issue"] = None
     with (

@@ -577,13 +577,39 @@ def test_latest_route_simplifies_persisted_issue_without_mutation(monkeypatch):
     persisted_issue = copy.deepcopy(
         database.tables["issues"]["stockradar-weekly-2026-W30"]
     )
-    with patch.object(
-        app,
-        "load_or_generate_latest_newsletter_issue",
-        side_effect=lambda: backend.load_issue_by_id(
-            "stockradar-weekly-2026-W30"
+    with (
+        patch.object(
+            app,
+            "load_or_generate_latest_newsletter_issue",
+            side_effect=lambda: backend.load_issue_by_id(
+                "stockradar-weekly-2026-W30"
+            ),
+        ) as generate,
+        patch.object(
+            app,
+            "get_recommendations",
+            return_value=[
+                {
+                    "ticker": "BUY2",
+                    "signal": "BUY",
+                    "confidence": "91%",
+                    "reason": "Highest current BUY context.",
+                },
+                {
+                    "ticker": "HOLD1",
+                    "signal": "HOLD",
+                    "confidence": "82%",
+                    "reason": "Highest current HOLD context.",
+                },
+                {
+                    "ticker": "SELL2",
+                    "signal": "SELL",
+                    "confidence": "79%",
+                    "reason": "Highest current SELL context.",
+                },
+            ],
         ),
-    ) as generate:
+    ):
         response = app.app.test_client().get("/newsletter/latest")
     assert response.status_code == 200
     rendered = response.get_data(as_text=True)
@@ -608,6 +634,14 @@ def test_latest_route_simplifies_persisted_issue_without_mutation(monkeypatch):
     )
     assert "Weekly change: +5.0%" in rendered
     assert "weekly change +5.0% from 100.00 to 105.00." in rendered
+    assert (
+        "No tracked signals changed this week. Current signals to watch:"
+        in rendered
+    )
+    assert "BUY2" in rendered and "BUY — 91%" in rendered
+    assert "HOLD1" in rendered and "HOLD — 82%" in rendered
+    assert "SELL2" in rendered and "SELL — 79%" in rendered
+    assert "No verified signal changes were available" not in rendered
     for unwanted in (
         "Friday-to-Friday",
         "Issue date:",

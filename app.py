@@ -5666,6 +5666,69 @@ def build_newsletter_signal_highlights(recommendations, limit=5):
     return highlights
 
 
+def build_newsletter_current_signal_watchlist(recommendations, limit=3):
+    candidates_by_ticker = {}
+    for row in recommendations or []:
+        ticker = str(row.get("ticker") or "").strip().upper()
+        raw_signal = str(row.get("signal") or "").strip()
+        if not ticker or not raw_signal or row.get("confidence") is None:
+            continue
+        signal = raw_signal.upper()
+        if signal not in {"BUY", "HOLD", "SELL"}:
+            continue
+        candidate = dict(row)
+        candidate["ticker"] = ticker
+        candidate["signal"] = signal
+        existing = candidates_by_ticker.get(ticker)
+        if (
+            existing is None
+            or confidence_number(candidate.get("confidence"))
+            > confidence_number(existing.get("confidence"))
+        ):
+            candidates_by_ticker[ticker] = candidate
+
+    ranked = sorted(
+        candidates_by_ticker.values(),
+        key=lambda item: confidence_number(item.get("confidence")),
+        reverse=True,
+    )
+    by_signal = {
+        signal: [item for item in ranked if item["signal"] == signal]
+        for signal in ("BUY", "HOLD", "SELL")
+    }
+    selected = []
+    selected_tickers = set()
+
+    def add_candidate(candidate, role):
+        if not candidate or len(selected) >= limit:
+            return False
+        ticker = candidate["ticker"]
+        if ticker in selected_tickers:
+            return False
+        signal_item = newsletter_signal_item(candidate)
+        signal_item["watch_role"] = role
+        selected.append(signal_item)
+        selected_tickers.add(ticker)
+        return True
+
+    if by_signal["BUY"]:
+        add_candidate(by_signal["BUY"][0], "strongest_buy")
+    if by_signal["HOLD"]:
+        add_candidate(by_signal["HOLD"][0], "strongest_hold")
+    if by_signal["SELL"]:
+        add_candidate(by_signal["SELL"][0], "caution")
+    else:
+        for candidate in reversed(by_signal["HOLD"]):
+            if add_candidate(candidate, "caution"):
+                break
+
+    for candidate in ranked:
+        if len(selected) >= limit:
+            break
+        add_candidate(candidate, "additional")
+    return selected
+
+
 def build_newsletter_recommendation_universe():
     recommendation_rows = get_recommendations() or []
     output = [dict(item) for item in recommendation_rows]
@@ -6065,6 +6128,7 @@ def build_free_weekly_newsletter(
     articles=None,
     news_status=None,
     comparison=None,
+    current_recommendations=None,
 ):
     window = window or newsletter_weekly_window()
     articles = articles or []
@@ -6182,6 +6246,13 @@ def build_free_weekly_newsletter(
         for item in comparison["market_tracker"]
     ]
     signal_changes = comparison["signal_changes"]
+    current_signal_watchlist = (
+        []
+        if signal_changes
+        else build_newsletter_current_signal_watchlist(
+            current_recommendations or []
+        )
+    )
     forecasting = [
         "Watch whether this week’s strongest moves persist after the new Friday cutoff.",
         "Review whether broad-market participation confirms or challenges the largest individual moves.",
@@ -6242,6 +6313,7 @@ def build_free_weekly_newsletter(
         "signal_highlights": signal_changes,
         "signal_watch": {
             "changes": signal_changes,
+            "current_signals": current_signal_watchlist,
             "strongest_buy": [],
             "notable_hold": [],
             "caution_sell": [],
@@ -6326,14 +6398,25 @@ def build_newsletter_plain_text(draft):
         lines.append(f"- {item}")
 
     lines.extend(["", "SIGNAL WATCHLIST"])
-    signal_changes = draft.get("signal_watch", {}).get("changes", [])
+    signal_watch = draft.get("signal_watch", {})
+    signal_changes = signal_watch.get("changes", [])
+    current_signals = signal_watch.get("current_signals", [])
     if signal_changes:
         for item in signal_changes:
             lines.append(
                 f"- {item['name']}: {item['previous_signal']} → {item['current_signal']}"
             )
+    elif current_signals:
+        lines.append("No tracked signals changed this week. Current signals to watch:")
+        for item in current_signals:
+            lines.extend([
+                f"- {item['name']} — {item['signal']} — {item['confidence']}",
+                f"  {item['reason']}",
+            ])
     else:
-        lines.append("- No verified signal changes were available.")
+        lines.append(
+            "Current StockRadar signals were unavailable when this issue was generated."
+        )
 
     lines.extend(["", "INVESTOR LESSON", draft.get("investor_lesson", "")])
 
@@ -6513,11 +6596,20 @@ def _build_weekly_newsletter_issue_without_generation_lock(
     ][:3]
     if not articles and news_status.get("coverage_status") == "verified":
         news_status["coverage_status"] = "verified_no_relevant_stories"
+    current_recommendations = []
+    if not comparison.get("signal_changes"):
+        try:
+            current_recommendations = get_recommendations()
+        except Exception:
+            app.logger.exception(
+                "Current StockRadar recommendations were unavailable for the newsletter."
+            )
     draft = build_free_weekly_newsletter(
         window=window,
         articles=articles,
         news_status=news_status,
         comparison=comparison,
+        current_recommendations=current_recommendations,
     )
     generated_at = parse_newsletter_timestamp(london_now)
     metadata = newsletter_issue_metadata(
@@ -6680,6 +6772,25 @@ def newsletter_issue_for_website_display(issue):
     display_issue["draft"] = update_public_copy(
         display_issue.get("draft", {})
     )
+    signal_watch = display_issue["draft"].get("signal_watch")
+    if not isinstance(signal_watch, dict):
+        signal_watch = {"changes": [], "current_signals": []}
+        display_issue["draft"]["signal_watch"] = signal_watch
+    if (
+        not signal_watch.get("changes")
+        and not signal_watch.get("current_signals")
+    ):
+        try:
+            signal_watch["current_signals"] = (
+                build_newsletter_current_signal_watchlist(
+                    get_recommendations()
+                )
+            )
+        except Exception:
+            app.logger.exception(
+                "Current StockRadar recommendations were unavailable for display."
+            )
+            signal_watch["current_signals"] = []
     return display_issue
 
 
@@ -6749,8 +6860,15 @@ newsletter_issue_body_html = """
 <p>{{ item.reason }}</p>
 </article>
 {% endfor %}
+{% elif draft.signal_watch.current_signals %}
+<p>No tracked signals changed this week. Current signals to watch:</p>
+<ul>
+{% for item in draft.signal_watch.current_signals %}
+<li><strong>{{ item.name }} — {{ item.signal }} — {{ item.confidence }}</strong><br>{{ item.reason }}</li>
+{% endfor %}
+</ul>
 {% else %}
-<p>No verified signal changes were available for this comparison.</p>
+<p>Current StockRadar signals were unavailable when this issue was generated.</p>
 {% endif %}
 </section>
 <section>
@@ -8412,8 +8530,17 @@ newsletter_latest_html = """
 <p>{{ item.reason }}</p>
 </article>
 {% endfor %}
+{% elif draft.signal_watch.current_signals %}
+<p>No tracked signals changed this week. Current signals to watch:</p>
+{% for item in draft.signal_watch.current_signals %}
+<article class="signal">
+<h3>{{ item.name }}</h3>
+<p><strong>{{ item.signal }} — {{ item.confidence }}</strong></p>
+<p>{{ item.reason }}</p>
+</article>
+{% endfor %}
 {% else %}
-<p>No verified signal changes were available for this comparison.</p>
+<p>Current StockRadar signals were unavailable when this issue was generated.</p>
 {% endif %}
 </section>
 <section class="section">
