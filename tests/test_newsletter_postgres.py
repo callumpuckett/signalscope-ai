@@ -528,13 +528,16 @@ def test_startup_catch_up_requests_latest_issue(monkeypatch):
 
 def test_latest_route_triggers_catch_up_generation(monkeypatch):
     issue = issue_for()
+    issue["metadata"].update({
+        "issue_status_message": "Finalized Friday-to-Friday issue",
+    })
     issue["draft"].update({
         "issue_date_label": "Friday 24 July 2026",
         "issue_status": "Final",
-        "issue_status_message": "Finalized",
+        "issue_status_message": "Finalized Friday-to-Friday issue",
         "last_refreshed": "24 July 2026",
         "preview_refresh_note": "",
-        "opening_line": "Weekly summary",
+        "opening_line": "Your Friday-to-Friday market brief is ready.",
         "opening_note": "Context",
         "market_mood": "Mixed",
         "market_pulse": "Pulse",
@@ -549,6 +552,7 @@ def test_latest_route_triggers_catch_up_generation(monkeypatch):
         "disclaimer": "Educational only.",
         "premium_note": "",
     })
+    persisted_issue = copy.deepcopy(issue)
     with patch.object(
         app,
         "load_or_generate_latest_newsletter_issue",
@@ -556,6 +560,12 @@ def test_latest_route_triggers_catch_up_generation(monkeypatch):
     ) as generate:
         response = app.app.test_client().get("/newsletter/latest")
     assert response.status_code == 200
+    rendered = response.get_data(as_text=True)
+    assert "Your Friday market brief is ready." in rendered
+    assert "Latest issue" in rendered
+    assert "Your Friday-to-Friday market brief is ready" not in rendered
+    assert "Finalized Friday-to-Friday issue" not in rendered
+    assert issue == persisted_issue
     generate.assert_called_once_with()
 
 

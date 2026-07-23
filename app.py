@@ -6648,6 +6648,31 @@ def load_or_generate_latest_newsletter_issue(now=None):
         raise
 
 
+def newsletter_issue_for_website_display(issue):
+    display_issue = copy.deepcopy(issue)
+    draft = display_issue.get("draft", {})
+    metadata = display_issue.get("metadata", {})
+    replacements = (
+        (
+            "Your Friday-to-Friday market brief is ready",
+            "Your Friday market brief is ready",
+        ),
+        ("Finalized Friday-to-Friday issue", "Latest issue"),
+    )
+    for container, field in (
+        (draft, "opening_line"),
+        (draft, "issue_status_message"),
+        (metadata, "issue_status_message"),
+    ):
+        value = container.get(field)
+        if not isinstance(value, str):
+            continue
+        for legacy_text, current_text in replacements:
+            value = value.replace(legacy_text, current_text)
+        container[field] = value
+    return display_issue
+
+
 newsletter_issue_body_html = """
 <section>
 <p><strong>Issue date:</strong> {{ draft.issue_date_label }}</p>
@@ -10388,7 +10413,9 @@ def newsletter():
 
 @app.route("/newsletter/latest")
 def newsletter_latest():
-    weekly_issue = load_or_generate_latest_newsletter_issue()
+    weekly_issue = newsletter_issue_for_website_display(
+        load_or_generate_latest_newsletter_issue()
+    )
     return render_template_string(
         newsletter_latest_html,
         draft=weekly_issue["draft"],
