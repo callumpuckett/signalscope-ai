@@ -25,6 +25,13 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from newsletter_storage import (
+    DegradedNewsletterStorage,
+    FilesystemNewsletterStorage,
+    PostgresNewsletterStorage,
+    select_backend_identifier,
+)
+
 try:
     import fcntl
 except ImportError:
@@ -98,6 +105,7 @@ PRODUCTION_BASE_URL = "https://www.stockradarhq.com"
 RENDER_FALLBACK_BASE_URL = "https://signalscope-ai-1-0v3g.onrender.com"
 APP_ROOT = os.path.dirname(os.path.abspath(__file__))
 PREMIUM_ENTITLEMENTS_PATH = os.path.join(APP_ROOT, "premium_entitlements.json")
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 
 
 def path_is_within_directory(path, directory):
@@ -165,7 +173,8 @@ STOCKRADAR_DATA_DIR = STOCKRADAR_DATA_DIR_STATE["path"]
 STOCKRADAR_DATA_DIR_EXPLICIT = STOCKRADAR_DATA_DIR_STATE["explicit"]
 PERSISTENCE_CONFIGURATION_ERROR = STOCKRADAR_DATA_DIR_STATE["error"]
 PERSISTENCE_LAST_ERROR = PERSISTENCE_CONFIGURATION_ERROR
-PERSISTENCE_BACKEND = "filesystem_json"
+PERSISTENCE_BACKEND = "unconfigured"
+NEWSLETTER_STORAGE = None
 JSON_STORAGE_THREAD_LOCKS = {}
 JSON_STORAGE_THREAD_LOCKS_GUARD = threading.Lock()
 
@@ -225,6 +234,7 @@ NEWSLETTER_AUTO_SEND_CHECK_INTERVAL_SECONDS = int(
 )
 NEWSLETTER_SEND_LOCK_STALE_SECONDS = 60 * 60
 NEWSLETTER_AUTO_SEND_THREAD_STARTED = False
+NEWSLETTER_STARTUP_CATCH_UP_THREAD_STARTED = False
 BEEHIIV_API_KEY = os.environ.get("BEEHIIV_API_KEY", "").strip()
 BEEHIIV_PUBLICATION_ID = os.environ.get("BEEHIIV_PUBLICATION_ID", "").strip()
 BEEHIIV_AUTOSEND_ENABLED = (
@@ -242,6 +252,14 @@ NEWSLETTER_RUNTIME_FILE_NAMES = (
     "newsletter_beehiiv_state.json",
     "newsletter_subscribers.json",
 )
+NEWSLETTER_RUNTIME_STORE_FILES = {
+    "issues": "newsletter_issues.json",
+    "story_history": "newsletter_story_history.json",
+    "market_snapshots": "newsletter_market_snapshots.json",
+    "delivery": "newsletter_delivery_log.json",
+    "beehiiv": "newsletter_beehiiv_state.json",
+    "subscribers": "newsletter_subscribers.json",
+}
 BEEHIIV_WEEKLY_BULK_SENDER = "beehiiv_manual"
 BEEHIIV_CREATE_POST_BLOCKED = True
 BEEHIIV_EXPORT_SUBJECT = "StockRadar Weekly: This week’s market signals"
@@ -5878,11 +5896,7 @@ def collect_newsletter_market_snapshot(cutoff_local, force_refresh=False):
         snapshots[snapshot_key] = snapshot
         return True
 
-    if not update_json_storage(
-        NEWSLETTER_MARKET_SNAPSHOTS_PATH,
-        {"snapshots": {}},
-        store_snapshot,
-    ):
+    if not newsletter_storage_update("market_snapshots", store_snapshot):
         raise RuntimeError("newsletter_market_snapshot_persistence_failed")
     snapshot = persisted["snapshot"]
     LAST_NEWSLETTER_MARKET_STATUS.update({
@@ -6451,11 +6465,7 @@ def record_newsletter_story_usage(issue):
                 "published_at": article.get("published_at", ""),
             }
 
-    return update_json_storage(
-        NEWSLETTER_STORY_HISTORY_PATH,
-        {"stories": {}},
-        update_history,
-    )
+    return newsletter_storage_update("story_history", update_history)
 
 
 def _build_weekly_newsletter_issue_without_generation_lock(
@@ -6577,13 +6587,19 @@ def build_weekly_newsletter_issue(now=None, force_refresh=False):
         record_newsletter_story_usage(persisted)
         return persisted
 
-    if newsletter_persistence_status()["persistence_status"] != "ready":
+    persistence = ensure_newsletter_storage_ready()
+    if persistence["persistence_status"] != "ready":
         raise RuntimeError("newsletter_persistence_degraded")
 
     lock_path = acquire_newsletter_issue_lock(
         f"generation-{window['issue_id']}"
     )
     if lock_path is None:
+        if (
+            isinstance(NEWSLETTER_STORAGE, PostgresNewsletterStorage)
+            and NEWSLETTER_STORAGE.last_error
+        ):
+            raise RuntimeError("newsletter_persistence_degraded")
         for _ in range(100):
             persisted = get_finalized_newsletter_issue(window["issue_id"])
             if persisted:
@@ -6915,6 +6931,24 @@ def update_json_storage(path, default, updater):
         return False
 
 
+def newsletter_storage_load(store_name):
+    if NEWSLETTER_STORAGE is None:
+        raise RuntimeError("newsletter_storage_not_initialized")
+    return NEWSLETTER_STORAGE.load_state(store_name)
+
+
+def newsletter_storage_save(store_name, data):
+    if NEWSLETTER_STORAGE is None:
+        raise RuntimeError("newsletter_storage_not_initialized")
+    return NEWSLETTER_STORAGE.save_state(store_name, data)
+
+
+def newsletter_storage_update(store_name, updater):
+    if NEWSLETTER_STORAGE is None:
+        raise RuntimeError("newsletter_storage_not_initialized")
+    return NEWSLETTER_STORAGE.update_state(store_name, updater)
+
+
 def migrate_legacy_newsletter_storage(legacy_root=None):
     source_root = os.path.realpath(legacy_root or APP_ROOT)
     result = {
@@ -6963,10 +6997,7 @@ def migrate_legacy_newsletter_storage(legacy_root=None):
 
 
 def load_newsletter_issues():
-    data = load_json_storage(
-        NEWSLETTER_ISSUES_PATH,
-        {"issues": {}, "latest_issue_id": ""},
-    )
+    data = newsletter_storage_load("issues")
     if not isinstance(data.get("issues"), dict):
         data["issues"] = {}
     if not isinstance(data.get("latest_issue_id"), str):
@@ -6975,11 +7006,11 @@ def load_newsletter_issues():
 
 
 def save_newsletter_issues(data):
-    return save_json_storage(NEWSLETTER_ISSUES_PATH, data)
+    return newsletter_storage_save("issues", data)
 
 
 def get_finalized_newsletter_issue(issue_id):
-    issue = load_newsletter_issues()["issues"].get(str(issue_id or ""))
+    issue = NEWSLETTER_STORAGE.load_issue_by_id(issue_id)
     if not isinstance(issue, dict):
         return None
     metadata = issue.get("metadata", {})
@@ -6989,23 +7020,12 @@ def get_finalized_newsletter_issue(issue_id):
 
 
 def latest_finalized_newsletter_issue():
-    data = load_newsletter_issues()
-    latest_issue = get_finalized_newsletter_issue(data.get("latest_issue_id"))
+    latest_issue = NEWSLETTER_STORAGE.load_latest_issue()
     if latest_issue:
-        return latest_issue
-    candidates = [
-        issue for issue in data["issues"].values()
-        if isinstance(issue, dict)
-        and issue.get("metadata", {}).get("is_final") is True
-        and issue.get("metadata", {}).get("status") == "final"
-    ]
-    return max(
-        candidates,
-        key=lambda issue: str(
-            issue.get("metadata", {}).get("window_end_utc") or ""
-        ),
-        default=None,
-    )
+        metadata = latest_issue.get("metadata", {})
+        if metadata.get("is_final") is True and metadata.get("status") == "final":
+            return latest_issue
+    return None
 
 
 def persist_finalized_newsletter_issue(issue):
@@ -7014,33 +7034,8 @@ def persist_finalized_newsletter_issue(issue):
     if not issue_id or metadata.get("is_final") is not True:
         raise ValueError("finalized_issue_metadata_required")
 
-    result = {"issue": issue, "conflict": False}
-
-    def finalize(data):
-        issues = data.setdefault("issues", {})
-        existing = issues.get(issue_id)
-        if existing:
-            if existing.get("metadata", {}).get("status") == "final":
-                result["issue"] = existing
-                return False
-            result["conflict"] = True
-            return False
-
-        issues[issue_id] = issue
-        current_latest = issues.get(data.get("latest_issue_id", ""), {})
-        if (
-            not current_latest
-            or str(metadata.get("window_end_utc") or "")
-            >= str(current_latest.get("metadata", {}).get("window_end_utc") or "")
-        ):
-            data["latest_issue_id"] = issue_id
-        return True
-
-    if not update_json_storage(
-        NEWSLETTER_ISSUES_PATH,
-        {"issues": {}, "latest_issue_id": ""},
-        finalize,
-    ):
+    result = NEWSLETTER_STORAGE.finalize_issue_once(issue)
+    if not result["stored"]:
         raise RuntimeError("newsletter_issue_persistence_failed")
     if result["conflict"]:
         raise RuntimeError("newsletter_issue_id_conflict")
@@ -7048,28 +7043,25 @@ def persist_finalized_newsletter_issue(issue):
 
 
 def load_newsletter_story_history():
-    data = load_json_storage(NEWSLETTER_STORY_HISTORY_PATH, {"stories": {}})
+    data = newsletter_storage_load("story_history")
     if not isinstance(data.get("stories"), dict):
         data["stories"] = {}
     return data
 
 
 def save_newsletter_story_history(data):
-    return save_json_storage(NEWSLETTER_STORY_HISTORY_PATH, data)
+    return newsletter_storage_save("story_history", data)
 
 
 def load_newsletter_market_snapshots():
-    data = load_json_storage(
-        NEWSLETTER_MARKET_SNAPSHOTS_PATH,
-        {"snapshots": {}},
-    )
+    data = newsletter_storage_load("market_snapshots")
     if not isinstance(data.get("snapshots"), dict):
         data["snapshots"] = {}
     return data
 
 
 def save_newsletter_market_snapshots(data):
-    return save_json_storage(NEWSLETTER_MARKET_SNAPSHOTS_PATH, data)
+    return newsletter_storage_save("market_snapshots", data)
 
 
 def valid_newsletter_email(email):
@@ -7077,18 +7069,18 @@ def valid_newsletter_email(email):
 
 
 def load_newsletter_subscribers():
-    data = load_json_storage(NEWSLETTER_SUBSCRIBERS_PATH, {"subscribers": []})
+    data = newsletter_storage_load("subscribers")
     if not isinstance(data.get("subscribers"), list):
         data["subscribers"] = []
     return data
 
 
 def save_newsletter_subscribers(data):
-    return save_json_storage(NEWSLETTER_SUBSCRIBERS_PATH, data)
+    return newsletter_storage_save("subscribers", data)
 
 
 def load_newsletter_delivery_log():
-    data = load_json_storage(NEWSLETTER_DELIVERY_LOG_PATH, {"deliveries": []})
+    data = newsletter_storage_load("delivery")
     if not isinstance(data.get("deliveries"), list):
         data["deliveries"] = []
     if not isinstance(data.get("runs"), list):
@@ -7097,7 +7089,7 @@ def load_newsletter_delivery_log():
 
 
 def save_newsletter_delivery_log(data):
-    return save_json_storage(NEWSLETTER_DELIVERY_LOG_PATH, data)
+    return newsletter_storage_save("delivery", data)
 
 
 def beehiiv_configured():
@@ -7114,14 +7106,14 @@ def newsletter_issue_key(issue):
 
 
 def load_newsletter_beehiiv_state():
-    data = load_json_storage(NEWSLETTER_BEEHIIV_STATE_PATH, {"issues": {}})
+    data = newsletter_storage_load("beehiiv")
     if not isinstance(data.get("issues"), dict):
         data["issues"] = {}
     return data
 
 
 def save_newsletter_beehiiv_state(data):
-    return save_json_storage(NEWSLETTER_BEEHIIV_STATE_PATH, data)
+    return newsletter_storage_save("beehiiv", data)
 
 
 def persistence_directory_is_writable():
@@ -7156,7 +7148,7 @@ def json_store_is_available(path, default):
         return False
 
 
-def newsletter_persistence_status():
+def filesystem_newsletter_persistence_status():
     directory_writable = persistence_directory_is_writable()
     configured = bool(
         directory_writable
@@ -7191,15 +7183,57 @@ def newsletter_persistence_status():
         and market_snapshot_store_available
     )
     return {
+        "persistence_backend": "filesystem_json",
+        "database_configured": False,
+        "database_reachable": False,
+        "database_schema_ready": False,
         "persistence_configured": configured,
         "persistence_directory_writable": directory_writable,
-        "persistence_backend": PERSISTENCE_BACKEND,
         "issue_store_available": issue_store_available,
         "story_history_store_available": story_history_store_available,
         "market_snapshot_store_available": market_snapshot_store_available,
         "persistence_status": "ready" if ready else "degraded",
         "persistence_last_error": PERSISTENCE_LAST_ERROR,
     }
+
+
+def newsletter_persistence_status():
+    if NEWSLETTER_STORAGE is None:
+        return {
+            "persistence_backend": "unconfigured",
+            "database_configured": bool(DATABASE_URL),
+            "database_reachable": False,
+            "database_schema_ready": False,
+            "persistence_configured": False,
+            "persistence_directory_writable": False,
+            "issue_store_available": False,
+            "story_history_store_available": False,
+            "market_snapshot_store_available": False,
+            "persistence_status": "degraded",
+            "persistence_last_error": "newsletter_storage_not_initialized",
+        }
+    status = dict(NEWSLETTER_STORAGE.health())
+    migration = globals().get("NEWSLETTER_STORAGE_MIGRATION_RESULT", {})
+    status["persistence_migration_status"] = str(
+        migration.get("status") or "not_started"
+    )
+    status["persistence_migration_imported_store_count"] = len(
+        migration.get("imported_stores", [])
+    )
+    return status
+
+
+def ensure_newsletter_storage_ready():
+    persistence = newsletter_persistence_status()
+    if (
+        persistence["persistence_status"] != "ready"
+        and isinstance(NEWSLETTER_STORAGE, PostgresNewsletterStorage)
+    ):
+        if NEWSLETTER_STORAGE.initialize_schema():
+            migration_result = migrate_selected_newsletter_storage()
+            globals()["NEWSLETTER_STORAGE_MIGRATION_RESULT"] = migration_result
+        persistence = newsletter_persistence_status()
+    return persistence
 
 
 def sanitise_newsletter_error(error):
@@ -7222,11 +7256,7 @@ def record_beehiiv_issue_state(issue_key, **updates):
         issues[issue_key] = current
         result.update(current)
 
-    if not update_json_storage(
-        NEWSLETTER_BEEHIIV_STATE_PATH,
-        {"issues": {}},
-        update_state,
-    ):
+    if not newsletter_storage_update("beehiiv", update_state):
         raise RuntimeError("newsletter_beehiiv_state_persistence_failed")
     return result
 
@@ -7458,7 +7488,7 @@ def newsletter_issue_lock_path(issue_guid):
     return os.path.join(NEWSLETTER_SEND_LOCK_DIR, f"{safe_guid or 'unknown'}.lock")
 
 
-def acquire_newsletter_issue_lock(issue_guid):
+def acquire_filesystem_newsletter_issue_lock(issue_guid):
     lock_path = newsletter_issue_lock_path(issue_guid)
     try:
         os.makedirs(NEWSLETTER_SEND_LOCK_DIR, mode=0o700, exist_ok=True)
@@ -7500,7 +7530,7 @@ def acquire_newsletter_issue_lock(issue_guid):
     return lock_path
 
 
-def release_newsletter_issue_lock(lock_path):
+def release_filesystem_newsletter_issue_lock(lock_path):
     if not lock_path:
         return
     try:
@@ -7509,6 +7539,139 @@ def release_newsletter_issue_lock(lock_path):
         return
     except Exception:
         app.logger.exception("Failed to release newsletter send lock")
+
+
+def newsletter_storage_paths():
+    return {
+        "issues": NEWSLETTER_ISSUES_PATH,
+        "story_history": NEWSLETTER_STORY_HISTORY_PATH,
+        "market_snapshots": NEWSLETTER_MARKET_SNAPSHOTS_PATH,
+        "delivery": NEWSLETTER_DELIVERY_LOG_PATH,
+        "beehiiv": NEWSLETTER_BEEHIIV_STATE_PATH,
+        "subscribers": NEWSLETTER_SUBSCRIBERS_PATH,
+    }
+
+
+def build_newsletter_storage_backend(
+    database_url=None,
+    production=None,
+    postgres_connector=None,
+):
+    configured_database_url = (
+        DATABASE_URL if database_url is None else str(database_url or "").strip()
+    )
+    production = IS_PRODUCTION if production is None else bool(production)
+    durable_filesystem_configured = bool(
+        STOCKRADAR_DATA_DIR_EXPLICIT
+        and not PERSISTENCE_CONFIGURATION_ERROR
+    )
+    backend_identifier = select_backend_identifier(
+        configured_database_url,
+        production,
+        durable_filesystem_configured,
+    )
+    if backend_identifier == "postgresql":
+        return PostgresNewsletterStorage(
+            configured_database_url,
+            connector=postgres_connector,
+        )
+    if backend_identifier == "filesystem_json":
+        return FilesystemNewsletterStorage(
+            paths=newsletter_storage_paths,
+            loader=load_json_storage,
+            saver=save_json_storage,
+            updater=update_json_storage,
+            lock_acquirer=acquire_filesystem_newsletter_issue_lock,
+            lock_releaser=release_filesystem_newsletter_issue_lock,
+            health_provider=filesystem_newsletter_persistence_status,
+        )
+    return DegradedNewsletterStorage()
+
+
+def initialize_newsletter_storage_backend(
+    database_url=None,
+    production=None,
+    postgres_connector=None,
+):
+    global NEWSLETTER_STORAGE, PERSISTENCE_BACKEND
+    NEWSLETTER_STORAGE = build_newsletter_storage_backend(
+        database_url=database_url,
+        production=production,
+        postgres_connector=postgres_connector,
+    )
+    PERSISTENCE_BACKEND = NEWSLETTER_STORAGE.identifier
+    NEWSLETTER_STORAGE.initialize_schema()
+    return NEWSLETTER_STORAGE
+
+
+def load_valid_legacy_newsletter_documents():
+    documents = {}
+    for store_name, filename in NEWSLETTER_RUNTIME_STORE_FILES.items():
+        candidates = (
+            stockradar_data_path(filename),
+            os.path.join(APP_ROOT, filename),
+        )
+        for candidate in candidates:
+            if not os.path.exists(candidate):
+                continue
+            try:
+                with open(candidate, "r", encoding="utf-8") as handle:
+                    data = json.load(handle)
+            except (OSError, ValueError, TypeError):
+                continue
+            if isinstance(data, dict):
+                documents[store_name] = data
+                break
+    return documents
+
+
+def migrate_selected_newsletter_storage():
+    if isinstance(NEWSLETTER_STORAGE, PostgresNewsletterStorage):
+        if not NEWSLETTER_STORAGE.database_schema_ready:
+            return {
+                "status": "deferred_database_unavailable",
+                "imported_stores": [],
+                "skipped_stores": [],
+            }
+        return NEWSLETTER_STORAGE.migrate_legacy_documents(
+            load_valid_legacy_newsletter_documents()
+        )
+    if isinstance(NEWSLETTER_STORAGE, FilesystemNewsletterStorage):
+        result = migrate_legacy_newsletter_storage()
+        return {
+            **result,
+            "status": "completed" if not result["failed"] else "partial",
+            "imported_stores": [
+                store_name
+                for store_name, filename in NEWSLETTER_RUNTIME_STORE_FILES.items()
+                if filename in result["migrated"]
+            ],
+            "skipped_stores": [
+                store_name
+                for store_name, filename in NEWSLETTER_RUNTIME_STORE_FILES.items()
+                if (
+                    filename in result["skipped_existing"]
+                    or filename in result["skipped_missing"]
+                )
+            ],
+        }
+    return {
+        "status": "skipped_degraded",
+        "imported_stores": [],
+        "skipped_stores": [],
+    }
+
+
+def acquire_newsletter_issue_lock(issue_guid):
+    if NEWSLETTER_STORAGE is None:
+        return None
+    return NEWSLETTER_STORAGE.acquire_lock(issue_guid)
+
+
+def release_newsletter_issue_lock(lock_token):
+    if NEWSLETTER_STORAGE is None:
+        return
+    NEWSLETTER_STORAGE.release_lock(lock_token)
 
 
 def record_newsletter_run(summary, delivery_type, status=None):
@@ -7531,11 +7694,7 @@ def record_newsletter_run(summary, delivery_type, status=None):
         data.setdefault("deliveries", [])
         data.setdefault("runs", []).append(run_record)
 
-    return update_json_storage(
-        NEWSLETTER_DELIVERY_LOG_PATH,
-        {"deliveries": [], "runs": []},
-        append_run,
-    )
+    return newsletter_storage_update("delivery", append_run)
 
 
 def newsletter_london_now(now=None):
@@ -7579,11 +7738,8 @@ def next_newsletter_auto_send_at(now=None):
 def newsletter_status_snapshot(now=None):
     london_now = newsletter_london_now(now)
     window = newsletter_weekly_window(london_now)
-    persistence = newsletter_persistence_status()
-    current_issue = (
-        get_finalized_newsletter_issue(window["issue_id"])
-        or latest_finalized_newsletter_issue()
-    )
+    completed_issue = get_finalized_newsletter_issue(window["issue_id"])
+    current_issue = completed_issue or latest_finalized_newsletter_issue()
     metadata = (
         current_issue.get("metadata", {})
         if current_issue
@@ -7601,7 +7757,13 @@ def newsletter_status_snapshot(now=None):
         key=lambda item: str(item.get("last_successful_publish_at") or ""),
         default={},
     )
-    finalized = bool(metadata.get("is_final") and metadata.get("status") == "final")
+    persistence = newsletter_persistence_status()
+    finalized = bool(
+        completed_issue
+        and completed_issue.get("metadata", {}).get("is_final")
+        and completed_issue.get("metadata", {}).get("status") == "final"
+    )
+    catch_up_required = not finalized
     generation_status = (
         "finalized"
         if finalized
@@ -7641,6 +7803,8 @@ def newsletter_status_snapshot(now=None):
         "current_issue_durable": bool(
             finalized and persistence["persistence_status"] == "ready"
         ),
+        "catch_up_required": catch_up_required,
+        "latest_completed_issue_id": window["issue_id"],
         "current_issue_window_start": metadata.get("window_start_utc", window["window_start_utc"]),
         "current_issue_window_end": metadata.get("window_end_utc", window["window_end_utc"]),
         "current_issue_generated_at": metadata.get("generated_at", ""),
@@ -7702,36 +7866,38 @@ def record_newsletter_delivery(email, issue, delivery_type):
         deliveries.append(delivery_record)
         return True
 
-    return update_json_storage(
-        NEWSLETTER_DELIVERY_LOG_PATH,
-        {"deliveries": [], "runs": []},
-        append_delivery,
-    )
+    return newsletter_storage_update("delivery", append_delivery)
 
 
 def upsert_newsletter_subscriber(email):
     clean_email = normalize_email(email)
-    data = load_newsletter_subscribers()
     now = newsletter_storage_timestamp()
+    result = {"subscriber": None, "created": False}
 
-    for subscriber in data["subscribers"]:
-        if normalize_email(subscriber.get("email")) == clean_email:
-            subscriber["active"] = True
-            subscriber["updated_at"] = now
-            save_newsletter_subscribers(data)
-            return subscriber, False
+    def upsert(data):
+        subscribers = data.setdefault("subscribers", [])
+        for subscriber in subscribers:
+            if normalize_email(subscriber.get("email")) == clean_email:
+                subscriber["active"] = True
+                subscriber["updated_at"] = now
+                result["subscriber"] = subscriber
+                return
 
-    subscriber = {
-        "email": clean_email,
-        "active": True,
-        "created_at": now,
-        "updated_at": now,
-        "welcome_issue_guid": "",
-        "welcome_sent_at": "",
-    }
-    data["subscribers"].append(subscriber)
-    save_newsletter_subscribers(data)
-    return subscriber, True
+        subscriber = {
+            "email": clean_email,
+            "active": True,
+            "created_at": now,
+            "updated_at": now,
+            "welcome_issue_guid": "",
+            "welcome_sent_at": "",
+        }
+        subscribers.append(subscriber)
+        result["subscriber"] = subscriber
+        result["created"] = True
+
+    if not newsletter_storage_update("subscribers", upsert):
+        raise RuntimeError("newsletter_subscriber_persistence_failed")
+    return result["subscriber"], result["created"]
 
 
 def mark_subscriber_welcome_sent(email, issue):
@@ -7740,15 +7906,22 @@ def mark_subscriber_welcome_sent(email, issue):
     if not clean_email or not issue_guid:
         return False
 
-    data = load_newsletter_subscribers()
     now = newsletter_storage_timestamp()
-    for subscriber in data["subscribers"]:
-        if normalize_email(subscriber.get("email")) == clean_email:
-            subscriber["welcome_issue_guid"] = issue_guid
-            subscriber["welcome_sent_at"] = now
-            subscriber["updated_at"] = now
-            return save_newsletter_subscribers(data)
-    return False
+    result = {"found": False}
+
+    def mark_sent(data):
+        for subscriber in data.setdefault("subscribers", []):
+            if normalize_email(subscriber.get("email")) == clean_email:
+                subscriber["welcome_issue_guid"] = issue_guid
+                subscriber["welcome_sent_at"] = now
+                subscriber["updated_at"] = now
+                result["found"] = True
+                return
+        return False
+
+    if not newsletter_storage_update("subscribers", mark_sent):
+        return False
+    return result["found"]
 
 
 def build_newsletter_email_html(issue):
@@ -7903,6 +8076,18 @@ def run_due_newsletter_automation(delivery_type="auto", now=None):
     if london_now < window["window_end_local_dt"]:
         return newsletter_automation_not_due_summary("not_due", now)
     issue_key = window["issue_key"]
+    persistence = ensure_newsletter_storage_ready()
+    if persistence["persistence_status"] != "ready":
+        return {
+            "issue_key": issue_key,
+            "automation_due": True,
+            "status": "persistence_degraded",
+            "content_generation_status": "blocked",
+            "generation_status": "blocked",
+            "delivery_status": "not_due",
+            "failure_reason": persistence["persistence_last_error"],
+            "reason": "persistence_degraded",
+        }
     existing_state = load_newsletter_beehiiv_state()["issues"].get(issue_key, {})
     if existing_state.get("status") in {
         "beehiiv_api_post_blocked",
@@ -8022,6 +8207,29 @@ def start_newsletter_auto_send_scheduler():
         "Newsletter auto-send scheduler started; next expected Friday send at %s",
         next_newsletter_auto_send_at().isoformat(),
     )
+    return True
+
+
+def newsletter_startup_catch_up_once():
+    try:
+        if newsletter_auto_send_due():
+            load_or_generate_latest_newsletter_issue()
+    except Exception:
+        app.logger.exception("Newsletter startup catch-up failed")
+
+
+def start_newsletter_startup_catch_up():
+    global NEWSLETTER_STARTUP_CATCH_UP_THREAD_STARTED
+    if NEWSLETTER_STARTUP_CATCH_UP_THREAD_STARTED or not IS_PRODUCTION:
+        return False
+
+    thread = threading.Thread(
+        target=newsletter_startup_catch_up_once,
+        name="stockradar-newsletter-startup-catch-up",
+        daemon=True,
+    )
+    thread.start()
+    NEWSLETTER_STARTUP_CATCH_UP_THREAD_STARTED = True
     return True
 
 
@@ -11089,7 +11297,9 @@ def logout():
     return redirect(url_for("dashboard"))
 
 
-NEWSLETTER_STORAGE_MIGRATION_RESULT = migrate_legacy_newsletter_storage()
+initialize_newsletter_storage_backend()
+NEWSLETTER_STORAGE_MIGRATION_RESULT = migrate_selected_newsletter_storage()
+start_newsletter_startup_catch_up()
 start_newsletter_auto_send_scheduler()
 
 
