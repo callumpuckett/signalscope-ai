@@ -6213,7 +6213,7 @@ def build_free_weekly_newsletter(
     draft = {
         "title": issue_title,
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "opening_line": "Your Friday-to-Friday market brief is ready.",
+        "opening_line": "Your Friday market brief is ready.",
         "opening_note": (
             "This issue covers verified developments from "
             f"{window['window_start_local']} up to, but not including, "
@@ -6276,7 +6276,7 @@ def build_newsletter_plain_text(draft):
         f"Last refreshed: {draft.get('last_refreshed', draft['generated_at'])}",
         "",
         "OPENING",
-        draft.get("opening_line", "Your Friday-to-Friday market brief is ready."),
+        draft.get("opening_line", "Your Friday market brief is ready."),
         draft.get("opening_note", ""),
         "",
         "THIS WEEK IN THE MARKET",
@@ -6365,7 +6365,7 @@ def get_weekly_newsletter_status(now=None):
     return {
         "key": "final",
         "label": "Final Friday-to-Friday issue",
-        "message": "Finalized Friday-to-Friday issue",
+        "message": "Latest issue",
         "rss_label": "Final Friday-to-Friday issue",
         "is_final": True,
     }
