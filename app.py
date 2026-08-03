@@ -157,7 +157,7 @@ NEWSLETTER_TAB_STYLES = """
 </style>
 """
 NEWSLETTER_TAB_LINK = """
-<a class="stockradar-newsletter-tab" data-stockradar-newsletter-tab="true" href="/newsletter/latest" aria-label="Read the latest StockRadar newsletter">Newsletter</a>
+<a class="stockradar-newsletter-tab" data-stockradar-newsletter-tab="true" href="/newsletter" aria-label="Open the StockRadar newsletter page">Newsletter</a>
 """
 
 
@@ -1082,13 +1082,11 @@ def disclaimer_footer():
             Payments are handled securely by Stripe when Premium checkout is available. StockRadar does not store your full card details. Newsletter emails are used to send StockRadar updates and market briefs.
         </div>
         <nav aria-label="Legal and support links" style="display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;">
-            <a href="/newsletter" style="color:#94a3b8;">Newsletter</a>
             <a href="/how-it-works" style="color:#94a3b8;">How It Works</a>
             <a href="/privacy" style="color:#94a3b8;">Privacy</a>
             <a href="/terms" style="color:#94a3b8;">Terms</a>
             <a href="/refund-policy" style="color:#94a3b8;">Refund Policy</a>
             <a href="/risk-disclaimer" style="color:#94a3b8;">Risk Disclaimer</a>
-            <a href="/manage-subscription" style="color:#94a3b8;">Manage Subscription</a>
             <a href="/feedback" style="color:#94a3b8;">Feedback</a>
             <a href="/contact" style="color:#94a3b8;">Contact</a>
         </nav>

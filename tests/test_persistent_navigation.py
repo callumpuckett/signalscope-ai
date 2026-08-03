@@ -37,14 +37,15 @@ def assert_newsletter_tab_absent(response):
     assert app.NEWSLETTER_TAB_MARKER not in response.get_data(as_text=True)
 
 
-def test_newsletter_tab_appears_once_on_homepage_with_accessible_latest_link():
+def test_newsletter_tab_appears_once_on_homepage_with_accessible_signup_link():
     response = render_dashboard()
     page = response.get_data(as_text=True)
 
     assert response.status_code == 200
     assert page.count(app.NEWSLETTER_TAB_MARKER) == 1
-    assert 'href="/newsletter/latest"' in page
-    assert 'aria-label="Read the latest StockRadar newsletter"' in page
+    assert 'href="/newsletter"' in page
+    assert 'href="/newsletter/latest"' not in page
+    assert 'aria-label="Open the StockRadar newsletter page"' in page
     assert page.index('id="stockradar-newsletter-tab-styles"') < page.index("</head>")
     assert page.index(app.NEWSLETTER_TAB_MARKER) < page.index("</body>")
 
@@ -56,7 +57,19 @@ def test_newsletter_tab_appears_on_a_normal_stock_route():
     page = response.get_data(as_text=True)
     assert response.status_code == 200
     assert page.count(app.NEWSLETTER_TAB_MARKER) == 1
-    assert 'href="/newsletter/latest"' in page
+    assert 'href="/newsletter"' in page
+    assert 'href="/newsletter/latest"' not in page
+
+
+def test_newsletter_tab_appears_on_other_normal_public_routes():
+    client = app.app.test_client()
+
+    for path in ("/universe", "/upgrade", "/how-it-works", "/privacy"):
+        response = client.get(path)
+        page = response.get_data(as_text=True)
+
+        assert response.status_code == 200
+        assert page.count(app.NEWSLETTER_TAB_MARKER) == 1
 
 
 def test_newsletter_tab_has_desktop_focus_and_mobile_safe_area_styles():
@@ -88,6 +101,14 @@ def test_newsletter_tab_is_excluded_from_newsletter_and_login_pages():
     ):
         assert_newsletter_tab_absent(client.get("/newsletter/latest"))
 
+    assert_newsletter_tab_absent(client.get("/newsletter/rss"))
+
+    with app.app.test_request_context("/newsletter/archive"):
+        nested_response = Response(HTML_PAGE, content_type="text/html")
+        app.inject_newsletter_tab(nested_response)
+
+    assert_newsletter_tab_absent(nested_response)
+
 
 def test_newsletter_tab_is_excluded_from_checkout_error_and_operational_routes():
     client = app.app.test_client()
@@ -118,6 +139,28 @@ def test_newsletter_tab_does_not_modify_non_html_responses():
     assert app.NEWSLETTER_TAB_MARKER.encode() not in result.data
 
 
+def test_newsletter_tab_does_not_modify_redirect_responses():
+    with app.app.test_request_context("/privacy"):
+        response = Response(HTML_PAGE, status=302, content_type="text/html")
+        result = app.inject_newsletter_tab(response)
+
+    assert_newsletter_tab_absent(result)
+
+
+def test_newsletter_tab_does_not_modify_streamed_html_responses():
+    with app.app.test_request_context("/privacy"):
+        response = Response(
+            (chunk for chunk in ("<html><head></head><body>", "Content</body></html>")),
+            content_type="text/html",
+        )
+        assert response.is_streamed is True
+        result = app.inject_newsletter_tab(response)
+
+    page = result.get_data(as_text=True)
+    assert app.NEWSLETTER_TAB_MARKER not in page
+    assert page == "<html><head></head><body>Content</body></html>"
+
+
 def test_newsletter_tab_injection_is_idempotent():
     with app.app.test_request_context("/privacy"):
         response = Response(HTML_PAGE, content_type="text/html")
@@ -133,7 +176,7 @@ def test_account_manage_subscription_is_not_rendered_for_logged_out_users():
     page = render_dashboard().get_data(as_text=True)
 
     assert 'data-account-manage-subscription="true"' not in page
-    assert 'href="/manage-subscription"' in page  # Existing footer link remains.
+    assert 'href="/manage-subscription"' not in page
 
 
 def test_account_manage_subscription_follows_owner_account_control():
@@ -170,3 +213,25 @@ def test_public_stock_visitor_does_not_receive_account_manage_subscription():
         page = app.app.test_client().get("/stock/AAPL").get_data(as_text=True)
 
     assert 'data-account-manage-subscription="true"' not in page
+
+
+def test_shared_footer_omits_newsletter_and_manage_subscription_links():
+    footer = app.disclaimer_footer()
+
+    assert 'href="/newsletter"' not in footer
+    assert 'href="/manage-subscription"' not in footer
+
+
+def test_shared_footer_keeps_other_legal_and_support_links():
+    footer = app.disclaimer_footer()
+
+    for path in (
+        "/how-it-works",
+        "/privacy",
+        "/terms",
+        "/refund-policy",
+        "/risk-disclaimer",
+        "/feedback",
+        "/contact",
+    ):
+        assert f'href="{path}"' in footer

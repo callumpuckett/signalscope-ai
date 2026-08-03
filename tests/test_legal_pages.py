@@ -13,6 +13,16 @@ LEGAL_ROUTES = [
     "/contact",
 ]
 
+FOOTER_ROUTES = [
+    "/how-it-works",
+    "/privacy",
+    "/terms",
+    "/refund-policy",
+    "/risk-disclaimer",
+    "/feedback",
+    "/contact",
+]
+
 
 def test_legal_and_support_routes_return_200():
     client = app.app.test_client()
@@ -22,7 +32,7 @@ def test_legal_and_support_routes_return_200():
         assert response.status_code == 200
 
 
-def test_shared_footer_contains_legal_and_support_links():
+def test_shared_footer_contains_remaining_legal_and_support_links():
     dashboard_data = {
         "market_status": {
             "uk_status": "CLOSED",
@@ -41,8 +51,12 @@ def test_shared_footer_contains_legal_and_support_links():
     page = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    for route in LEGAL_ROUTES:
+    for route in FOOTER_ROUTES:
         assert f'href="{route}"' in page
+
+    footer = app.disclaimer_footer()
+    assert 'href="/newsletter"' not in footer
+    assert 'href="/manage-subscription"' not in footer
 
 
 def test_risk_disclaimer_contains_required_wording():
@@ -93,8 +107,9 @@ def test_manage_subscription_uses_support_email_and_cancellation_subject(monkeyp
     assert b"Cancel StockRadar Premium" in response.data
 
 
-def test_upgrade_links_to_manage_subscription():
-    response = app.app.test_client().get("/upgrade")
+def test_checkout_enabled_upgrade_keeps_contextual_manage_subscription_link():
+    with patch.object(app, "stripe_checkout_configured", return_value=True):
+        response = app.app.test_client().get("/upgrade")
 
     assert response.status_code == 200
     assert b'href="/manage-subscription"' in response.data
