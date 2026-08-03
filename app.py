@@ -304,6 +304,363 @@ NEWSLETTER_NEWS_QUERY = (
     '("stock market" OR equities OR earnings OR "interest rates" OR inflation '
     'OR "Federal Reserve" OR "Bank of England" OR semiconductors OR "AI stocks")'
 )
+NEWSLETTER_TRUSTED_PUBLISHERS = (
+    {
+        "publisher": "U.S. Securities and Exchange Commission",
+        "tier": 1,
+        "category": "official_primary_source",
+        "names": ("sec", "u.s. securities and exchange commission"),
+        "domains": ("sec.gov",),
+    },
+    {
+        "publisher": "Financial Conduct Authority",
+        "tier": 1,
+        "category": "official_primary_source",
+        "names": ("fca", "financial conduct authority"),
+        "domains": ("fca.org.uk",),
+    },
+    {
+        "publisher": "Office for National Statistics",
+        "tier": 1,
+        "category": "official_primary_source",
+        "names": ("ons", "office for national statistics"),
+        "domains": ("ons.gov.uk",),
+    },
+    {
+        "publisher": "Federal Reserve",
+        "tier": 1,
+        "category": "official_primary_source",
+        "names": ("federal reserve", "the fed"),
+        "domains": ("federalreserve.gov",),
+    },
+    {
+        "publisher": "Bank of England",
+        "tier": 1,
+        "category": "official_primary_source",
+        "names": ("bank of england",),
+        "domains": ("bankofengland.co.uk",),
+    },
+    {
+        "publisher": "UK Government",
+        "tier": 1,
+        "category": "official_primary_source",
+        "names": ("uk government", "gov.uk"),
+        "domains": ("gov.uk",),
+    },
+    {
+        "publisher": "European Central Bank",
+        "tier": 1,
+        "category": "official_primary_source",
+        "names": ("ecb", "european central bank"),
+        "domains": ("ecb.europa.eu",),
+    },
+    {
+        "publisher": "European Union",
+        "tier": 1,
+        "category": "official_primary_source",
+        "names": ("european union", "european commission"),
+        "domains": ("europa.eu",),
+    },
+    {
+        "publisher": "U.S. Bureau of Labor Statistics",
+        "tier": 1,
+        "category": "official_primary_source",
+        "names": ("bls", "bureau of labor statistics"),
+        "domains": ("bls.gov",),
+    },
+    {
+        "publisher": "U.S. Bureau of Economic Analysis",
+        "tier": 1,
+        "category": "official_primary_source",
+        "names": ("bea", "bureau of economic analysis"),
+        "domains": ("bea.gov",),
+    },
+    {
+        "publisher": "OECD",
+        "tier": 1,
+        "category": "official_primary_source",
+        "names": ("oecd",),
+        "domains": ("oecd.org",),
+    },
+    {
+        "publisher": "International Monetary Fund",
+        "tier": 1,
+        "category": "official_primary_source",
+        "names": ("imf", "international monetary fund"),
+        "domains": ("imf.org",),
+    },
+    {
+        "publisher": "World Bank",
+        "tier": 1,
+        "category": "official_primary_source",
+        "names": ("world bank",),
+        "domains": ("worldbank.org",),
+    },
+    {
+        "publisher": "London Stock Exchange",
+        "tier": 1,
+        "category": "official_primary_source",
+        "names": ("london stock exchange", "lse"),
+        "domains": ("londonstockexchange.com",),
+    },
+    {
+        "publisher": "Nasdaq",
+        "tier": 1,
+        "category": "official_primary_source",
+        "names": ("nasdaq",),
+        "domains": ("nasdaq.com",),
+    },
+    {
+        "publisher": "New York Stock Exchange",
+        "tier": 1,
+        "category": "official_primary_source",
+        "names": ("new york stock exchange", "nyse"),
+        "domains": ("nyse.com",),
+    },
+    {
+        "publisher": "Reuters",
+        "tier": 2,
+        "category": "established_wire_service",
+        "names": ("reuters",),
+        "domains": ("reuters.com",),
+    },
+    {
+        "publisher": "Associated Press",
+        "tier": 2,
+        "category": "established_wire_service",
+        "names": ("associated press", "ap news", "ap"),
+        "domains": ("apnews.com", "ap.org"),
+    },
+    {
+        "publisher": "Financial Times",
+        "tier": 3,
+        "category": "major_financial_publication",
+        "names": ("financial times", "ft"),
+        "domains": ("ft.com",),
+    },
+    {
+        "publisher": "Bloomberg",
+        "tier": 3,
+        "category": "major_financial_publication",
+        "names": ("bloomberg",),
+        "domains": ("bloomberg.com",),
+    },
+    {
+        "publisher": "CNBC",
+        "tier": 3,
+        "category": "major_financial_publication",
+        "names": ("cnbc",),
+        "domains": ("cnbc.com",),
+    },
+    {
+        "publisher": "The Wall Street Journal",
+        "tier": 3,
+        "category": "major_financial_publication",
+        "names": ("the wall street journal", "wall street journal", "wsj"),
+        "domains": ("wsj.com",),
+    },
+    {
+        "publisher": "MarketWatch",
+        "tier": 3,
+        "category": "major_financial_publication",
+        "names": ("marketwatch",),
+        "domains": ("marketwatch.com",),
+    },
+    {
+        "publisher": "Barron's",
+        "tier": 3,
+        "category": "major_financial_publication",
+        "names": ("barron's", "barrons"),
+        "domains": ("barrons.com",),
+    },
+    {
+        "publisher": "Forbes",
+        "tier": 3,
+        "category": "major_financial_publication",
+        "names": ("forbes",),
+        "domains": ("forbes.com",),
+    },
+    {
+        "publisher": "Fortune",
+        "tier": 3,
+        "category": "major_financial_publication",
+        "names": ("fortune",),
+        "domains": ("fortune.com",),
+    },
+    {
+        "publisher": "The Economist",
+        "tier": 3,
+        "category": "major_financial_publication",
+        "names": ("the economist", "economist"),
+        "domains": ("economist.com",),
+    },
+    {
+        "publisher": "Business Insider",
+        "tier": 3,
+        "category": "major_financial_publication",
+        "names": ("business insider",),
+        "domains": ("businessinsider.com",),
+    },
+    {
+        "publisher": "Morningstar",
+        "tier": 3,
+        "category": "major_financial_publication",
+        "names": ("morningstar",),
+        "domains": ("morningstar.com",),
+    },
+    {
+        "publisher": "BBC News",
+        "tier": 3,
+        "category": "major_financial_publication",
+        "names": ("bbc business",),
+        "domains": (),
+    },
+    {
+        "publisher": "Sky News",
+        "tier": 3,
+        "category": "major_financial_publication",
+        "names": ("sky news business",),
+        "domains": (),
+    },
+    {
+        "publisher": "CNN",
+        "tier": 3,
+        "category": "major_financial_publication",
+        "names": ("cnn business",),
+        "domains": (),
+    },
+    {
+        "publisher": "BBC News",
+        "tier": 4,
+        "category": "established_news_organisation",
+        "names": ("bbc news", "bbc"),
+        "domains": ("bbc.com", "bbc.co.uk"),
+    },
+    {
+        "publisher": "Sky News",
+        "tier": 4,
+        "category": "established_news_organisation",
+        "names": ("sky news",),
+        "domains": ("news.sky.com",),
+    },
+    {
+        "publisher": "CNN",
+        "tier": 4,
+        "category": "established_news_organisation",
+        "names": ("cnn",),
+        "domains": ("cnn.com",),
+    },
+    {
+        "publisher": "Fox News",
+        "tier": 4,
+        "category": "established_news_organisation",
+        "names": ("fox news",),
+        "domains": ("foxnews.com", "foxbusiness.com"),
+    },
+    {
+        "publisher": "Al Jazeera",
+        "tier": 4,
+        "category": "established_news_organisation",
+        "names": ("al jazeera",),
+        "domains": ("aljazeera.com",),
+    },
+    {
+        "publisher": "The Guardian",
+        "tier": 4,
+        "category": "established_news_organisation",
+        "names": ("the guardian", "guardian business"),
+        "domains": ("theguardian.com",),
+    },
+    {
+        "publisher": "The Times",
+        "tier": 4,
+        "category": "established_news_organisation",
+        "names": ("the times", "times of london"),
+        "domains": ("thetimes.com", "thetimes.co.uk"),
+    },
+    {
+        "publisher": "The Telegraph",
+        "tier": 4,
+        "category": "established_news_organisation",
+        "names": ("the telegraph", "telegraph"),
+        "domains": ("telegraph.co.uk",),
+    },
+    {
+        "publisher": "The Independent",
+        "tier": 4,
+        "category": "established_news_organisation",
+        "names": ("the independent", "independent"),
+        "domains": ("independent.co.uk",),
+    },
+    {
+        "publisher": "NBC News",
+        "tier": 4,
+        "category": "established_news_organisation",
+        "names": ("nbc news", "nbc"),
+        "domains": ("nbcnews.com",),
+    },
+    {
+        "publisher": "CBS News",
+        "tier": 4,
+        "category": "established_news_organisation",
+        "names": ("cbs news", "cbs"),
+        "domains": ("cbsnews.com",),
+    },
+    {
+        "publisher": "ABC News",
+        "tier": 4,
+        "category": "established_news_organisation",
+        "names": ("abc news", "abc"),
+        "domains": ("abcnews.go.com", "abcnews.com"),
+    },
+    {
+        "publisher": "The New York Times",
+        "tier": 4,
+        "category": "established_news_organisation",
+        "names": ("the new york times", "new york times", "nyt"),
+        "domains": ("nytimes.com",),
+    },
+    {
+        "publisher": "The Washington Post",
+        "tier": 4,
+        "category": "established_news_organisation",
+        "names": ("the washington post", "washington post"),
+        "domains": ("washingtonpost.com",),
+    },
+)
+NEWSLETTER_CONDITIONAL_SYNDICATION_DOMAINS = ("finance.yahoo.com",)
+NEWSLETTER_TRUSTED_COMPANY_DOMAINS = (
+    "apple.com", "microsoft.com", "nvidia.com", "amazon.com", "abc.xyz",
+    "meta.com", "tesla.com", "bp.com", "shell.com", "astrazeneca.com",
+    "gsk.com", "jpmorganchase.com", "goldmansachs.com", "exxonmobil.com",
+    "visa.com", "mastercard.com", "pfizer.com", "merck.com", "abbvie.com",
+    "unitedhealthgroup.com", "lilly.com", "novonordisk.com", "boeing.com",
+    "lockheedmartin.com", "rtx.com", "intel.com", "amd.com", "broadcom.com",
+)
+NEWSLETTER_REJECTED_SOURCE_NAMES = (
+    "reddit", "facebook", "instagram", "tiktok", "twitter", "x",
+    "medium", "substack", "blogspot", "wordpress", "youtube",
+)
+NEWSLETTER_REJECTED_SOURCE_DOMAINS = (
+    "reddit.com", "facebook.com", "instagram.com", "tiktok.com", "x.com",
+    "twitter.com", "medium.com", "substack.com", "blogspot.com",
+    "wordpress.com", "youtube.com",
+)
+NEWSLETTER_UNSUITABLE_LANGUAGE_TERMS = (
+    "fuck", "fucking", "motherfucker", "shit", "bullshit", "asshole",
+    "dickhead", "bastard", "cunt", "bitch", "son of a bitch", "wtf",
+    "nigger", "faggot", "chink", "spic", "kike", "blowjob", "handjob",
+    "dildo",
+)
+NEWSLETTER_SENSATIONAL_WORDING_TERMS = (
+    "you won't believe", "you will not believe", "shocking secret",
+    "secret they don't want you to know", "must see", "get rich quick",
+    "guaranteed profit", "guaranteed returns", "this stock will explode",
+    "to the moon", "buy now", "can't miss", "cannot miss", "surefire",
+    "massive gains", "next bitcoin", "pump and dump", "100x", "1000x",
+)
+NEWSLETTER_OPINION_PATH_MARKERS = ("/opinion/", "/comment/", "/editorial/")
+NEWSLETTER_OPINION_TITLE_PREFIXES = ("opinion:", "comment:", "editorial:")
 NEWSLETTER_INVESTOR_LESSONS = (
     "A one-week move is context, not a complete investment case. Check valuation, risk and longer-term evidence before acting.",
     "Market leadership can rotate quickly. Compare broad participation with a handful of large winners before drawing conclusions.",
@@ -316,6 +673,14 @@ LAST_NEWSLETTER_NEWS_STATUS = {
     "last_error": "",
     "stale_excluded": 0,
     "duplicates_excluded": 0,
+    "unsuitable_language_excluded": 0,
+    "low_authority_sources_excluded": 0,
+    "irrelevant_stories_excluded": 0,
+    "unprofessional_wording_excluded": 0,
+    "excessive_capitalisation_excluded": 0,
+    "opinion_content_excluded": 0,
+    "preferred_sources_accepted": 0,
+    "source_rejection_reasons": {},
 }
 LAST_NEWSLETTER_MARKET_STATUS = {
     "status": "not_started",
@@ -4658,6 +5023,11 @@ def parse_newsletter_timestamp(value):
     return parsed.astimezone(timezone.utc)
 
 
+def newsletter_article_published_label(value):
+    published_at = parse_newsletter_timestamp(value)
+    return published_at.strftime("%d %B %Y") if published_at else ""
+
+
 def normalize_newsletter_title(title):
     text = re.sub(r"\s+", " ", str(title or "")).strip().lower()
     text = re.sub(r"[^\w\s]", " ", text, flags=re.UNICODE)
@@ -4693,6 +5063,229 @@ def canonical_newsletter_url(value):
         urlencode(sorted(clean_query)),
         "",
     ))
+
+
+def normalize_newsletter_source_name(value):
+    text = re.sub(r"[^a-z0-9]+", " ", str(value or "").strip().lower())
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def newsletter_hostname(value):
+    try:
+        return (urlsplit(str(value or "").strip()).hostname or "").lower()
+    except ValueError:
+        return ""
+
+
+def newsletter_domain_matches(hostname, expected_domain):
+    return hostname == expected_domain or hostname.endswith(f".{expected_domain}")
+
+
+def newsletter_source_name_segments(value):
+    normalized = normalize_newsletter_source_name(value)
+    if not normalized:
+        return []
+    segments = re.split(
+        r"\s+(?:via|from|republished by|syndicated by)\s+|\s*/\s*|\s*\|\s*",
+        normalized,
+    )
+    return [segment.strip() for segment in segments if segment.strip()]
+
+
+def newsletter_source_profile_from_name(value):
+    segments = newsletter_source_name_segments(value)
+    for segment in segments:
+        for profile in NEWSLETTER_TRUSTED_PUBLISHERS:
+            aliases = {
+                normalize_newsletter_source_name(name)
+                for name in profile["names"]
+            }
+            if segment in aliases:
+                return profile
+    return None
+
+
+def newsletter_source_profile_from_domain(hostname):
+    domain_profiles = sorted(
+        (
+            (domain, profile)
+            for profile in NEWSLETTER_TRUSTED_PUBLISHERS
+            for domain in profile["domains"]
+        ),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    )
+    for domain, profile in domain_profiles:
+        if newsletter_domain_matches(hostname, domain):
+            return profile
+    return None
+
+
+def newsletter_source_quality(article):
+    source = str(article.get("source") or "").strip()
+    normalized_source = normalize_newsletter_source_name(source)
+    canonical_url = article.get("canonical_url") or article.get("url") or ""
+    hostname = newsletter_hostname(canonical_url)
+    rejected_name = normalized_source in {
+        normalize_newsletter_source_name(name)
+        for name in NEWSLETTER_REJECTED_SOURCE_NAMES
+    }
+    rejected_domain = any(
+        newsletter_domain_matches(hostname, domain)
+        for domain in NEWSLETTER_REJECTED_SOURCE_DOMAINS
+    )
+    if rejected_name or rejected_domain:
+        return {
+            "eligible": False,
+            "tier": None,
+            "tier_label": "rejected_source",
+            "original_source": False,
+            "display_source": source,
+        }
+
+    source_profile = newsletter_source_profile_from_name(source)
+    domain_profile = newsletter_source_profile_from_domain(hostname)
+    yahoo_syndication = any(
+        newsletter_domain_matches(hostname, domain)
+        for domain in NEWSLETTER_CONDITIONAL_SYNDICATION_DOMAINS
+    )
+    if yahoo_syndication and source_profile:
+        return {
+            "eligible": True,
+            "tier": source_profile["tier"],
+            "tier_label": source_profile["category"],
+            "original_source": False,
+            "display_source": source_profile["publisher"],
+        }
+
+    if domain_profile:
+        if (
+            source_profile
+            and source_profile["publisher"] != domain_profile["publisher"]
+        ):
+            return {
+                "eligible": False,
+                "tier": None,
+                "tier_label": "publisher_domain_mismatch",
+                "original_source": False,
+                "display_source": source,
+            }
+        tier = min(
+            domain_profile["tier"],
+            source_profile["tier"] if source_profile else domain_profile["tier"],
+        )
+        category = (
+            source_profile["category"]
+            if source_profile and source_profile["tier"] == tier
+            else domain_profile["category"]
+        )
+        return {
+            "eligible": True,
+            "tier": tier,
+            "tier_label": category,
+            "original_source": True,
+            "display_source": domain_profile["publisher"],
+        }
+
+    path = ""
+    try:
+        path = urlsplit(str(canonical_url)).path.lower()
+    except ValueError:
+        pass
+    government_domain = hostname.endswith(".gov")
+    trusted_company_domain = any(
+        newsletter_domain_matches(hostname, domain)
+        for domain in NEWSLETTER_TRUSTED_COMPANY_DOMAINS
+    )
+    company_primary_url = (
+        trusted_company_domain
+        and (
+            hostname.startswith(("investor.", "investors.", "ir."))
+            or any(
+                marker in path
+                for marker in (
+                    "/investor-relations", "/investors", "/regulatory-news",
+                    "/press-releases", "/newsroom",
+                )
+            )
+        )
+    )
+    if source and hostname and (government_domain or company_primary_url):
+        return {
+            "eligible": True,
+            "tier": 1,
+            "tier_label": "official_primary_source",
+            "original_source": True,
+            "display_source": source,
+        }
+
+    return {
+        "eligible": False,
+        "tier": None,
+        "tier_label": (
+            "untrusted_or_misleading_domain"
+            if source_profile else "unknown_or_low_authority_source"
+        ),
+        "original_source": False,
+        "display_source": source,
+    }
+
+
+def newsletter_language_pattern(term):
+    words = str(term or "").lower().split()
+    encoded_words = []
+    for word in words:
+        encoded_words.append(r"[\W_]*".join(re.escape(character) for character in word))
+    return r"(?<!\w)" + r"[\W_]+".join(encoded_words) + r"(?!\w)"
+
+
+def newsletter_text_contains_unsuitable_language(value):
+    text = str(value or "")
+    return any(
+        re.search(newsletter_language_pattern(term), text, flags=re.IGNORECASE)
+        for term in NEWSLETTER_UNSUITABLE_LANGUAGE_TERMS
+    )
+
+
+def newsletter_article_has_unsuitable_language(article):
+    return any(
+        newsletter_text_contains_unsuitable_language(article.get(field))
+        for field in ("title", "description", "summary")
+    )
+
+
+def newsletter_article_has_sensational_wording(article):
+    combined_text = " ".join(
+        str(article.get(field) or "")
+        for field in ("title", "description", "summary")
+    ).lower()
+    return any(
+        term in combined_text for term in NEWSLETTER_SENSATIONAL_WORDING_TERMS
+    )
+
+
+def newsletter_article_has_excessive_capitalisation(article):
+    title = str(article.get("title") or "").strip()
+    letters = [character for character in title if character.isalpha()]
+    if len(letters) < 12:
+        return False
+    uppercase_count = sum(1 for character in letters if character.isupper())
+    return uppercase_count / len(letters) >= 0.75
+
+
+def newsletter_article_is_opinion(article):
+    title = str(article.get("title") or "").strip().lower()
+    path = ""
+    try:
+        path = urlsplit(
+            str(article.get("canonical_url") or article.get("url") or "")
+        ).path.lower()
+    except ValueError:
+        pass
+    return (
+        title.startswith(NEWSLETTER_OPINION_TITLE_PREFIXES)
+        or any(marker in path for marker in NEWSLETTER_OPINION_PATH_MARKERS)
+    )
 
 
 def newsletter_title_hash(normalized_title):
@@ -4739,6 +5332,12 @@ def normalize_weekly_news_article(article, provider, fetched_at=None):
             or ""
         ).strip(),
         "title": title,
+        "description": re.sub(
+            r"\s+", " ", str(article.get("description") or "")
+        ).strip(),
+        "summary": re.sub(
+            r"\s+", " ", str(article.get("summary") or "")
+        ).strip(),
         "normalized_title": normalized_title,
         "url": url,
         "canonical_url": canonical_url,
@@ -4909,6 +5508,7 @@ def filter_weekly_news_articles(raw_articles, provider, window, fetched_at=None)
 
 def fetch_weekly_news_articles(window, limit=12):
     fetched_at = datetime.now(timezone.utc)
+    candidate_limit = min(max(limit * 4, 40), 100)
     candidates = []
     provider_errors = []
     stale_excluded = 0
@@ -4917,7 +5517,7 @@ def fetch_weekly_news_articles(window, limit=12):
     if NEWSAPI_KEY:
         providers_attempted += 1
         try:
-            raw_articles = fetch_newsapi_weekly_articles(window, max(limit * 2, 20))
+            raw_articles = fetch_newsapi_weekly_articles(window, candidate_limit)
             filtered, excluded = filter_weekly_news_articles(
                 raw_articles, "newsapi", window, fetched_at
             )
@@ -4928,7 +5528,7 @@ def fetch_weekly_news_articles(window, limit=12):
 
     providers_attempted += 1
     try:
-        raw_articles = fetch_gdelt_weekly_articles(window, max(limit * 2, 20))
+        raw_articles = fetch_gdelt_weekly_articles(window, candidate_limit)
         filtered, excluded = filter_weekly_news_articles(
             raw_articles, "gdelt", window, fetched_at
         )
@@ -4939,12 +5539,54 @@ def fetch_weekly_news_articles(window, limit=12):
 
     history = load_newsletter_story_history().get("stories", {})
     previous_stories = list(history.values())
+    suitable_candidates = []
+    unsuitable_language_excluded = 0
+    low_authority_sources_excluded = 0
+    irrelevant_stories_excluded = 0
+    unprofessional_wording_excluded = 0
+    excessive_capitalisation_excluded = 0
+    opinion_content_excluded = 0
+    preferred_sources_accepted = 0
+    source_rejection_reasons = {}
+    for article in candidates:
+        if newsletter_article_has_unsuitable_language(article):
+            unsuitable_language_excluded += 1
+            continue
+        if newsletter_article_has_sensational_wording(article):
+            unprofessional_wording_excluded += 1
+            continue
+        if newsletter_article_has_excessive_capitalisation(article):
+            excessive_capitalisation_excluded += 1
+            continue
+        if newsletter_article_is_opinion(article):
+            opinion_content_excluded += 1
+            continue
+        source_quality = newsletter_source_quality(article)
+        if not source_quality["eligible"]:
+            low_authority_sources_excluded += 1
+            reason = source_quality.get("tier_label", "untrusted_source")
+            source_rejection_reasons[reason] = (
+                source_rejection_reasons.get(reason, 0) + 1
+            )
+            continue
+        if not newsletter_headline_is_relevant(article):
+            irrelevant_stories_excluded += 1
+            continue
+        suitable_candidates.append({**article, **source_quality})
+        preferred_sources_accepted += 1
+
     selected = []
     duplicates_excluded = 0
     for article in sorted(
-        candidates,
-        key=lambda item: item.get("published_at", ""),
-        reverse=True,
+        suitable_candidates,
+        key=lambda item: (
+            int(item.get("tier") or 99),
+            not bool(item.get("original_source")),
+            -(
+                parse_newsletter_timestamp(item.get("published_at"))
+                or datetime.min.replace(tzinfo=timezone.utc)
+            ).timestamp(),
+        ),
     ):
         matches = [
             previous for previous in [*selected, *previous_stories]
@@ -4973,12 +5615,45 @@ def fetch_weekly_news_articles(window, limit=12):
         "last_error": provider_errors[-1] if provider_errors else "",
         "stale_excluded": stale_excluded,
         "duplicates_excluded": duplicates_excluded,
+        "unsuitable_language_excluded": unsuitable_language_excluded,
+        "low_authority_sources_excluded": low_authority_sources_excluded,
+        "irrelevant_stories_excluded": irrelevant_stories_excluded,
+        "unprofessional_wording_excluded": unprofessional_wording_excluded,
+        "excessive_capitalisation_excluded": excessive_capitalisation_excluded,
+        "opinion_content_excluded": opinion_content_excluded,
+        "preferred_sources_accepted": preferred_sources_accepted,
+        "source_rejection_reasons": source_rejection_reasons,
     })
+    app.logger.info(
+        "Newsletter news selection: accepted=%s preferred=%s language_rejected=%s "
+        "low_authority_rejected=%s source_rejections=%s irrelevant_rejected=%s "
+        "unprofessional_rejected=%s capitalisation_rejected=%s opinion_rejected=%s "
+        "duplicate_rejected=%s stale_or_invalid_rejected=%s",
+        len(selected),
+        preferred_sources_accepted,
+        unsuitable_language_excluded,
+        low_authority_sources_excluded,
+        source_rejection_reasons,
+        irrelevant_stories_excluded,
+        unprofessional_wording_excluded,
+        excessive_capitalisation_excluded,
+        opinion_content_excluded,
+        duplicates_excluded,
+        stale_excluded,
+    )
     return selected, {
         "coverage_status": coverage_status,
         "provider_errors": provider_errors,
         "stale_stories_excluded": stale_excluded,
         "duplicate_stories_excluded": duplicates_excluded,
+        "unsuitable_language_excluded": unsuitable_language_excluded,
+        "low_authority_sources_excluded": low_authority_sources_excluded,
+        "irrelevant_stories_excluded": irrelevant_stories_excluded,
+        "unprofessional_wording_excluded": unprofessional_wording_excluded,
+        "excessive_capitalisation_excluded": excessive_capitalisation_excluded,
+        "opinion_content_excluded": opinion_content_excluded,
+        "preferred_sources_accepted": preferred_sources_accepted,
+        "source_rejection_reasons": source_rejection_reasons,
     }
 
 
@@ -5426,6 +6101,10 @@ def newsletter_headline_is_relevant(article):
     headline = str(article.get("title") or "").strip().lower()
     if not headline:
         return False
+    article_text = " ".join(
+        str(article.get(field) or "").strip().lower()
+        for field in ("title", "description", "summary")
+    )
 
     healthcare_exclusion_terms = (
         "fda panel", "flu vaccine", "vaccine", "mrna",
@@ -5437,8 +6116,25 @@ def newsletter_headline_is_relevant(article):
         "s&p", "dow", "ftse", "listed", "ticker",
     )
     if (
-        any(term in headline for term in healthcare_exclusion_terms)
-        and not any(term in headline for term in healthcare_market_override_terms)
+        any(term in article_text for term in healthcare_exclusion_terms)
+        and not any(term in article_text for term in healthcare_market_override_terms)
+    ):
+        return False
+
+    political_terms = (
+        "election", "president", "prime minister", "parliament", "congress",
+        "war", "terrorism", "sanctions", "political", "tariff",
+        "trade dispute", "defence", "defense",
+    )
+    financial_connection_terms = (
+        "stock", "share", "market", "listed", "company", "companies",
+        "economy", "economic", "interest rate", "inflation", "tax",
+        "regulation", "regulator", "trade", "energy", "currency",
+        "investor", "earnings", "revenue", "bond", "spending", "sector",
+    )
+    if (
+        any(term in article_text for term in political_terms)
+        and not any(term in article_text for term in financial_connection_terms)
     ):
         return False
 
@@ -5447,8 +6143,12 @@ def newsletter_headline_is_relevant(article):
         "interest rate", "interest rates", "rate cut", "rate hike",
         "federal reserve", "the fed", "bank of england", "inflation",
         "artificial intelligence", " ai ", "semiconductor", "chipmaker",
-        "defence", "defense", "technology", "tech stocks", "wall street",
+        "technology", "tech stocks", "wall street",
         "ftse", "s&p 500", "nasdaq", "dow jones", "bond yields",
+        "central bank", "economic data", "gdp", "unemployment", "jobs report",
+        "regulator", "regulatory", "sec ", " fca", "stock exchange",
+        "bankruptcy", "merger", "acquisition", "ipo", "dividend",
+        "quarterly results", "company results", "oil prices",
     )
     market_context_terms = (
         "stock", "stocks", "shares", "equity", "equities", "market",
@@ -5460,8 +6160,8 @@ def newsletter_headline_is_relevant(article):
         "disease", "patient", "patients", "clinical", "trial", "research",
         "science", "scientist", "hospital", "vaccine",
     )
-    padded_headline = f" {headline} "
-    if any(term in padded_headline for term in priority_terms):
+    padded_article_text = f" {article_text} "
+    if any(term in padded_article_text for term in priority_terms):
         return True
 
     listed_company_terms = (
@@ -5471,11 +6171,11 @@ def newsletter_headline_is_relevant(article):
         "eli lilly", "novo nordisk", "astrazeneca", "gsk", "boeing",
         "lockheed", "raytheon", "intel", "amd", "broadcom",
     )
-    if any(term in headline for term in listed_company_terms):
+    if any(term in article_text for term in listed_company_terms):
         return True
 
-    if any(term in headline for term in general_health_terms):
-        return any(term in headline for term in market_context_terms)
+    if any(term in article_text for term in general_health_terms):
+        return any(term in article_text for term in market_context_terms)
 
     return False
 
@@ -6137,6 +6837,12 @@ def build_free_weekly_newsletter(
         "provider_errors": [],
         "stale_stories_excluded": 0,
         "duplicate_stories_excluded": 0,
+        "unsuitable_language_excluded": 0,
+        "low_authority_sources_excluded": 0,
+        "irrelevant_stories_excluded": 0,
+        "unprofessional_wording_excluded": 0,
+        "excessive_capitalisation_excluded": 0,
+        "opinion_content_excluded": 0,
     }
     comparison = comparison or {
         "comparisons": [],
@@ -6157,8 +6863,11 @@ def build_free_weekly_newsletter(
     trending = [
         {
             "headline": article["title"],
-            "source": article["source"],
+            "source": article.get("display_source") or article["source"],
             "published_at": article["published_at"],
+            "published_label": newsletter_article_published_label(
+                article["published_at"]
+            ),
             "url": article["canonical_url"],
         }
         for article in verified_articles
@@ -6168,6 +6877,7 @@ def build_free_weekly_newsletter(
             "headline": "Verified weekly news coverage was unavailable for this reporting window.",
             "source": "StockRadar weekly verification",
             "published_at": "",
+            "published_label": "",
             "url": "",
         }]
 
@@ -6391,7 +7101,13 @@ def build_newsletter_plain_text(draft):
 
     lines.extend(["", "VERIFIED WEEKLY NEWS"])
     for item in draft["trending_vs_forecasting"]["trending"]:
-        lines.append(f"- {item['headline']} ({item['source']})")
+        article_link = f" — {item['url']}" if item.get("url") else ""
+        published_label = (
+            f", {item['published_label']}" if item.get("published_label") else ""
+        )
+        lines.append(
+            f"- {item['headline']} ({item['source']}{published_label}){article_link}"
+        )
 
     lines.extend(["", "WHAT MAY MATTER NEXT"])
     for item in draft["trending_vs_forecasting"]["forecasting"]:
@@ -6538,6 +7254,10 @@ def record_newsletter_story_usage(issue):
                 "provider": article.get("provider", ""),
                 "provider_article_id": article.get("provider_article_id", ""),
                 "title": article.get("title", ""),
+                "source": article.get("source", ""),
+                "display_source": article.get("display_source", ""),
+                "tier": article.get("tier"),
+                "tier_label": article.get("tier_label", ""),
                 "normalized_title": article.get("normalized_title", ""),
                 "canonical_url": article.get("canonical_url", ""),
                 "normalized_title_hash": article.get("normalized_title_hash", ""),
@@ -6626,6 +7346,27 @@ def _build_weekly_newsletter_issue_without_generation_lock(
     )
     metadata["stale_stories_excluded"] = news_status.get(
         "stale_stories_excluded", 0
+    )
+    metadata["unsuitable_language_excluded"] = news_status.get(
+        "unsuitable_language_excluded", 0
+    )
+    metadata["low_authority_sources_excluded"] = news_status.get(
+        "low_authority_sources_excluded", 0
+    )
+    metadata["irrelevant_stories_excluded"] = news_status.get(
+        "irrelevant_stories_excluded", 0
+    )
+    metadata["unprofessional_wording_excluded"] = news_status.get(
+        "unprofessional_wording_excluded", 0
+    )
+    metadata["excessive_capitalisation_excluded"] = news_status.get(
+        "excessive_capitalisation_excluded", 0
+    )
+    metadata["opinion_content_excluded"] = news_status.get(
+        "opinion_content_excluded", 0
+    )
+    metadata["source_rejection_reasons"] = dict(
+        news_status.get("source_rejection_reasons") or {}
     )
 
     draft["issue_date_label"] = metadata["issue_date_label"]
@@ -6875,7 +7616,7 @@ newsletter_issue_body_html = """
 <h2>Verified weekly news</h2>
 <ul>
 {% for item in draft.trending_vs_forecasting.trending %}
-<li>{{ item.headline }} — {{ item.source }}</li>
+<li>{% if item.url %}<a href="{{ item.url }}" rel="noopener noreferrer">{{ item.headline }}</a>{% else %}{{ item.headline }}{% endif %} — {{ item.source }}{% if item.published_label %} · {{ item.published_label }}{% endif %}</li>
 {% endfor %}
 </ul>
 <h3>What may matter next</h3>
@@ -7965,6 +8706,27 @@ def newsletter_status_snapshot(now=None):
         "current_issue_market_snapshot_count": int(metadata.get("market_snapshot_count") or 0),
         "duplicate_stories_excluded": int(metadata.get("duplicate_stories_excluded") or 0),
         "stale_stories_excluded": int(metadata.get("stale_stories_excluded") or 0),
+        "unsuitable_language_excluded": int(
+            metadata.get("unsuitable_language_excluded") or 0
+        ),
+        "low_authority_sources_excluded": int(
+            metadata.get("low_authority_sources_excluded") or 0
+        ),
+        "irrelevant_stories_excluded": int(
+            metadata.get("irrelevant_stories_excluded") or 0
+        ),
+        "unprofessional_wording_excluded": int(
+            metadata.get("unprofessional_wording_excluded") or 0
+        ),
+        "excessive_capitalisation_excluded": int(
+            metadata.get("excessive_capitalisation_excluded") or 0
+        ),
+        "opinion_content_excluded": int(
+            metadata.get("opinion_content_excluded") or 0
+        ),
+        "source_rejection_reasons": dict(
+            metadata.get("source_rejection_reasons") or {}
+        ),
         "latest_market_snapshot_at": (
             metadata.get("window_end_utc", "")
             if metadata.get("market_snapshot_count") else ""
@@ -8478,7 +9240,7 @@ newsletter_latest_html = """
 <section class="section">
 <h2>This Week in the Market</h2>
 <h3>Verified weekly news</h3>
-<ul>{% for item in draft.trending_vs_forecasting.trending %}<li>{{ item.headline }} — {{ item.source }}</li>{% endfor %}</ul>
+<ul>{% for item in draft.trending_vs_forecasting.trending %}<li>{% if item.url %}<a href="{{ item.url }}" rel="noopener noreferrer">{{ item.headline }}</a>{% else %}{{ item.headline }}{% endif %} — {{ item.source }}{% if item.published_label %} · {{ item.published_label }}{% endif %}</li>{% endfor %}</ul>
 <h3>What may matter next</h3>
 <ul>{% for item in draft.trending_vs_forecasting.forecasting %}<li>{{ item }}</li>{% endfor %}</ul>
 </section>

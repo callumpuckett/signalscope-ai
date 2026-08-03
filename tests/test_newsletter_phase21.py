@@ -26,8 +26,8 @@ def configure_storage(monkeypatch, tmp_path):
 def article_at(timestamp, **updates):
     article = {
         "title": "Stock market rises after Bank of England rate decision",
-        "url": "https://example.test/markets/story?utm_source=test",
-        "source": "Example News",
+        "url": "https://www.reuters.com/markets/story?utm_source=test",
+        "source": "Reuters",
         "publishedAt": timestamp,
         "id": "article-1",
     }
@@ -209,11 +209,11 @@ def test_canonical_url_and_strong_story_identifiers_deduplicate():
         article_at(
             "2026-07-20T13:00:00Z",
             id="article-2",
-            url="https://example.test/markets/story?utm_campaign=copy",
+            url="https://www.reuters.com/markets/story?utm_campaign=copy",
         ),
         "gdelt",
     )
-    assert first["canonical_url"] == "https://example.test/markets/story"
+    assert first["canonical_url"] == "https://www.reuters.com/markets/story"
     assert app.newsletter_story_identifiers_match(first, second)
 
 
@@ -243,7 +243,7 @@ def test_meaningful_new_development_is_allowed():
         article_at(
             "2026-07-18T08:00:00Z",
             title="Regulator considers bank merger decision",
-            url="https://example.test/merger/considered",
+            url="https://www.reuters.com/markets/merger/considered",
         ),
         "newsapi",
     )
@@ -274,13 +274,13 @@ def test_prior_edition_duplicate_is_excluded_but_meaningful_update_is_allowed():
     duplicate_raw = article_at(
         "2026-07-19T08:00:00Z",
         title="Regulator considers bank merger decision",
-        url="https://syndicated.test/merger/considered",
+        url="https://www.reuters.com/markets/merger/considered-copy",
         id="syndicated",
     )
     update_raw = article_at(
         "2026-07-20T12:00:00Z",
         title="Regulator approves bank merger after final decision",
-        url="https://example.test/merger/approved",
+        url="https://www.reuters.com/markets/merger/approved",
     )
     with (
         patch.object(app, "NEWSAPI_KEY", "configured"),
