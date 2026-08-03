@@ -77,8 +77,145 @@ except ImportError:
 app = Flask(__name__)
 
 
+NEWSLETTER_TAB_MARKER = 'data-stockradar-newsletter-tab="true"'
+NEWSLETTER_TAB_EXCLUDED_PATHS = frozenset({
+    "/newsletter",
+    "/login",
+    "/logout",
+    "/create-checkout-session",
+    "/checkout-success",
+    "/stripe-webhook",
+    "/owner",
+    "/deploy-version",
+    "/health",
+    "/healthz",
+    "/news-health",
+})
+NEWSLETTER_TAB_EXCLUDED_PREFIXES = (
+    "/newsletter/",
+    "/admin/",
+    "/api/",
+)
+NEWSLETTER_TAB_STYLES = """
+<style id="stockradar-newsletter-tab-styles">
+.stockradar-newsletter-tab {
+    position: fixed;
+    z-index: 80;
+    top: 50%;
+    right: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 15px 10px;
+    border: 1px solid rgba(0, 255, 170, 0.48);
+    border-right: 0;
+    border-radius: 16px 0 0 16px;
+    background: linear-gradient(155deg, #0f172a, #111827);
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.38), 0 0 22px rgba(0, 255, 170, 0.10);
+    color: #6ee7b7;
+    font: 900 13px/1.1 Arial, sans-serif;
+    letter-spacing: 0.06em;
+    text-decoration: none;
+    text-orientation: mixed;
+    writing-mode: vertical-rl;
+    transform: translateY(-50%);
+    transition: color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+.stockradar-newsletter-tab:hover {
+    color: #fde68a;
+    border-color: rgba(253, 230, 138, 0.75);
+    box-shadow: 0 14px 38px rgba(0, 0, 0, 0.44), 0 0 26px rgba(253, 230, 138, 0.14);
+    transform: translate(-2px, -50%);
+}
+.stockradar-newsletter-tab:focus-visible {
+    color: #fde68a;
+    outline: 3px solid #fbbf24;
+    outline-offset: 4px;
+}
+@media (max-width: 700px) {
+    .stockradar-newsletter-tab {
+        top: auto;
+        right: max(14px, env(safe-area-inset-right));
+        bottom: max(18px, calc(env(safe-area-inset-bottom) + 14px));
+        max-width: calc(100vw - 28px);
+        padding: 11px 15px;
+        border-right: 1px solid rgba(0, 255, 170, 0.48);
+        border-radius: 999px;
+        font-size: 12px;
+        letter-spacing: 0.03em;
+        text-orientation: mixed;
+        writing-mode: horizontal-tb;
+        transform: none;
+    }
+    .stockradar-newsletter-tab:hover {
+        transform: translateY(-2px);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .stockradar-newsletter-tab { transition: none; }
+}
+</style>
+"""
+NEWSLETTER_TAB_LINK = """
+<a class="stockradar-newsletter-tab" data-stockradar-newsletter-tab="true" href="/newsletter/latest" aria-label="Read the latest StockRadar newsletter">Newsletter</a>
+"""
+
+
+def should_inject_newsletter_tab(response):
+    path = request.path.rstrip("/") or "/"
+    if (
+        request.method not in {"GET", "HEAD"}
+        or response.status_code != 200
+        or response.mimetype != "text/html"
+        or response.direct_passthrough
+        or response.is_streamed
+        or response.headers.get("Content-Encoding")
+        or response.headers.get("Content-Disposition")
+    ):
+        return False
+
+    if path in NEWSLETTER_TAB_EXCLUDED_PATHS:
+        return False
+
+    return not any(
+        path == prefix.rstrip("/") or path.startswith(prefix)
+        for prefix in NEWSLETTER_TAB_EXCLUDED_PREFIXES
+    )
+
+
+def inject_newsletter_tab(response):
+    if not should_inject_newsletter_tab(response):
+        return response
+
+    page = response.get_data(as_text=True)
+    if (
+        NEWSLETTER_TAB_MARKER in page
+        or not re.search(r"</head\s*>", page, flags=re.IGNORECASE)
+        or not re.search(r"</body\s*>", page, flags=re.IGNORECASE)
+    ):
+        return response
+
+    page = re.sub(
+        r"</head\s*>",
+        f"{NEWSLETTER_TAB_STYLES}\n</head>",
+        page,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    page = re.sub(
+        r"</body\s*>",
+        f"{NEWSLETTER_TAB_LINK}\n</body>",
+        page,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    response.set_data(page)
+    return response
+
+
 @app.after_request
 def add_security_headers(response):
+    response = inject_newsletter_tab(response)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
@@ -9832,9 +9969,11 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
     <div class="nav-section-label">Account</div>
     {% if owner_logged_in %}
         <a class="nav-link pro-button" href="/owner">✅ Premium Active</a>
+        <a class="nav-link account-manage-subscription" data-account-manage-subscription="true" href="/manage-subscription">Manage Subscription</a>
         <a class="nav-link" href="/logout">🚪 Logout</a>
     {% elif has_premium_access %}
         <a class="nav-link pro-button" href="/manage-subscription">✅ Premium Active</a>
+        <a class="nav-link account-manage-subscription" data-account-manage-subscription="true" href="/manage-subscription">Manage Subscription</a>
         <a class="nav-link" href="/logout">🚪 End Premium Session</a>
     {% else %}
         <a class="nav-link pro-button" href="/upgrade">🚀 Upgrade to Premium — £5/month</a>
