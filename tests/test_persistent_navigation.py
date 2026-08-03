@@ -1,3 +1,4 @@
+import inspect
 from unittest.mock import patch
 
 from flask import Response
@@ -5,7 +6,6 @@ from flask import Response
 import app
 
 
-HTML_PAGE = "<!doctype html><html><head><title>Page</title></head><body><main>Content</main></body></html>"
 DASHBOARD_DATA = {
     "market_status": {
         "uk_status": "CLOSED",
@@ -13,6 +13,39 @@ DASHBOARD_DATA = {
         "us_status": "CLOSED",
         "us_time": "00:00",
     }
+}
+STOCK_CHART_DATA = {
+    "ok": False,
+    "labels": [],
+    "prices": [],
+    "start_price": "—",
+    "end_price": "—",
+    "change_amount": "—",
+    "change_percent": "—",
+    "direction": "hold",
+    "error": "Test data unavailable",
+}
+STOCK_LIFETIME_DATA = {
+    "start_price": "—",
+    "end_price": "—",
+    "change_amount": "—",
+    "change_percent": "—",
+    "direction": "hold",
+}
+DIVIDEND_CONTEXT = {
+    "income_status": app.INCOME_STATUS_UNAVAILABLE,
+    "is_etf": False,
+    "dividend_label": "Dividend",
+    "dividend_yield": "Not available",
+    "annual_dividend": "Not available",
+    "ex_dividend_date": "Not available",
+    "payout_ratio": "Not available",
+    "fundamentals": [],
+    "no_data_message": "Dividend data is temporarily unavailable.",
+    "beginner_explanation": "Dividend data is temporarily unavailable.",
+    "dividend_frequency_note": "Confirm payment details with the company.",
+    "risk_note": "Dividend data is educational only.",
+    "source_note": "Source data is currently unavailable.",
 }
 
 
@@ -33,62 +66,110 @@ def render_dashboard(owner=False, premium=False):
         return client.get("/")
 
 
-def assert_newsletter_tab_absent(response):
-    assert app.NEWSLETTER_TAB_MARKER not in response.get_data(as_text=True)
+def render_stock_page():
+    with (
+        patch.object(app, "stock_history", return_value=STOCK_CHART_DATA),
+        patch.object(app, "stock_lifetime_growth", return_value=STOCK_LIFETIME_DATA),
+        patch.object(app, "get_dividend_context", return_value=DIVIDEND_CONTEXT),
+        patch.object(app, "premium_entitlement_active", return_value=False),
+    ):
+        return app.app.test_client().get("/stock/AAPL")
 
 
-def test_newsletter_tab_appears_once_on_homepage_with_accessible_signup_link():
+def marker_count(response):
+    return response.get_data(as_text=True).count(app.NEWSLETTER_SIDE_TAB_MARKER)
+
+
+def assert_newsletter_tab(response, expected=True):
+    page = response.get_data(as_text=True)
+    assert marker_count(response) == (1 if expected else 0)
+    if expected:
+        assert 'href="/newsletter"' in page
+        assert 'href="/newsletter/latest"' not in page
+        assert (
+            'aria-label="Read and subscribe to the StockRadar newsletter"'
+            in page
+        )
+
+
+def test_shared_component_contains_accessible_desktop_and_mobile_styles():
+    component = app.newsletter_side_tab()
+
+    assert component == app.NEWSLETTER_SIDE_TAB_COMPONENT
+    assert component.count(app.NEWSLETTER_SIDE_TAB_MARKER) == 1
+    assert 'href="/newsletter"' in component
+    assert 'href="/newsletter/latest"' not in component
+    assert 'aria-label="Read and subscribe to the StockRadar newsletter"' in component
+    assert "position: fixed" in component
+    assert "z-index: 10000" in component
+    assert "writing-mode: vertical-rl" in component
+    assert ".stockradar-newsletter-tab:focus-visible" in component
+    assert "@media (max-width: 700px)" in component
+    assert "writing-mode: horizontal-tb" in component
+    assert "env(safe-area-inset-right)" in component
+    assert "env(safe-area-inset-bottom)" in component
+    assert "border-radius: 999px" in component
+
+
+def test_homepage_template_renders_side_tab_once_as_a_body_child():
     response = render_dashboard()
     page = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert page.count(app.NEWSLETTER_TAB_MARKER) == 1
-    assert 'href="/newsletter"' in page
-    assert 'href="/newsletter/latest"' not in page
-    assert 'aria-label="Open the StockRadar newsletter page"' in page
-    assert page.index('id="stockradar-newsletter-tab-styles"') < page.index("</head>")
-    assert page.index(app.NEWSLETTER_TAB_MARKER) < page.index("</body>")
+    assert_newsletter_tab(response)
+    assert page.index(app.NEWSLETTER_SIDE_TAB_MARKER) < page.index("</body>")
+    assert "{{ newsletter_side_tab() | safe }}" in app.html
 
 
-def test_newsletter_tab_appears_on_a_normal_stock_route():
-    with patch.dict(app.app.view_functions, {"stock_detail": lambda symbol: HTML_PAGE}):
-        response = app.app.test_client().get("/stock/AAPL")
+def test_stock_report_template_renders_side_tab_once():
+    response = render_stock_page()
 
-    page = response.get_data(as_text=True)
     assert response.status_code == 200
-    assert page.count(app.NEWSLETTER_TAB_MARKER) == 1
-    assert 'href="/newsletter"' in page
-    assert 'href="/newsletter/latest"' not in page
+    assert_newsletter_tab(response)
+    assert "{{ newsletter_side_tab() | safe }}" in app.stock_detail_html
 
 
-def test_newsletter_tab_appears_on_other_normal_public_routes():
+def test_normal_public_templates_render_side_tab_once():
     client = app.app.test_client()
 
-    for path in ("/universe", "/upgrade", "/how-it-works", "/privacy"):
-        response = client.get(path)
-        page = response.get_data(as_text=True)
-
+    for route in (
+        "/universe",
+        "/upgrade",
+        "/how-it-works",
+        "/privacy",
+        "/terms",
+        "/refund-policy",
+        "/risk-disclaimer",
+        "/feedback",
+        "/contact",
+    ):
+        response = client.get(route)
         assert response.status_code == 200
-        assert page.count(app.NEWSLETTER_TAB_MARKER) == 1
+        assert_newsletter_tab(response)
 
 
-def test_newsletter_tab_has_desktop_focus_and_mobile_safe_area_styles():
-    page = render_dashboard().get_data(as_text=True)
-
-    assert "position: fixed" in page
-    assert "writing-mode: vertical-rl" in page
-    assert ".stockradar-newsletter-tab:focus-visible" in page
-    assert "@media (max-width: 700px)" in page
-    assert "writing-mode: horizontal-tb" in page
-    assert "env(safe-area-inset-right)" in page
-    assert "env(safe-area-inset-bottom)" in page
-    assert "border-radius: 999px" in page
-
-
-def test_newsletter_tab_is_excluded_from_newsletter_and_login_pages():
+def test_equivalent_public_research_templates_render_side_tab_once():
     client = app.app.test_client()
-    assert_newsletter_tab_absent(client.get("/newsletter"))
-    assert_newsletter_tab_absent(client.get("/login"))
+
+    for route in (
+        "/compare",
+        "/premium-decision/AAPL",
+        "/premium-watchlist",
+        "/portfolio-fit",
+        "/beginner",
+        "/manage-subscription",
+    ):
+        response = client.get(route)
+        assert response.status_code == 200
+        assert_newsletter_tab(response)
+
+
+def test_newsletter_templates_do_not_render_side_tab():
+    client = app.app.test_client()
+
+    assert_newsletter_tab(client.get("/newsletter"), expected=False)
+    assert_newsletter_tab(client.get("/newsletter/rss"), expected=False)
+    assert_newsletter_tab(client.get("/newsletter/archive"), expected=False)
 
     with (
         patch.object(app, "load_or_generate_latest_newsletter_issue", return_value={}),
@@ -97,82 +178,118 @@ def test_newsletter_tab_is_excluded_from_newsletter_and_login_pages():
             "newsletter_issue_for_website_display",
             return_value={"draft": {}, "metadata": {}},
         ),
-        patch.object(app, "render_template_string", return_value=HTML_PAGE),
+        patch.object(app, "render_template_string", return_value="<html><body>Newsletter</body></html>"),
     ):
-        assert_newsletter_tab_absent(client.get("/newsletter/latest"))
-
-    assert_newsletter_tab_absent(client.get("/newsletter/rss"))
-
-    with app.app.test_request_context("/newsletter/archive"):
-        nested_response = Response(HTML_PAGE, content_type="text/html")
-        app.inject_newsletter_tab(nested_response)
-
-    assert_newsletter_tab_absent(nested_response)
+        assert_newsletter_tab(client.get("/newsletter/latest"), expected=False)
 
 
-def test_newsletter_tab_is_excluded_from_checkout_error_and_operational_routes():
+def test_newsletter_landing_remains_the_read_and_subscribe_hub():
+    response = app.app.test_client().get("/newsletter")
+    page = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert '<form method="POST" action="/newsletter">' in page
+    assert 'type="email" name="email"' in page
+    assert ">Join Free</button>" in page
+    assert 'href="/newsletter/latest">Read the latest issue</a>' in page
+
+
+def test_login_logout_owner_and_checkout_templates_do_not_render_side_tab():
     client = app.app.test_client()
 
-    for path in (
-        "/create-checkout-session",
-        "/checkout-success",
+    assert_newsletter_tab(client.get("/login"), expected=False)
+    assert_newsletter_tab(client.get("/logout"), expected=False)
+    assert_newsletter_tab(client.get("/create-checkout-session"), expected=False)
+    assert_newsletter_tab(client.get("/checkout-success"), expected=False)
+
+    with client.session_transaction() as current_session:
+        current_session["owner_logged_in"] = True
+    assert_newsletter_tab(client.get("/owner"), expected=False)
+
+
+def test_operational_json_and_error_routes_do_not_render_side_tab():
+    client = app.app.test_client()
+
+    for route in (
         "/admin/newsletter-preview",
         "/newsletter/cron/send",
         "/health",
+        "/healthz",
         "/deploy-version",
         "/this-page-does-not-exist",
     ):
-        assert_newsletter_tab_absent(client.get(path))
+        assert_newsletter_tab(client.get(route), expected=False)
 
-    assert_newsletter_tab_absent(client.post("/stripe-webhook", data=b"{}"))
+    assert_newsletter_tab(client.post("/stripe-webhook", data=b"{}"), expected=False)
 
-
-def test_newsletter_tab_does_not_modify_non_html_responses():
-    with app.app.test_request_context("/robots.txt"):
-        response = Response("plain response", content_type="text/plain")
-        original_data = response.get_data()
-        original_length = response.content_length
-        result = app.inject_newsletter_tab(response)
-
-    assert result.get_data() == original_data
-    assert result.content_length == original_length
-    assert app.NEWSLETTER_TAB_MARKER.encode() not in result.data
+    with (
+        patch.object(app, "get_cached_dashboard_data", return_value=DASHBOARD_DATA),
+        patch.object(app, "get_stock_universe", return_value=[]),
+    ):
+        api_response = client.get("/api/market-news")
+    assert api_response.is_json
+    assert_newsletter_tab(api_response, expected=False)
 
 
-def test_newsletter_tab_does_not_modify_redirect_responses():
-    with app.app.test_request_context("/privacy"):
-        response = Response(HTML_PAGE, status=302, content_type="text/html")
-        result = app.inject_newsletter_tab(response)
+def test_security_header_hook_does_not_mutate_response_bodies():
+    source = inspect.getsource(app.add_security_headers)
+    assert "inject_newsletter" not in source
+    assert not hasattr(app, "inject_newsletter_tab")
+    assert not hasattr(app, "should_inject_newsletter_tab")
 
-    assert_newsletter_tab_absent(result)
-
-
-def test_newsletter_tab_does_not_modify_streamed_html_responses():
-    with app.app.test_request_context("/privacy"):
-        response = Response(
-            (chunk for chunk in ("<html><head></head><body>", "Content</body></html>")),
+    with app.app.test_request_context("/test"):
+        html_response = Response(
+            "<html><head></head><body>Unchanged</body></html>",
             content_type="text/html",
         )
-        assert response.is_streamed is True
-        result = app.inject_newsletter_tab(response)
+        original_html = html_response.get_data()
+        result = app.add_security_headers(html_response)
 
-    page = result.get_data(as_text=True)
-    assert app.NEWSLETTER_TAB_MARKER not in page
-    assert page == "<html><head></head><body>Content</body></html>"
-
-
-def test_newsletter_tab_injection_is_idempotent():
-    with app.app.test_request_context("/privacy"):
-        response = Response(HTML_PAGE, content_type="text/html")
-        app.inject_newsletter_tab(response)
-        app.inject_newsletter_tab(response)
-        page = response.get_data(as_text=True)
-
-    assert page.count(app.NEWSLETTER_TAB_MARKER) == 1
-    assert page.count('id="stockradar-newsletter-tab-styles"') == 1
+    assert result.get_data() == original_html
+    assert app.NEWSLETTER_SIDE_TAB_MARKER.encode() not in result.data
+    assert result.headers["X-Content-Type-Options"] == "nosniff"
 
 
-def test_account_manage_subscription_is_not_rendered_for_logged_out_users():
+def test_non_html_and_streamed_responses_remain_unchanged():
+    with app.app.test_request_context("/test"):
+        text_response = Response("plain response", content_type="text/plain")
+        original_text = text_response.get_data()
+        app.add_security_headers(text_response)
+
+        streamed_response = Response(
+            (chunk for chunk in ("first", "second")),
+            content_type="text/html",
+        )
+        assert streamed_response.is_streamed is True
+        app.add_security_headers(streamed_response)
+
+    assert text_response.get_data() == original_text
+    assert streamed_response.get_data(as_text=True) == "firstsecond"
+
+
+def test_shared_footer_omits_newsletter_and_manage_subscription_links():
+    footer = app.disclaimer_footer()
+
+    assert 'href="/newsletter"' not in footer
+    assert 'href="/manage-subscription"' not in footer
+
+
+def test_shared_footer_keeps_other_legal_and_support_links():
+    footer = app.disclaimer_footer()
+
+    for route in (
+        "/how-it-works",
+        "/privacy",
+        "/terms",
+        "/refund-policy",
+        "/risk-disclaimer",
+        "/feedback",
+        "/contact",
+    ):
+        assert f'href="{route}"' in footer
+
+
+def test_account_manage_subscription_is_not_rendered_for_anonymous_users():
     page = render_dashboard().get_data(as_text=True)
 
     assert 'data-account-manage-subscription="true"' not in page
@@ -190,6 +307,7 @@ def test_account_manage_subscription_follows_owner_account_control():
 
     assert manage_link in page
     assert page.index(account_control) < page.index(manage_link) < page.index('href="/logout"')
+    assert manage_link not in app.disclaimer_footer()
 
 
 def test_account_manage_subscription_follows_premium_session_control():
@@ -206,32 +324,4 @@ def test_account_manage_subscription_follows_premium_session_control():
 
     assert manage_link in page
     assert page.index(account_control) < page.index(manage_link) < page.index('href="/logout"')
-
-
-def test_public_stock_visitor_does_not_receive_account_manage_subscription():
-    with patch.dict(app.app.view_functions, {"stock_detail": lambda symbol: HTML_PAGE}):
-        page = app.app.test_client().get("/stock/AAPL").get_data(as_text=True)
-
-    assert 'data-account-manage-subscription="true"' not in page
-
-
-def test_shared_footer_omits_newsletter_and_manage_subscription_links():
-    footer = app.disclaimer_footer()
-
-    assert 'href="/newsletter"' not in footer
-    assert 'href="/manage-subscription"' not in footer
-
-
-def test_shared_footer_keeps_other_legal_and_support_links():
-    footer = app.disclaimer_footer()
-
-    for path in (
-        "/how-it-works",
-        "/privacy",
-        "/terms",
-        "/refund-policy",
-        "/risk-disclaimer",
-        "/feedback",
-        "/contact",
-    ):
-        assert f'href="{path}"' in footer
+    assert manage_link not in app.disclaimer_footer()

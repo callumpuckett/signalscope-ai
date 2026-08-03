@@ -77,42 +77,24 @@ except ImportError:
 app = Flask(__name__)
 
 
-NEWSLETTER_TAB_MARKER = 'data-stockradar-newsletter-tab="true"'
-NEWSLETTER_TAB_EXCLUDED_PATHS = frozenset({
-    "/newsletter",
-    "/login",
-    "/logout",
-    "/create-checkout-session",
-    "/checkout-success",
-    "/stripe-webhook",
-    "/owner",
-    "/deploy-version",
-    "/health",
-    "/healthz",
-    "/news-health",
-})
-NEWSLETTER_TAB_EXCLUDED_PREFIXES = (
-    "/newsletter/",
-    "/admin/",
-    "/api/",
-)
-NEWSLETTER_TAB_STYLES = """
+NEWSLETTER_SIDE_TAB_MARKER = 'data-stockradar-newsletter-tab="true"'
+NEWSLETTER_SIDE_TAB_COMPONENT = """
 <style id="stockradar-newsletter-tab-styles">
 .stockradar-newsletter-tab {
     position: fixed;
-    z-index: 80;
+    z-index: 10000;
     top: 50%;
     right: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     padding: 15px 10px;
-    border: 1px solid rgba(0, 255, 170, 0.48);
+    border: 2px solid rgba(0, 255, 170, 0.72);
     border-right: 0;
     border-radius: 16px 0 0 16px;
-    background: linear-gradient(155deg, #0f172a, #111827);
-    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.38), 0 0 22px rgba(0, 255, 170, 0.10);
-    color: #6ee7b7;
+    background: linear-gradient(155deg, #07111f, #111827 58%, #172033);
+    box-shadow: 0 16px 42px rgba(0, 0, 0, 0.62), 0 0 28px rgba(0, 255, 170, 0.24);
+    color: #86efac;
     font: 900 13px/1.1 Arial, sans-serif;
     letter-spacing: 0.06em;
     text-decoration: none;
@@ -136,10 +118,10 @@ NEWSLETTER_TAB_STYLES = """
     .stockradar-newsletter-tab {
         top: auto;
         right: max(14px, env(safe-area-inset-right));
-        bottom: max(18px, calc(env(safe-area-inset-bottom) + 14px));
+        bottom: max(72px, calc(env(safe-area-inset-bottom) + 64px));
         max-width: calc(100vw - 28px);
         padding: 11px 15px;
-        border-right: 1px solid rgba(0, 255, 170, 0.48);
+        border-right: 2px solid rgba(0, 255, 170, 0.72);
         border-radius: 999px;
         font-size: 12px;
         letter-spacing: 0.03em;
@@ -155,67 +137,19 @@ NEWSLETTER_TAB_STYLES = """
     .stockradar-newsletter-tab { transition: none; }
 }
 </style>
-"""
-NEWSLETTER_TAB_LINK = """
-<a class="stockradar-newsletter-tab" data-stockradar-newsletter-tab="true" href="/newsletter" aria-label="Open the StockRadar newsletter page">Newsletter</a>
+<a class="stockradar-newsletter-tab" data-stockradar-newsletter-tab="true" href="/newsletter" aria-label="Read and subscribe to the StockRadar newsletter">Newsletter</a>
 """
 
 
-def should_inject_newsletter_tab(response):
-    path = request.path.rstrip("/") or "/"
-    if (
-        request.method not in {"GET", "HEAD"}
-        or response.status_code != 200
-        or response.mimetype != "text/html"
-        or response.direct_passthrough
-        or response.is_streamed
-        or response.headers.get("Content-Encoding")
-        or response.headers.get("Content-Disposition")
-    ):
-        return False
-
-    if path in NEWSLETTER_TAB_EXCLUDED_PATHS:
-        return False
-
-    return not any(
-        path == prefix.rstrip("/") or path.startswith(prefix)
-        for prefix in NEWSLETTER_TAB_EXCLUDED_PREFIXES
-    )
+def newsletter_side_tab():
+    return NEWSLETTER_SIDE_TAB_COMPONENT
 
 
-def inject_newsletter_tab(response):
-    if not should_inject_newsletter_tab(response):
-        return response
-
-    page = response.get_data(as_text=True)
-    if (
-        NEWSLETTER_TAB_MARKER in page
-        or not re.search(r"</head\s*>", page, flags=re.IGNORECASE)
-        or not re.search(r"</body\s*>", page, flags=re.IGNORECASE)
-    ):
-        return response
-
-    page = re.sub(
-        r"</head\s*>",
-        f"{NEWSLETTER_TAB_STYLES}\n</head>",
-        page,
-        count=1,
-        flags=re.IGNORECASE,
-    )
-    page = re.sub(
-        r"</body\s*>",
-        f"{NEWSLETTER_TAB_LINK}\n</body>",
-        page,
-        count=1,
-        flags=re.IGNORECASE,
-    )
-    response.set_data(page)
-    return response
+app.jinja_env.globals["newsletter_side_tab"] = newsletter_side_tab
 
 
 @app.after_request
 def add_security_headers(response):
-    response = inject_newsletter_tab(response)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
@@ -1153,6 +1087,7 @@ a{color:#38bdf8;}
     </main>
     {{ disclaimer_footer() | safe }}
 </div>
+{{ newsletter_side_tab() | safe }}
 </body>
 </html>
 """
@@ -3939,6 +3874,7 @@ ul{padding-left:22px;margin:12px 0 0;}
     {% endif %}
     {{ disclaimer_footer() | safe }}
 </div>
+{{ newsletter_side_tab() | safe }}
 </body>
 </html>
 """
@@ -4089,6 +4025,7 @@ def stock_universe_page():
         </div>
         {{ disclaimer_footer() | safe }}
     </div>
+    {{ newsletter_side_tab() | safe }}
     </body>
     </html>
     """
@@ -4151,6 +4088,7 @@ def premium_decision(symbol):
             </div>
             {{ disclaimer_footer() | safe }}
         </div>
+        {{ newsletter_side_tab() | safe }}
         </body>
         </html>
         """
@@ -4318,6 +4256,7 @@ def premium_decision(symbol):
         </section>
         {{ disclaimer_footer() | safe }}
     </main>
+    {{ newsletter_side_tab() | safe }}
     </body>
     </html>
     """
@@ -4400,6 +4339,7 @@ def premium_watchlist():
             </div>
             {{ disclaimer_footer() | safe }}
         </div>
+        {{ newsletter_side_tab() | safe }}
         </body>
         </html>
         """
@@ -4513,6 +4453,7 @@ def premium_watchlist():
         </div>
         {{ disclaimer_footer() | safe }}
     </div>
+    {{ newsletter_side_tab() | safe }}
     </body>
     </html>
     """
@@ -4660,6 +4601,7 @@ def portfolio_fit():
             </div>
             {{ disclaimer_footer() | safe }}
         </div>
+        {{ newsletter_side_tab() | safe }}
         </body>
         </html>
         """
@@ -4763,6 +4705,7 @@ def portfolio_fit():
         {% endif %}
         {{ disclaimer_footer() | safe }}
     </div>
+    {{ newsletter_side_tab() | safe }}
     </body>
     </html>
     """
@@ -10489,6 +10432,7 @@ function refreshMarketNews(){var track=document.getElementById('marketNewsTrack'
 function scheduleMarketNewsRefresh(){var track=document.getElementById('marketNewsTrack');if(!track){return;}var interval=parseInt(track.getAttribute('data-refresh-interval')||'300000',10);if(!interval||interval<60000){interval=300000;}window.setInterval(refreshMarketNews,interval);}
 window.addEventListener('load',function(){var params=new URLSearchParams(window.location.search);var openPanel=params.get('open');if(openPanel){openPanelAndJump(openPanel);}if(window.location.pathname==='/ai-recommendations'){window.location.href='/?tab=watchlist';}applySignalFilters();updateMarketNewsStatus();scheduleMarketNewsRefresh();});
 </script>
+{{ newsletter_side_tab() | safe }}
 </body>
 </html>
 """
@@ -10771,6 +10715,7 @@ def beginner():
         if(result){{result.scrollIntoView({{behavior:'smooth', block:'start'}});}}
     }});
     </script>
+    {newsletter_side_tab()}
     </body>
     </html>
     """
@@ -10954,6 +10899,7 @@ p{color:#cbd5e1;line-height:1.68;font-size:var(--font-body);}
     </div>
     {{ disclaimer_footer() | safe }}
 </div>
+{{ newsletter_side_tab() | safe }}
 </body>
 </html>
 """
@@ -11402,6 +11348,7 @@ if(labels.length>0){
     new Chart(ctx,{type:'line',data:{labels:labels,datasets:[{label:'{{ stock_display_label(symbol) }} close price',data:prices,borderWidth:2,tension:0.25}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'white',boxWidth:12,padding:14}}},layout:{padding:{top:4,right:8,bottom:4,left:4}},scales:{x:{ticks:{color:'#94a3b8',maxTicksLimit:6,autoSkip:true},grid:{color:'rgba(255,255,255,0.08)'}},y:{ticks:{color:'#94a3b8',maxTicksLimit:6},grid:{color:'rgba(255,255,255,0.08)'}}}}});
 }
 </script>
+{{ newsletter_side_tab() | safe }}
 </body>
 </html>
 """
