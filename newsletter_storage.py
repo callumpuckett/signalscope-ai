@@ -22,6 +22,15 @@ STORE_DEFAULTS = {
     "beehiiv": {"issues": {}},
     "subscribers": {"subscribers": []},
     "premium_entitlements": {"records": []},
+    "rate_limits": {"buckets": {}},
+    "turnstile_tokens": {"tokens": {}},
+}
+
+
+APPLICATION_STATE_STORES = {
+    "premium_entitlements",
+    "rate_limits",
+    "turnstile_tokens",
 }
 
 
@@ -513,19 +522,19 @@ class PostgresNewsletterStorage(NewsletterStorageBackend):
             data["subscribers"] = [
                 json_payload(row[0]) for row in cursor.fetchall()
             ]
-        elif store_name == "premium_entitlements":
+        elif store_name in APPLICATION_STATE_STORES:
             cursor.execute(
                 """
                 SELECT payload
                 FROM stockradar_application_state
                 WHERE state_key = %s
                 """,
-                ("premium_entitlements",),
+                (store_name,),
             )
             row = cursor.fetchone()
             if row:
                 payload = json_payload(row[0])
-                if isinstance(payload.get("records"), list):
+                if isinstance(payload, dict):
                     data = payload
         else:
             raise ValueError("unknown_newsletter_store")
@@ -723,7 +732,7 @@ class PostgresNewsletterStorage(NewsletterStorageBackend):
                 ),
             )
 
-    def _sync_premium_entitlements(self, cursor, data):
+    def _sync_application_state(self, cursor, store_name, data):
         cursor.execute(
             """
             INSERT INTO stockradar_application_state (
@@ -735,7 +744,7 @@ class PostgresNewsletterStorage(NewsletterStorageBackend):
                 updated_at = NOW()
             """,
             (
-                "premium_entitlements",
+                store_name,
                 Jsonb(data),
             ),
         )
@@ -753,8 +762,8 @@ class PostgresNewsletterStorage(NewsletterStorageBackend):
             self._sync_beehiiv(cursor, data, overwrite=overwrite)
         elif store_name == "subscribers":
             self._sync_subscribers(cursor, data, overwrite=overwrite)
-        elif store_name == "premium_entitlements":
-            self._sync_premium_entitlements(cursor, data)
+        elif store_name in APPLICATION_STATE_STORES:
+            self._sync_application_state(cursor, store_name, data)
         else:
             raise ValueError("unknown_newsletter_store")
 

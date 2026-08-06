@@ -780,6 +780,7 @@ def test_health_reports_database_and_catch_up_without_secrets(
     backend, _ = postgres_backend()
     monkeypatch.setattr(app, "NEWSLETTER_STORAGE", backend)
     monkeypatch.setattr(app, "PERSISTENCE_BACKEND", "postgresql")
+    monkeypatch.setattr(app, "INTERNAL_DIAGNOSTICS_SECRET", "test-internal")
     monkeypatch.setattr(
         app,
         "DATABASE_URL",
@@ -790,7 +791,10 @@ def test_health_reports_database_and_catch_up_without_secrets(
         "newsletter_london_now",
         lambda now=None: datetime(2026, 7, 24, 10, 0, tzinfo=LONDON),
     )
-    newsletter = app.app.test_client().get("/health").get_json()["newsletter"]
+    newsletter = app.app.test_client().get(
+        "/health",
+        headers={"X-StockRadar-Internal-Secret": "test-internal"},
+    ).get_json()["newsletter"]
     assert newsletter["persistence_backend"] == "postgresql"
     assert newsletter["database_configured"] is True
     assert newsletter["database_reachable"] is True

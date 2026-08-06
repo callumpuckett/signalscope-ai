@@ -592,6 +592,7 @@ def test_generation_succeeds_when_beehiiv_is_unconfigured(monkeypatch, tmp_path)
 
 def test_health_reports_generation_and_delivery_separately(monkeypatch, tmp_path):
     configure_storage(monkeypatch, tmp_path)
+    monkeypatch.setattr(app, "INTERNAL_DIAGNOSTICS_SECRET", "test-internal")
     issue = {
         "metadata": {
             "issue_id": "stockradar-weekly-2026-W30",
@@ -621,7 +622,10 @@ def test_health_reports_generation_and_delivery_separately(monkeypatch, tmp_path
             return_value=datetime(2026, 7, 24, 10, 0, tzinfo=LONDON),
         ),
     ):
-        newsletter = app.app.test_client().get("/health").get_json()["newsletter"]
+        newsletter = app.app.test_client().get(
+            "/health",
+            headers={"X-StockRadar-Internal-Secret": "test-internal"},
+        ).get_json()["newsletter"]
     assert newsletter["newsletter_generation_status"] == "finalized"
     assert newsletter["current_issue_id"] == "stockradar-weekly-2026-W30"
     assert newsletter["current_issue_iso_week"] == 30

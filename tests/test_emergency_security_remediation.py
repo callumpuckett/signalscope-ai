@@ -185,7 +185,7 @@ def test_successful_login_resets_failure_counters():
             "password": "correct horse battery staple",
         },
     ).status_code == 302
-    client.get("/logout")
+    client.post("/logout")
 
     for _ in range(app.LOGIN_RATE_LIMIT_MAX_FAILURES - 1):
         assert client.post(
@@ -445,6 +445,8 @@ def test_webhook_cannot_activate_a_different_stripe_product(monkeypatch):
         },
     )
     event = {
+        "id": "evt_wrong_product",
+        "created": 1_700_000_000,
         "type": "checkout.session.completed",
         "data": {"object": event_session},
     }
@@ -471,6 +473,8 @@ def test_unrelated_invoice_cannot_overwrite_premium_entitlement(monkeypatch):
     configure_checkout(monkeypatch)
     monkeypatch.setattr(app, "STRIPE_WEBHOOK_SECRET", "whsec_test")
     event = {
+        "id": "evt_unrelated_invoice",
+        "created": 1_700_000_001,
         "type": "invoice.payment_succeeded",
         "data": {
             "object": {
@@ -688,7 +692,8 @@ def test_logout_clears_entire_session():
             }
         )
 
-    response = client.get("/logout")
+    assert client.get("/logout").status_code == 405
+    response = client.post("/logout")
 
     assert response.status_code == 302
     assert response.headers["Location"] == "/"

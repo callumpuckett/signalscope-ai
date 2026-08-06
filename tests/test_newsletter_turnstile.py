@@ -1,6 +1,7 @@
 import json
 from urllib.parse import parse_qs
 from unittest.mock import patch
+import pytest
 
 import app
 
@@ -22,6 +23,8 @@ class JsonResponse:
 def configure_turnstile(monkeypatch):
     monkeypatch.setattr(app, "TURNSTILE_SITE_KEY", "test-site-key")
     monkeypatch.setattr(app, "TURNSTILE_SECRET_KEY", "test-secret-key")
+    monkeypatch.setattr(app, "TURNSTILE_EXPECTED_HOSTNAME", "www.stockradarhq.com")
+    monkeypatch.setattr(app, "TURNSTILE_EXPECTED_ACTION", "newsletter_signup")
 
 
 def test_newsletter_form_renders_one_turnstile_script_and_widget(monkeypatch):
@@ -32,6 +35,7 @@ def test_newsletter_form_renders_one_turnstile_script_and_widget(monkeypatch):
     assert page.count("https://challenges.cloudflare.com/turnstile/v0/api.js") == 1
     assert page.count('class="cf-turnstile"') == 1
     assert 'data-sitekey="test-site-key"' in page
+    assert 'data-action="newsletter_signup"' in page
     assert "test-secret-key" not in page
     assert page.count('name="cf-turnstile-response"') == 0
 
@@ -45,7 +49,11 @@ def test_successful_turnstile_verification_allows_beehiiv_subscription(monkeypat
         captured["method"] = request_object.get_method()
         captured["payload"] = parse_qs(request_object.data.decode("utf-8"))
         captured["timeout"] = timeout
-        return JsonResponse({"success": True})
+        return JsonResponse({
+            "success": True,
+            "hostname": "www.stockradarhq.com",
+            "action": "newsletter_signup",
+        })
 
     with (
         patch.object(app.urllib.request, "urlopen", side_effect=verify_request),
@@ -73,7 +81,7 @@ def test_successful_turnstile_verification_allows_beehiiv_subscription(monkeypat
         "payload": {
             "secret": ["test-secret-key"],
             "response": ["valid-turnstile-token"],
-            "remoteip": ["203.0.113.25"],
+            "remoteip": ["10.0.0.8"],
         },
         "timeout": app.TURNSTILE_REQUEST_TIMEOUT_SECONDS,
     }
@@ -159,5 +167,67 @@ def test_missing_turnstile_configuration_fails_closed(monkeypatch):
         )
 
     assert b"Newsletter signup protection is temporarily unavailable" in response.data
+    cloudflare.assert_not_called()
+    beehiiv.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"success": True, "hostname": "attacker.example", "action": "newsletter_signup"},
+        {"success": True, "hostname": "www.stockradarhq.com", "action": "login"},
+        {"success": True, "hostname": "www.stockradarhq.com"},
+        {"success": True, "action": "newsletter_signup"},
+    ],
+)
+def test_turnstile_rejects_wrong_or_missing_context(monkeypatch, payload):
+    configure_turnstile(monkeypatch)
+    with patch.object(
+        app.urllib.request,
+        "urlopen",
+        return_value=JsonResponse(payload),
+    ):
+        result = app.verify_turnstile_token("context-token", "203.0.113.10")
+
+    assert result == {"success": False, "reason": "context_invalid"}
+
+
+def test_turnstile_replayed_token_is_rejected(monkeypatch):
+    configure_turnstile(monkeypatch)
+    verified = JsonResponse({
+        "success": True,
+        "hostname": "www.stockradarhq.com",
+        "action": "newsletter_signup",
+    })
+    with patch.object(app.urllib.request, "urlopen", return_value=verified):
+        assert app.verify_turnstile_token("single-use-token")["success"] is True
+        replay = app.verify_turnstile_token("single-use-token")
+
+    assert replay == {"success": False, "reason": "token_replayed"}
+
+
+def test_newsletter_signup_rate_limit_stops_before_turnstile(monkeypatch):
+    configure_turnstile(monkeypatch)
+    monkeypatch.setitem(
+        app.RATE_LIMIT_RULES,
+        ("newsletter", "POST"),
+        (1, 60, "newsletter-test"),
+    )
+    client = app.app.test_client()
+    assert client.post("/newsletter", data={"email": "reader@example.test"}).status_code == 200
+    with (
+        patch.object(app.urllib.request, "urlopen") as cloudflare,
+        patch.object(app, "create_beehiiv_subscription") as beehiiv,
+    ):
+        limited = client.post(
+            "/newsletter",
+            data={
+                "email": "reader@example.test",
+                "cf-turnstile-response": "not-processed",
+            },
+        )
+
+    assert limited.status_code == 429
+    assert "Retry-After" in limited.headers
     cloudflare.assert_not_called()
     beehiiv.assert_not_called()

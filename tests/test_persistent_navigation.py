@@ -314,7 +314,7 @@ def test_account_manage_subscription_follows_owner_account_control():
     )
 
     assert manage_link in page
-    assert page.index(account_control) < page.index(manage_link) < page.index('href="/logout"')
+    assert page.index(account_control) < page.index(manage_link) < page.index('action="/logout"')
     assert manage_link not in app.disclaimer_footer()
 
 
@@ -331,5 +331,5 @@ def test_account_manage_subscription_follows_premium_session_control():
     )
 
     assert manage_link in page
-    assert page.index(account_control) < page.index(manage_link) < page.index('href="/logout"')
+    assert page.index(account_control) < page.index(manage_link) < page.index('action="/logout"')
     assert manage_link not in app.disclaimer_footer()

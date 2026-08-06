@@ -307,7 +307,11 @@ def test_health_has_persistence_fields_and_exposes_no_path(
 ):
     data_dir = configure_persistence(monkeypatch, tmp_path)
     monkeypatch.setattr(app, "IS_PRODUCTION", True)
-    response = app.app.test_client().get("/health")
+    monkeypatch.setattr(app, "INTERNAL_DIAGNOSTICS_SECRET", "test-internal")
+    response = app.app.test_client().get(
+        "/health",
+        headers={"X-StockRadar-Internal-Secret": "test-internal"},
+    )
     assert response.status_code == 200
     newsletter = response.get_json()["newsletter"]
     for field in (

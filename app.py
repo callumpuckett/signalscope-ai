@@ -32,6 +32,56 @@ import urllib.request
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash
 
+try:
+    from flask_wtf.csrf import CSRFProtect, CSRFError
+except ImportError:  # Local-only fallback; Flask-WTF is pinned for production.
+    class CSRFError(Exception):
+        def __init__(self, description="The CSRF token is missing or invalid."):
+            super().__init__(description)
+            self.description = description
+
+    class CSRFProtect:
+        """Small compatibility fallback for offline local test environments."""
+
+        def __init__(self, flask_app=None):
+            self._exempt_views = set()
+            if flask_app is not None:
+                self.init_app(flask_app)
+
+        def init_app(self, flask_app):
+            flask_app.jinja_env.globals["csrf_token"] = self._token
+            flask_app.before_request(self.protect)
+
+        def _token(self):
+            token = session.get("_csrf_token")
+            if not token:
+                token = secrets.token_urlsafe(32)
+                session["_csrf_token"] = token
+            return token
+
+        def exempt(self, view):
+            self._exempt_views.add(f"{view.__module__}.{view.__name__}")
+            return view
+
+        def protect(self):
+            if not app.config.get("WTF_CSRF_ENABLED", True):
+                return None
+            if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+                return None
+            view = app.view_functions.get(request.endpoint or "")
+            view_name = f"{view.__module__}.{view.__name__}" if view else ""
+            if view_name in self._exempt_views:
+                return None
+            expected = session.get("_csrf_token", "")
+            submitted = (
+                request.form.get("csrf_token", "")
+                or request.headers.get("X-CSRFToken", "")
+                or request.headers.get("X-CSRF-Token", "")
+            )
+            if not expected or not submitted or not hmac.compare_digest(expected, submitted):
+                raise CSRFError()
+            return None
+
 from newsletter_storage import (
     DegradedNewsletterStorage,
     FilesystemNewsletterStorage,
@@ -94,6 +144,13 @@ except ImportError:
     stripe = None
 
 app = Flask(__name__)
+app.config.update(
+    MAX_CONTENT_LENGTH=256 * 1024,
+    MAX_FORM_MEMORY_SIZE=64 * 1024,
+    MAX_FORM_PARTS=50,
+    WTF_CSRF_ENABLED=True,
+    WTF_CSRF_TIME_LIMIT=3600,
+)
 configure_render_proxy(
     app,
     os.environ.get("RENDER", "").strip().lower() == "true",
@@ -479,6 +536,8 @@ STOCKRADAR_HEADER_NAVIGATION_TEMPLATE = """
 .public-nav-links{box-sizing:border-box;display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
 .public-nav-link{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 12px;border-radius:13px;color:#d6e0e9;text-decoration:none;font:900 13px/1.2 Arial,sans-serif;white-space:nowrap;}
 .public-nav-link:hover{background:rgba(148,163,184,.09);text-decoration:none;}
+.public-nav-logout-form{display:inline-flex;margin:0;}
+.public-nav-logout-form .public-nav-link{border:0;background:transparent;cursor:pointer;}
 .public-nav-login{visibility:visible;opacity:1;border:1px solid rgba(148,163,184,.24);background:rgba(148,163,184,.08);}
 .public-nav-primary{background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;}
 .stockradar-menu-toggle{display:none;align-items:center;justify-content:center;min-width:48px;min-height:44px;margin:0;padding:10px 14px;border:1px solid rgba(148,163,184,.28);border-radius:13px;background:rgba(148,163,184,.10);color:#f8fafc;font:900 14px/1 Arial,sans-serif;cursor:pointer;}
@@ -506,7 +565,11 @@ STOCKRADAR_HEADER_NAVIGATION_TEMPLATE = """
         <nav class="public-nav-links" id="stockradar-primary-menu" data-stockradar-primary-nav="true" data-stockradar-menu aria-label="Primary navigation">
         {% for section_name, items in navigation_sections %}
             {% for item in items %}
+            {% if item.id.startswith('logout-') %}
+            <form class="public-nav-logout-form" method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="public-nav-link" type="submit">{{ item.label }}</button></form>
+            {% else %}
             <a class="public-nav-link{% if item.public_class %} {{ item.public_class }}{% endif %}"{% if item.id == 'investment-compass' %} data-nav-id="investment-compass"{% endif %} href="{{ item.href }}">{{ item.label }}</a>
+            {% endif %}
             {% endfor %}
         {% endfor %}
         </nav>
@@ -535,6 +598,43 @@ def add_security_headers(response):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    response.headers["Content-Security-Policy-Report-Only"] = "; ".join((
+        "default-src 'self'",
+        "base-uri 'self'",
+        "object-src 'none'",
+        "frame-ancestors 'self'",
+        "form-action 'self'",
+        "script-src 'self' https://challenges.cloudflare.com https://cdn.jsdelivr.net",
+        "style-src 'self'",
+        "img-src 'self' data: https:",
+        "font-src 'self'",
+        "connect-src 'self' https://challenges.cloudflare.com",
+        "frame-src https://challenges.cloudflare.com",
+        "upgrade-insecure-requests",
+    ))
+    if IS_PRODUCTION and request.is_secure:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000"
+
+    sensitive_paths = (
+        "/login",
+        "/logout",
+        "/owner",
+        "/admin/",
+        "/create-checkout-session",
+        "/checkout-success",
+        "/manage-subscription",
+    )
+    authenticated_response = bool(
+        session.get("owner_logged_in") is True
+        or session.get("premium_active") is True
+    )
+    if authenticated_response or request.path.startswith(sensitive_paths):
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+    elif request.path.startswith("/static/"):
+        response.headers.setdefault("Cache-Control", "public, max-age=3600")
+    elif request.path in {"/health", "/healthz", "/news-health", "/deploy-version"}:
+        response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
 
 
@@ -546,6 +646,8 @@ SESSION_SECRET = (
     or ""
 )
 configure_session_security(app, SESSION_SECRET, IS_PRODUCTION)
+app.config["WTF_CSRF_SSL_STRICT"] = bool(IS_PRODUCTION)
+csrf = CSRFProtect()
 OWNER_EMAIL = os.environ.get("SIGNALSCOPE_OWNER_EMAIL", "").strip().lower()
 OWNER_PASSWORD = os.environ.get("SIGNALSCOPE_OWNER_PASSWORD", "")
 OWNER_PASSWORD_HASH = os.environ.get("SIGNALSCOPE_OWNER_PASSWORD_HASH", "").strip()
@@ -559,6 +661,10 @@ PRODUCTION_BASE_URL = "https://www.stockradarhq.com"
 RENDER_FALLBACK_BASE_URL = "https://signalscope-ai-1-0v3g.onrender.com"
 APP_ROOT = os.path.dirname(os.path.abspath(__file__))
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+INTERNAL_DIAGNOSTICS_SECRET = os.environ.get(
+    "STOCKRADAR_INTERNAL_SECRET",
+    "",
+).strip()
 
 
 def path_is_within_directory(path, directory):
@@ -640,6 +746,8 @@ def stockradar_data_path(filename):
 
 
 PREMIUM_ENTITLEMENTS_PATH = stockradar_data_path("premium_entitlements.json")
+RATE_LIMITS_PATH = stockradar_data_path("security_rate_limits.json")
+TURNSTILE_TOKENS_PATH = stockradar_data_path("turnstile_tokens.json")
 
 
 DEFAULT_STRIPE_SUCCESS_URL = (
@@ -658,6 +766,14 @@ TURNSTILE_SITE_KEY = os.environ.get("TURNSTILE_SITE_KEY", "").strip()
 TURNSTILE_SECRET_KEY = os.environ.get("TURNSTILE_SECRET_KEY", "").strip()
 TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 TURNSTILE_REQUEST_TIMEOUT_SECONDS = 8
+TURNSTILE_EXPECTED_ACTION = os.environ.get(
+    "TURNSTILE_EXPECTED_ACTION",
+    "newsletter_signup",
+).strip()
+TURNSTILE_EXPECTED_HOSTNAME = os.environ.get(
+    "TURNSTILE_EXPECTED_HOSTNAME",
+    urlsplit(PRODUCTION_BASE_URL).hostname or "",
+).strip().lower().rstrip(".")
 NEWSLETTER_EMAIL_ENABLED = os.environ.get("NEWSLETTER_EMAIL_ENABLED", "").strip().lower() == "true"
 NEWSLETTER_SMTP_HOST = os.environ.get("NEWSLETTER_SMTP_HOST", "").strip()
 NEWSLETTER_SMTP_PORT = int(os.environ.get("NEWSLETTER_SMTP_PORT", "587"))
@@ -739,6 +855,7 @@ DASHBOARD_CACHE = {
     "timestamp": 0,
     "data": None,
 }
+DASHBOARD_CACHE_LOCK = threading.Lock()
 RECOMMENDATIONS_CACHE_TTL_SECONDS = int(os.environ.get("RECOMMENDATIONS_CACHE_TTL_SECONDS", "300"))
 RECOMMENDATIONS_CACHE = {
     "timestamp": 0,
@@ -1148,29 +1265,11 @@ LAST_NEWSLETTER_MARKET_STATUS = {
     "previous_snapshot_at": "",
 }
 
-# --- Helper for fetching JSON from URL with fallback for local SSL certificate errors ---
+# --- Helper for fetching JSON from URL; TLS verification always remains enabled. ---
 def fetch_url_json(url, timeout=8):
     request_obj = Request(url, headers={"User-Agent": "StockRadarAI/1.0"})
-
-    try:
-        with urlopen(request_obj, timeout=timeout) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except Exception as exc:
-        error_text = str(exc)
-        reason = getattr(exc, "reason", None)
-        reason_text = str(reason) if reason else ""
-
-        if (
-            isinstance(exc, ssl.SSLCertVerificationError)
-            or isinstance(exc, URLError) and "CERTIFICATE_VERIFY_FAILED" in reason_text
-            or "CERTIFICATE_VERIFY_FAILED" in error_text
-            or "certificate verify failed" in error_text.lower()
-        ):
-            local_dev_context = ssl._create_unverified_context()
-            with urlopen(request_obj, timeout=timeout, context=local_dev_context) as response:
-                return json.loads(response.read().decode("utf-8"))
-
-        raise
+    with urlopen(request_obj, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
 STRIPE_CANCEL_URL = configured_url("STRIPE_CANCEL_URL", DEFAULT_STRIPE_CANCEL_URL)
 
 if stripe and STRIPE_SECRET_KEY:
@@ -1295,6 +1394,9 @@ def update_premium_entitlement(
     subscription_status="",
     premium_active=False,
     event_type="",
+    event_id="",
+    event_created=None,
+    event_rank=0,
 ):
     customer_id = stripe_identifier(customer_id)
     subscription_id = stripe_identifier(subscription_id)
@@ -1304,7 +1406,14 @@ def update_premium_entitlement(
         app.logger.warning("Skipping premium entitlement update without Stripe identifiers.")
         return None
 
-    update_result = {"record": None}
+    event_id = str(event_id or "").strip()
+    try:
+        event_created = int(event_created) if event_created is not None else None
+        event_rank = int(event_rank or 0)
+    except (TypeError, ValueError):
+        return None
+
+    update_result = {"record": None, "event_outcome": "applied"}
 
     def apply_entitlement_update(data):
         records = data.setdefault("records", [])
@@ -1341,6 +1450,38 @@ def update_premium_entitlement(
             matching_record = {"created_at": now}
             records.append(matching_record)
 
+        if event_id:
+            processed_events = matching_record.setdefault(
+                "processed_stripe_events",
+                {},
+            )
+            if event_id in processed_events:
+                update_result["event_outcome"] = "duplicate"
+                update_result["record"] = copy.deepcopy(matching_record)
+                return False
+
+            last_created = int(
+                matching_record.get("last_stripe_event_created") or 0
+            )
+            last_rank = int(matching_record.get("last_stripe_event_rank") or 0)
+            if event_created is None or event_created < 0:
+                update_result["event_outcome"] = "invalid_event_context"
+                update_result["record"] = copy.deepcopy(matching_record)
+                return False
+            if event_created < last_created or (
+                event_created == last_created and event_rank < last_rank
+            ):
+                processed_events[event_id] = {
+                    "created": event_created,
+                    "type": str(event_type or "")[:80],
+                    "outcome": "stale",
+                }
+                while len(processed_events) > 100:
+                    processed_events.pop(next(iter(processed_events)))
+                update_result["event_outcome"] = "stale"
+                update_result["record"] = copy.deepcopy(matching_record)
+                return True
+
         if email:
             matching_record["customer_email"] = email
         if customer_id:
@@ -1358,6 +1499,17 @@ def update_premium_entitlement(
         matching_record["updated_at"] = now
         if event_type:
             matching_record["last_event"] = event_type
+        if event_id:
+            processed_events[event_id] = {
+                "created": event_created,
+                "type": str(event_type or "")[:80],
+                "outcome": "applied",
+            }
+            while len(processed_events) > 100:
+                processed_events.pop(next(iter(processed_events)))
+            matching_record["last_stripe_event_id"] = event_id
+            matching_record["last_stripe_event_created"] = event_created
+            matching_record["last_stripe_event_rank"] = event_rank
         update_result["record"] = copy.deepcopy(matching_record)
         return True
 
@@ -1371,7 +1523,10 @@ def update_premium_entitlement(
         apply_entitlement_update(data)
         stored = save_premium_entitlements(data)
 
-    return update_result["record"] if stored else None
+    if not stored or update_result["record"] is None:
+        return None
+    update_result["record"]["_event_outcome"] = update_result["event_outcome"]
+    return update_result["record"]
 
 
 def premium_entitlement_record(customer_id="", subscription_id="", email=""):
@@ -1452,6 +1607,31 @@ def stripe_object_livemode_matches(stripe_object):
         and isinstance(object_livemode, bool)
         and object_livemode == expected_livemode
     )
+
+
+def stripe_price_and_product_match(stripe_object):
+    item_groups = (
+        stripe_nested_value(stripe_object, "items", "data") or [],
+        stripe_nested_value(stripe_object, "lines", "data") or [],
+    )
+    for items in item_groups:
+        for item in items:
+            price = (
+                stripe_value(item, "price", {})
+                or stripe_nested_value(item, "pricing", "price_details")
+                or {}
+            )
+            price_id = stripe_identifier(price) or str(
+                stripe_value(price, "price", "") or ""
+            ).strip()
+            if price_id != STRIPE_PRICE_ID:
+                continue
+            if STRIPE_PRODUCT_ID and stripe_identifier(
+                stripe_value(price, "product", "")
+            ) != STRIPE_PRODUCT_ID:
+                continue
+            return True
+    return False
 
 
 def checkout_session_id_valid(checkout_session_id):
@@ -1631,24 +1811,12 @@ def stripe_subscription_entitlement_matches(subscription):
     subscription_id = stripe_identifier(stripe_value(subscription, "id"))
     customer_id = stripe_identifier(stripe_value(subscription, "customer"))
     status = str(stripe_value(subscription, "status", "") or "").lower()
-    items = stripe_nested_value(subscription, "items", "data") or []
-    matching_price = False
-    for item in items:
-        price = stripe_value(item, "price", {}) or {}
-        if stripe_identifier(price) != STRIPE_PRICE_ID:
-            continue
-        if STRIPE_PRODUCT_ID and stripe_identifier(
-            stripe_value(price, "product", "")
-        ) != STRIPE_PRODUCT_ID:
-            continue
-        matching_price = True
-        break
     return bool(
         subscription_id.startswith("sub_")
         and customer_id.startswith("cus_")
         and stripe_object_livemode_matches(subscription)
         and subscription_status_is_active(status)
-        and matching_price
+        and stripe_price_and_product_match(subscription)
     )
 
 
@@ -1801,6 +1969,204 @@ def owner_credentials_valid(email, password):
             OWNER_PASSWORD,
         )
     return email_matches and password_matches
+
+
+SECURITY_RATE_LIMIT_STATE = {"buckets": {}}
+SECURITY_RATE_LIMIT_LOCK = threading.Lock()
+RATE_LIMIT_RULES = {
+    ("login", "POST"): (20, 15 * 60, "login-attempt"),
+    ("newsletter", "POST"): (5, 60 * 60, "newsletter-signup"),
+    ("beginner", "POST"): (20, 10 * 60, "investment-compass"),
+    ("portfolio_fit", "POST"): (15, 10 * 60, "portfolio-fit"),
+    ("compare", "GET"): (60, 5 * 60, "compare"),
+    ("compare_direct", "GET"): (60, 5 * 60, "compare"),
+    ("stock_detail", "GET"): (60, 5 * 60, "stock-report"),
+    ("api_market_news", "GET"): (120, 5 * 60, "market-news"),
+    ("news_health", "GET"): (10, 5 * 60, "news-health"),
+    ("create_checkout_session", "POST"): (5, 15 * 60, "checkout"),
+    ("admin_newsletter_send", "POST"): (10, 15 * 60, "admin-newsletter"),
+    ("newsletter_cron_send", "POST"): (10, 15 * 60, "newsletter-cron"),
+}
+
+
+def safe_request_wants_json():
+    return bool(
+        request.path.startswith(("/api/", "/stripe-webhook", "/newsletter/cron/"))
+        or request.accept_mimetypes.best == "application/json"
+    )
+
+
+def internal_request_authorized():
+    supplied = request.headers.get("X-StockRadar-Internal-Secret", "").strip()
+    return bool(
+        INTERNAL_DIAGNOSTICS_SECRET
+        and supplied
+        and hmac.compare_digest(supplied, INTERNAL_DIAGNOSTICS_SECRET)
+    )
+
+
+def detailed_diagnostics_authorized():
+    return owner_has_access() or internal_request_authorized()
+
+
+def force_refresh_authorized():
+    return owner_has_access() or internal_request_authorized()
+
+
+def request_origin_matches_host(value):
+    try:
+        parsed = urlsplit(str(value or "").strip())
+        expected_host = (
+            urlsplit(PRODUCTION_BASE_URL).hostname
+            if IS_PRODUCTION
+            else request.host.split(":", 1)[0]
+        )
+        expected_scheme = "https" if IS_PRODUCTION else request.scheme
+        return bool(
+            parsed.scheme == expected_scheme
+            and (parsed.hostname or "").lower().rstrip(".")
+            == str(expected_host or "").lower().rstrip(".")
+        )
+    except ValueError:
+        return False
+
+
+def rate_limit_identity():
+    raw = f"{login_client_ip()}|{request.headers.get('User-Agent', '')[:120]}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def consume_rate_limit(scope, limit, window_seconds, now=None):
+    current_time = time.time() if now is None else float(now)
+    identity = rate_limit_identity()
+    bucket_key = hashlib.sha256(f"{scope}|{identity}".encode("utf-8")).hexdigest()
+    outcome = {"allowed": True, "retry_after": 0}
+
+    def update_buckets(state):
+        buckets = state.setdefault("buckets", {})
+        cutoff = current_time - max(window_seconds, 3600)
+        if len(buckets) > 5000:
+            for key in list(buckets):
+                if float(buckets[key].get("reset_at", 0)) < cutoff:
+                    buckets.pop(key, None)
+        bucket = buckets.get(bucket_key)
+        if not bucket or current_time >= float(bucket.get("reset_at", 0)):
+            bucket = {"count": 0, "reset_at": current_time + window_seconds}
+            buckets[bucket_key] = bucket
+        if int(bucket.get("count", 0)) >= int(limit):
+            outcome["allowed"] = False
+            outcome["retry_after"] = max(
+                1,
+                int(float(bucket.get("reset_at", current_time + 1)) - current_time),
+            )
+            return False
+        bucket["count"] = int(bucket.get("count", 0)) + 1
+        return True
+
+    used_shared_storage = bool(
+        IS_PRODUCTION
+        and NEWSLETTER_STORAGE is not None
+        and NEWSLETTER_STORAGE.durable
+    )
+    if used_shared_storage:
+        stored = NEWSLETTER_STORAGE.update_state("rate_limits", update_buckets)
+        if stored:
+            return outcome
+
+    with SECURITY_RATE_LIMIT_LOCK:
+        update_buckets(SECURITY_RATE_LIMIT_STATE)
+    return outcome
+
+
+@app.errorhandler(CSRFError)
+def handle_csrf_error(error):
+    message = "Your form expired or could not be verified. Please refresh the page and try again."
+    if safe_request_wants_json():
+        return jsonify({"error": message}), 400
+    return Response(message, status=400, mimetype="text/plain")
+
+
+@app.errorhandler(413)
+def handle_request_too_large(_error):
+    message = "That request is too large. Please shorten it and try again."
+    if safe_request_wants_json():
+        return jsonify({"error": message}), 413
+    return Response(message, status=413, mimetype="text/plain")
+
+
+@app.before_request
+def enforce_request_boundaries():
+    endpoint_limits = {
+        "newsletter": 8 * 1024,
+        "login": 8 * 1024,
+        "beginner": 16 * 1024,
+        "portfolio_fit": 32 * 1024,
+        "create_checkout_session": 8 * 1024,
+        "stripe_webhook": 256 * 1024,
+    }
+    endpoint_limit = endpoint_limits.get(request.endpoint or "")
+    if (
+        endpoint_limit
+        and request.content_length is not None
+        and request.content_length > endpoint_limit
+    ):
+        return handle_request_too_large(None)
+
+    query_limits = {"q": 100, "symbol": 16, "symbol_a": 16, "symbol_b": 16}
+    for field, maximum in query_limits.items():
+        if len(request.args.get(field, "")) > maximum:
+            return Response("Invalid request input.", status=400, mimetype="text/plain")
+    if len(request.query_string) > 2048:
+        return Response("Invalid request input.", status=400, mimetype="text/plain")
+    return None
+
+
+@app.before_request
+def validate_unsafe_request_origin():
+    if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return None
+    if request.endpoint in {"stripe_webhook", "newsletter_cron_send"}:
+        return None
+    origin = request.headers.get("Origin", "").strip()
+    referer = request.headers.get("Referer", "").strip()
+    if origin and not request_origin_matches_host(origin):
+        return Response("Request origin could not be verified.", status=403, mimetype="text/plain")
+    if not origin and referer and not request_origin_matches_host(referer):
+        return Response("Request origin could not be verified.", status=403, mimetype="text/plain")
+    return None
+
+
+csrf.init_app(app)
+
+
+@app.before_request
+def apply_endpoint_rate_limit():
+    rule = RATE_LIMIT_RULES.get((request.endpoint or "", request.method))
+    if (
+        request.endpoint in {"dashboard", "api_market_news"}
+        and request.args.get("refresh") == "1"
+    ):
+        if not force_refresh_authorized():
+            if request.endpoint == "api_market_news":
+                return jsonify({"error": "Forced refresh is restricted."}), 403
+            return Response("Forced refresh is restricted.", status=403, mimetype="text/plain")
+        rule = (5, 5 * 60, "forced-refresh")
+    elif request.endpoint == "dashboard" and request.method == "GET" and request.args.get("q"):
+        rule = (60, 5 * 60, "stock-search")
+    if not rule:
+        return None
+    limit, window_seconds, scope = rule
+    result = consume_rate_limit(scope, limit, window_seconds)
+    if result["allowed"]:
+        return None
+    message = "Too many requests. Please wait a little before trying again."
+    if safe_request_wants_json():
+        response = jsonify({"error": message})
+    else:
+        response = Response(message, mimetype="text/plain")
+    response.status_code = 429
+    response.headers["Retry-After"] = str(result["retry_after"])
+    return response
 
 
 def disclaimer_footer():
@@ -4550,11 +4916,11 @@ ul{padding-left:22px;margin:12px 0 0;}
         <form method="get" action="/compare">
             <div>
                 <label for="symbol_a">First ticker</label>
-                <input id="symbol_a" name="symbol_a" value="{{ symbol_a or '' }}" placeholder="MSFT" autocomplete="off">
+                <input id="symbol_a" name="symbol_a" value="{{ symbol_a or '' }}" placeholder="MSFT" maxlength="16" autocomplete="off">
             </div>
             <div>
                 <label for="symbol_b">Second ticker</label>
-                <input id="symbol_b" name="symbol_b" value="{{ symbol_b or '' }}" placeholder="GOOGL" autocomplete="off">
+                <input id="symbol_b" name="symbol_b" value="{{ symbol_b or '' }}" placeholder="GOOGL" maxlength="16" autocomplete="off">
             </div>
             <button type="submit">Compare</button>
         </form>
@@ -4736,6 +5102,8 @@ def compare():
 
 @app.route("/compare/<symbol_a>/<symbol_b>")
 def compare_direct(symbol_a, symbol_b):
+    if len(symbol_a) > 16 or len(symbol_b) > 16:
+        return Response("Invalid ticker symbol.", status=400, mimetype="text/plain")
     cleaned_a = canonical_stock_symbol(symbol_a)
     cleaned_b = canonical_stock_symbol(symbol_b)
     if cleaned_a != symbol_a.strip().upper() or cleaned_b != symbol_b.strip().upper():
@@ -5290,7 +5658,18 @@ def portfolio_fit():
 
     if request.method == "POST":
         holdings_text = request.form.get("holdings", "").strip()
+        if len(holdings_text) > 2048:
+            return Response("Portfolio holdings are too long.", status=400, mimetype="text/plain")
         raw_holdings = [item.strip().upper() for item in holdings_text.replace("\n", ",").split(",") if item.strip()]
+        if len(raw_holdings) > 50 or any(
+            not re.fullmatch(r"[A-Z0-9.^=-]{1,16}", ticker)
+            for ticker in raw_holdings
+        ):
+            return Response(
+                "Enter no more than 50 valid ticker symbols.",
+                status=400,
+                mimetype="text/plain",
+            )
         holdings = []
         seen = set()
 
@@ -5445,7 +5824,8 @@ def portfolio_fit():
             <h1>Does the next stock actually fit?</h1>
             <p>Enter current holdings separated by commas. StockRadar will classify the structure and flag growth exposure, defensive balance, income-style context, sector concentration and duplicate exposure before you add more complexity.</p>
             <form method="POST" action="/portfolio-fit#portfolio-result">
-                <textarea name="holdings" placeholder="Example: SPY, MSFT, AMZN, GOOGL, NVDA, KO, MCD">{{ holdings_text }}</textarea>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <textarea name="holdings" maxlength="2048" placeholder="Example: SPY, MSFT, AMZN, GOOGL, NVDA, KO, MCD">{{ holdings_text }}</textarea>
                 <button type="submit">Check portfolio fit</button>
             </form>
         </div>
@@ -8841,18 +9221,25 @@ def save_newsletter_market_snapshots(data):
 
 
 def valid_newsletter_email(email):
-    return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", normalize_email(email)))
+    clean_email = normalize_email(email)
+    return bool(
+        clean_email
+        and len(clean_email) <= 254
+        and re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", clean_email)
+    )
 
 
 def turnstile_configured():
-    return bool(TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY)
+    return bool(
+        TURNSTILE_SITE_KEY
+        and TURNSTILE_SECRET_KEY
+        and TURNSTILE_EXPECTED_HOSTNAME
+        and TURNSTILE_EXPECTED_ACTION
+    )
 
 
 def newsletter_request_remote_ip():
-    candidates = (
-        request.headers.get("CF-Connecting-IP", ""),
-        request.remote_addr or "",
-    )
+    candidates = (request.remote_addr or "",)
     for candidate in candidates:
         clean_candidate = str(candidate or "").strip()
         if not clean_candidate:
@@ -8864,12 +9251,51 @@ def newsletter_request_remote_ip():
     return ""
 
 
+TURNSTILE_TOKEN_STATE = {"tokens": {}}
+TURNSTILE_TOKEN_LOCK = threading.Lock()
+TURNSTILE_TOKEN_REPLAY_WINDOW_SECONDS = 15 * 60
+
+
+def record_turnstile_token_once(token, now=None):
+    current_time = time.time() if now is None else float(now)
+    token_digest = hashlib.sha256(str(token).encode("utf-8")).hexdigest()
+    outcome = {"stored": False, "duplicate": False}
+
+    def update_tokens(state):
+        tokens = state.setdefault("tokens", {})
+        cutoff = current_time - TURNSTILE_TOKEN_REPLAY_WINDOW_SECONDS
+        for digest in list(tokens):
+            if float(tokens.get(digest, 0)) < cutoff:
+                tokens.pop(digest, None)
+        if token_digest in tokens:
+            outcome["duplicate"] = True
+            return False
+        tokens[token_digest] = current_time
+        outcome["stored"] = True
+        return True
+
+    if IS_PRODUCTION and NEWSLETTER_STORAGE is not None and NEWSLETTER_STORAGE.durable:
+        stored = NEWSLETTER_STORAGE.update_state("turnstile_tokens", update_tokens)
+        if stored:
+            return outcome
+        if IS_PRODUCTION:
+            return {"stored": False, "duplicate": False}
+
+    with TURNSTILE_TOKEN_LOCK:
+        update_tokens(TURNSTILE_TOKEN_STATE)
+    return outcome
+
+
 def verify_turnstile_token(token, remote_ip=""):
     if not turnstile_configured():
         return {"success": False, "reason": "configuration_missing"}
 
     clean_token = str(token or "").strip()
-    if not clean_token or len(clean_token) > 2048:
+    if (
+        not clean_token
+        or len(clean_token) > 2048
+        or any(ord(character) < 33 for character in clean_token)
+    ):
         return {"success": False, "reason": "token_missing_or_invalid"}
 
     payload = {
@@ -8911,6 +9337,21 @@ def verify_turnstile_token(token, remote_ip=""):
         return {"success": False, "reason": "verification_unavailable"}
 
     if result.get("success") is True:
+        verified_hostname = str(result.get("hostname") or "").strip().lower().rstrip(".")
+        verified_action = str(result.get("action") or "").strip()
+        if (
+            not verified_hostname
+            or not verified_action
+            or not hmac.compare_digest(verified_hostname, TURNSTILE_EXPECTED_HOSTNAME)
+            or not hmac.compare_digest(verified_action, TURNSTILE_EXPECTED_ACTION)
+        ):
+            app.logger.info("Turnstile rejected a newsletter signup with invalid context.")
+            return {"success": False, "reason": "context_invalid"}
+        replay_state = record_turnstile_token_once(clean_token)
+        if replay_state["duplicate"]:
+            return {"success": False, "reason": "token_replayed"}
+        if not replay_state["stored"]:
+            return {"success": False, "reason": "verification_unavailable"}
         return {"success": True, "reason": ""}
 
     error_codes = result.get("error-codes")
@@ -9409,6 +9850,8 @@ def newsletter_storage_paths():
         "beehiiv": NEWSLETTER_BEEHIIV_STATE_PATH,
         "subscribers": NEWSLETTER_SUBSCRIBERS_PATH,
         "premium_entitlements": PREMIUM_ENTITLEMENTS_PATH,
+        "rate_limits": RATE_LIMITS_PATH,
+        "turnstile_tokens": TURNSTILE_TOKENS_PATH,
     }
 
 
@@ -10151,9 +10594,10 @@ newsletter_landing_html = """
 <p class="status {% if subscription_error %}error{% endif %}">{{ subscription_message }}</p>
 {% endif %}
 <form method="POST" action="/newsletter">
-<input type="email" name="email" placeholder="you@example.com" autocomplete="email" required>
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="email" name="email" placeholder="you@example.com" autocomplete="email" maxlength="254" required>
 {% if turnstile_site_key %}
-<div class="turnstile-field"><div class="cf-turnstile" data-sitekey="{{ turnstile_site_key }}"></div></div>
+<div class="turnstile-field"><div class="cf-turnstile" data-sitekey="{{ turnstile_site_key }}" data-action="{{ turnstile_action }}"></div></div>
 {% else %}
 <p class="turnstile-unavailable" role="alert">Newsletter signup protection is temporarily unavailable. Please try again shortly.</p>
 {% endif %}
@@ -10447,26 +10891,26 @@ def prepare_dashboard_data():
     }
 
 def get_cached_dashboard_data(force_refresh=False):
-    now = time.time()
-    cached_data = DASHBOARD_CACHE.get("data")
-    cached_timestamp = DASHBOARD_CACHE.get("timestamp", 0)
+    with DASHBOARD_CACHE_LOCK:
+        now = time.time()
+        cached_data = DASHBOARD_CACHE.get("data")
+        cached_timestamp = DASHBOARD_CACHE.get("timestamp", 0)
 
-    if (
-        not force_refresh
-        and isinstance(cached_data, dict)
-        and cached_data.get("market_status")
-        and now - cached_timestamp < DASHBOARD_CACHE_TTL_SECONDS
-    ):
-        return cached_data.copy()
+        if (
+            not force_refresh
+            and isinstance(cached_data, dict)
+            and cached_data.get("market_status")
+            and now - cached_timestamp < DASHBOARD_CACHE_TTL_SECONDS
+        ):
+            return cached_data.copy()
 
-    fresh_data = prepare_dashboard_data()
+        fresh_data = prepare_dashboard_data()
+        if not isinstance(fresh_data, dict):
+            fresh_data = {}
 
-    if not isinstance(fresh_data, dict):
-        fresh_data = {}
-
-    DASHBOARD_CACHE["data"] = fresh_data.copy()
-    DASHBOARD_CACHE["timestamp"] = now
-    return fresh_data.copy()
+        DASHBOARD_CACHE["data"] = fresh_data.copy()
+        DASHBOARD_CACHE["timestamp"] = now
+        return fresh_data.copy()
 
 
 def is_public_live_market_headline(item):
@@ -10546,6 +10990,7 @@ a:hover{text-decoration:underline;}
 .logo-fallback{display:none;font-size:25px;font-weight:950;background:linear-gradient(135deg,#fff,#00ffaa,#ffb86b);-webkit-background-clip:text;color:transparent;}
 .nav-link{box-sizing:border-box;display:block;padding:13px 14px;border-radius:16px;color:#cbd7e3;margin:8px 0;background:rgba(148,163,184,0.055);text-decoration:none;font-weight:850;line-height:1.25;}
 .nav-link:hover{background:rgba(0,255,170,0.10);text-decoration:none;}
+.nav-logout-form{margin:0;}.nav-logout-form .nav-link{width:100%;border:0;text-align:left;cursor:pointer;}
 .nav-section-label{color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.13em;font-weight:950;margin:18px 0 8px 0;}
 .tab-button{display:block;border:1px solid transparent;width:100%;text-align:left;cursor:pointer;font-family:inherit;text-decoration:none;appearance:none;-webkit-appearance:none;}
 .tab-button.active-tab{background:rgba(0,255,170,0.16);color:white;border:1px solid rgba(0,255,170,0.24);box-shadow:0 12px 32px rgba(0,255,170,0.08);}
@@ -10789,7 +11234,11 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
         <div class="nav-section-label">{{ section_name }}</div>
         {% if section_name == 'Main Menu' %}<div class="menu-help">Use these links to jump straight to the tool you need.</div>{% endif %}
         {% for item in navigation_items %}
+        {% if item.id.startswith('logout-') %}
+        <form class="nav-logout-form" method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="nav-link" type="submit">{% if item.icon %}{{ item.icon }} {% endif %}{{ item.label }}</button></form>
+        {% else %}
         <a class="nav-link{% if item.active_tab %} tab-button{% endif %}{% if item.active %} active-tab{% endif %}{% if item.dashboard_class %} {{ item.dashboard_class }}{% endif %}"{% if item.manage_subscription %} data-account-manage-subscription="true"{% endif %}{% if item.id == 'investment-compass' %} data-nav-id="investment-compass"{% endif %} href="{{ item.href }}">{% if item.icon %}{{ item.icon }} {% endif %}{{ item.label }}{% if item.badge %} <span class="nav-premium-badge">{{ item.badge }}</span>{% endif %}</a>
+        {% endif %}
         {% endfor %}
         {% if section_name != 'Account' %}<div class="menu-divider"></div>{% endif %}
     {% endfor %}
@@ -11366,12 +11815,13 @@ ul{color:#cbd5e1;line-height:1.75;padding-left:20px;}
             <h2>Build your starter profile</h2>
             {% if validation_error %}<div class="warning" role="alert">{{ validation_error }}</div>{% endif %}
             <form method="POST" action="/beginner#beginner-result">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="form-grid">
                     <div class="field"><label for="goal">Main goal</label><select id="goal" name="goal"><option value="growth">Long-term growth</option><option value="income">Income later</option><option value="learning">Learn investing first</option><option value="balanced">Balanced growth and stability</option></select></div>
                     <div class="field"><label for="horizon">Time horizon</label><select id="horizon" name="horizon"><option value="10plus">10+ years</option><option value="5to10">5–10 years</option><option value="2to5">2–5 years</option><option value="short">Under 2 years</option></select></div>
                     <div class="field"><label for="risk">Risk comfort</label><select id="risk" name="risk"><option value="medium">Medium</option><option value="low">Low</option><option value="high">High</option></select></div>
                     <div class="field"><label for="experience">Experience</label><select id="experience" name="experience"><option value="new">Brand new</option><option value="some">Some basics</option><option value="confident">Confident beginner</option></select></div>
-                    <div class="field"><label for="amount">Monthly amount</label><input id="amount" name="amount" type="number" min="0" step="10" placeholder="100"></div>
+                    <div class="field"><label for="amount">Monthly amount</label><input id="amount" name="amount" type="number" min="0" max="1000000" step="10" placeholder="100"></div>
                     <div class="field"><label for="style">Preferred style</label><select id="style" name="style"><option value="simple">Keep it simple</option><option value="stocks">ETFs plus some stocks</option><option value="active">More active research</option></select></div>
                 </div>
                 <button type="submit">Create beginner plan</button>
@@ -11557,7 +12007,7 @@ login_html = """
 <!DOCTYPE html>
 <html>
 <head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Login</title><style>body{background:#020617;color:white;font-family:Arial;display:flex;justify-content:center;align-items:center;height:100vh;}form{background:#0f172a;padding:40px;border-radius:20px;width:340px;border:1px solid rgba(255,255,255,0.08);}input{width:100%;padding:14px;margin-bottom:15px;border:none;border-radius:10px;}button{width:100%;padding:14px;background:#38bdf8;border:none;border-radius:10px;color:white;font-weight:bold;cursor:pointer;}a{color:#38bdf8;}</style></head>
-<body><form method="POST"><h1>🔐 Login</h1><p style="color:#94a3b8;">Sign in to access your account.</p>{% if login_error %}<p style="background:rgba(239,68,68,0.16);border:1px solid rgba(239,68,68,0.35);color:#fecaca;padding:12px;border-radius:10px;font-weight:bold;">{{ login_error }}</p>{% endif %}<input type="email" name="email" placeholder="Email"><input type="password" name="password" placeholder="Password"><button type="submit">Login</button><p style="color:#94a3b8;font-size:13px;margin-top:20px;">Sign in to continue.</p><p><a href="/">Return to Dashboard</a></p>{{ disclaimer_footer() | safe }}</form></body>
+<body><form method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><h1>🔐 Login</h1><p style="color:#94a3b8;">Sign in to access your account.</p>{% if login_error %}<p style="background:rgba(239,68,68,0.16);border:1px solid rgba(239,68,68,0.35);color:#fecaca;padding:12px;border-radius:10px;font-weight:bold;">{{ login_error }}</p>{% endif %}<input type="email" name="email" placeholder="Email" maxlength="254" required><input type="password" name="password" placeholder="Password" maxlength="1024" required><button type="submit">Login</button><p style="color:#94a3b8;font-size:13px;margin-top:20px;">Sign in to continue.</p><p><a href="/">Return to Dashboard</a></p>{{ disclaimer_footer() | safe }}</form></body>
 </html>
 """
 
@@ -11660,6 +12110,7 @@ p{color:#cbd5e1;line-height:1.68;font-size:var(--font-body);}
                 <p class="note">Premium access provides research tools and analysis only. StockRadar is not financial advice.</p>
                 {% if premium_payments_enabled %}
                 <form method="POST" action="/create-checkout-session">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button class="button" type="submit" style="border:none;cursor:pointer;width:100%;">Start Premium with Stripe Checkout</button>
                 </form>
                 <div class="trust-points" aria-label="Payment and subscription trust notes">
@@ -12232,6 +12683,7 @@ def newsletter():
     return render_template_string(
         newsletter_landing_html,
         turnstile_site_key=TURNSTILE_SITE_KEY,
+        turnstile_action=TURNSTILE_EXPECTED_ACTION,
         subscription_message=subscription_message,
         subscription_error=subscription_error,
     )
@@ -12398,12 +12850,10 @@ def admin_newsletter_send():
     )
 
 
-@app.route("/newsletter/cron/send", methods=["GET", "POST"])
+@app.route("/newsletter/cron/send", methods=["POST"])
+@csrf.exempt
 def newsletter_cron_send():
-    supplied_secret = (
-        request.headers.get("X-Newsletter-Cron-Secret", "")
-        or request.args.get("secret", "")
-    ).strip()
+    supplied_secret = request.headers.get("X-Newsletter-Cron-Secret", "").strip()
 
     if not NEWSLETTER_CRON_SECRET:
         return jsonify({"error": "Newsletter cron secret is not configured."}), 503
@@ -12417,15 +12867,20 @@ def newsletter_cron_send():
 # --- Health and diagnostics routes ---
 @app.route("/deploy-version")
 def deploy_version():
+    if not detailed_diagnostics_authorized():
+        return jsonify({"status": "ok", "app": "StockRadar"})
     return jsonify({
-        "build": "dividend-snapshot-f1ade12",
-        "commit_expected": "f1ade12",
-        "dividend_template_expected": True,
+        "status": "ok",
+        "app": "StockRadar",
+        "commit": os.environ.get("RENDER_GIT_COMMIT", "unknown")[:64],
+        "service": os.environ.get("RENDER_SERVICE_NAME", "unknown")[:80],
     })
 
 
 @app.route("/health")
 def health():
+    if not detailed_diagnostics_authorized():
+        return jsonify({"status": "ok", "app": "StockRadar"})
     return jsonify({
         "status": "ok",
         "app": "StockRadar",
@@ -12444,6 +12899,8 @@ def health():
 
 @app.route("/news-health")
 def news_health():
+    if not detailed_diagnostics_authorized():
+        return jsonify({"status": "ok", "app": "StockRadar"}), 200
     articles = fetch_live_market_news(limit=8)
     return {
         "newsapi_configured": bool(NEWSAPI_KEY),
@@ -12459,13 +12916,7 @@ def news_health():
 
 @app.route("/healthz")
 def healthz():
-    return {
-        "status": "ok",
-        "app": "StockRadar",
-        "stripe_configured": stripe_credentials_configured(),
-        "premium_payments_enabled": PREMIUM_PAYMENTS_ENABLED,
-        "owner_login_configured": owner_login_configured(),
-    }, 200
+    return {"status": "ok", "app": "StockRadar"}, 200
 
 @app.route("/favicon.ico")
 def favicon():
@@ -12731,7 +13182,10 @@ def dashboard():
     if active_tab not in {"overview", "signals", "radar", "watchlist"}:
         active_tab = "overview"
 
-    data = get_cached_dashboard_data(force_refresh=request.args.get("refresh") == "1") or {}
+    force_refresh = request.args.get("refresh") == "1"
+    if force_refresh and not force_refresh_authorized():
+        return Response("Forced refresh is restricted.", status=403, mimetype="text/plain")
+    data = get_cached_dashboard_data(force_refresh=force_refresh) or {}
 
     if not isinstance(data, dict) or not data.get("market_status"):
         data = prepare_dashboard_data() or {}
@@ -12790,7 +13244,10 @@ def dashboard():
 
 @app.route("/api/market-news")
 def api_market_news():
-    data = get_cached_dashboard_data(force_refresh=request.args.get("refresh") == "1") or {}
+    force_refresh = request.args.get("refresh") == "1"
+    if force_refresh and not force_refresh_authorized():
+        return jsonify({"error": "Forced refresh is restricted."}), 403
+    data = get_cached_dashboard_data(force_refresh=force_refresh) or {}
 
     if not isinstance(data, dict) or not data.get("market_status"):
         data = prepare_dashboard_data() or {}
@@ -12822,6 +13279,8 @@ def watchlist():
 
 @app.route("/stock/<symbol>")
 def stock_detail(symbol):
+    if len(symbol) > 16:
+        return Response("Invalid ticker symbol.", status=400, mimetype="text/plain")
     requested_symbol = symbol.strip().upper()
     cleaned_symbol = canonical_stock_symbol(symbol)
     active_range = request.args.get("range", "1mo")
@@ -13072,6 +13531,7 @@ def checkout_success():
 
 
 @app.route("/stripe-webhook", methods=["POST"])
+@csrf.exempt
 def stripe_webhook():
     if not stripe or not STRIPE_WEBHOOK_SECRET:
         return jsonify({"error": "Stripe webhook is not configured."}), 503
@@ -13090,8 +13550,17 @@ def stripe_webhook():
     except stripe.error.SignatureVerificationError:
         return jsonify({"error": "Invalid webhook signature."}), 400
 
+    event_id = stripe_identifier(stripe_value(event, "id", ""))
     event_type = str(stripe_value(event, "type", "") or "")
     event_data = stripe_nested_value(event, "data", "object") or {}
+    try:
+        event_created = int(stripe_value(event, "created"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid webhook event context."}), 400
+    if not event_id.startswith("evt_") or event_created < 0:
+        return jsonify({"error": "Invalid webhook event context."}), 400
+
+    entitlement_record = None
 
     if event_type == "checkout.session.completed":
         if not checkout_session_server_context_matches(event_data):
@@ -13103,13 +13572,16 @@ def stripe_webhook():
             str(stripe_value(event_data, "payment_status", "") or "").lower()
             or str(stripe_value(event_data, "status", "") or "").lower()
         )
-        update_premium_entitlement(
+        entitlement_record = update_premium_entitlement(
             customer_id=customer_id,
             subscription_id=subscription_id,
             email=premium_email,
             subscription_status=status,
             premium_active=True,
             event_type=event_type,
+            event_id=event_id,
+            event_created=event_created,
+            event_rank=10,
         )
     elif event_type in {"customer.subscription.updated", "customer.subscription.deleted"}:
         customer_id = stripe_identifier(stripe_value(event_data, "customer"))
@@ -13119,8 +13591,13 @@ def stripe_webhook():
         )
         if (
             not stripe_object_livemode_matches(event_data)
+            or not stripe_price_and_product_match(event_data)
             or not existing_record
             or existing_record.get("stripe_subscription_id") != subscription_id
+            or (
+                existing_record.get("stripe_customer_id")
+                and existing_record.get("stripe_customer_id") != customer_id
+            )
         ):
             return jsonify({"received": True, "ignored": event_type}), 200
         status = str(stripe_value(event_data, "status", "") or "").lower()
@@ -13129,12 +13606,15 @@ def stripe_webhook():
             if event_type == "customer.subscription.deleted"
             else subscription_status_is_active(status)
         )
-        update_premium_entitlement(
+        entitlement_record = update_premium_entitlement(
             customer_id=customer_id,
             subscription_id=subscription_id,
             subscription_status=status or "canceled",
             premium_active=premium_active,
             event_type=event_type,
+            event_id=event_id,
+            event_created=event_created,
+            event_rank=30 if not premium_active else 20,
         )
     elif event_type == "invoice.payment_failed":
         subscription_id = stripe_identifier(
@@ -13143,19 +13623,28 @@ def stripe_webhook():
         existing_record = premium_entitlement_record(
             subscription_id=subscription_id
         )
+        customer_id = stripe_identifier(stripe_value(event_data, "customer"))
         if (
             not stripe_object_livemode_matches(event_data)
+            or not stripe_price_and_product_match(event_data)
             or not existing_record
             or existing_record.get("stripe_subscription_id") != subscription_id
+            or (
+                existing_record.get("stripe_customer_id")
+                and existing_record.get("stripe_customer_id") != customer_id
+            )
         ):
             return jsonify({"received": True, "ignored": event_type}), 200
-        update_premium_entitlement(
-            customer_id=stripe_identifier(stripe_value(event_data, "customer")),
+        entitlement_record = update_premium_entitlement(
+            customer_id=customer_id,
             subscription_id=subscription_id,
             email=stripe_value(event_data, "customer_email", ""),
             subscription_status="payment_failed",
             premium_active=False,
             event_type=event_type,
+            event_id=event_id,
+            event_created=event_created,
+            event_rank=30,
         )
     elif event_type == "invoice.payment_succeeded":
         subscription_id = stripe_identifier(
@@ -13164,24 +13653,45 @@ def stripe_webhook():
         existing_record = premium_entitlement_record(
             subscription_id=subscription_id
         )
+        customer_id = stripe_identifier(stripe_value(event_data, "customer"))
         if (
             not stripe_object_livemode_matches(event_data)
+            or not stripe_price_and_product_match(event_data)
             or not existing_record
             or existing_record.get("stripe_subscription_id") != subscription_id
+            or (
+                existing_record.get("stripe_customer_id")
+                and existing_record.get("stripe_customer_id") != customer_id
+            )
         ):
             return jsonify({"received": True, "ignored": event_type}), 200
-        update_premium_entitlement(
-            customer_id=stripe_identifier(stripe_value(event_data, "customer")),
+        entitlement_record = update_premium_entitlement(
+            customer_id=customer_id,
             subscription_id=subscription_id,
             email=stripe_value(event_data, "customer_email", ""),
             subscription_status="paid",
             premium_active=True,
             event_type=event_type,
+            event_id=event_id,
+            event_created=event_created,
+            event_rank=20,
         )
     else:
         return jsonify({"received": True, "ignored": event_type}), 200
 
-    return jsonify({"received": True}), 200
+    if entitlement_record is None:
+        return jsonify({"error": "Webhook processing is temporarily unavailable."}), 503
+    event_outcome = entitlement_record.pop("_event_outcome", "applied")
+    app.logger.info(
+        "Stripe webhook transition: event=%s type=%s outcome=%s",
+        event_id,
+        event_type,
+        event_outcome,
+    )
+    response = {"received": True}
+    if event_outcome in {"duplicate", "stale"}:
+        response["ignored"] = event_outcome
+    return jsonify(response), 200
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -13193,6 +13703,14 @@ def login():
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
+        if len(email) > 254 or len(password) > 1024:
+            login_error = "Invalid email or password."
+            response_status = 400
+            return (
+                render_template_string(login_html, login_error=login_error),
+                response_status,
+                response_headers,
+            )
         retry_after = login_rate_limit_status(email)
 
         if retry_after:
@@ -13228,7 +13746,7 @@ def owner():
     return render_template_string(owner_html)
 
 
-@app.route("/logout")
+@app.route("/logout", methods=["POST"])
 def logout():
     session.clear()
     return redirect(url_for("dashboard"))

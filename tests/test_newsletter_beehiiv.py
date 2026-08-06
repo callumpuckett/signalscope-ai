@@ -258,6 +258,7 @@ def test_health_uses_manual_beehiiv_status_without_sent(monkeypatch, tmp_path):
     monkeypatch.setattr(app, "BEEHIIV_API_KEY", "secret")
     monkeypatch.setattr(app, "BEEHIIV_PUBLICATION_ID", "pub_123")
     monkeypatch.setattr(app, "BEEHIIV_CREATE_POST_BLOCKED", True)
+    monkeypatch.setattr(app, "INTERNAL_DIAGNOSTICS_SECRET", "test-internal")
     app.record_beehiiv_issue_state(
         "newsletter:2026-07-10",
         status="beehiiv_api_post_blocked",
@@ -273,7 +274,10 @@ def test_health_uses_manual_beehiiv_status_without_sent(monkeypatch, tmp_path):
         patch.object(app, "get_finalized_newsletter_issue", return_value=issue_for()),
         patch.object(app, "latest_finalized_newsletter_issue", return_value=issue_for()),
     ):
-        newsletter = app.app.test_client().get("/health").get_json()["newsletter"]
+        newsletter = app.app.test_client().get(
+            "/health",
+            headers={"X-StockRadar-Internal-Secret": "test-internal"},
+        ).get_json()["newsletter"]
     assert newsletter["weekly_bulk_sender"] == "beehiiv_manual"
     assert newsletter["beehiiv_configured"] is True
     assert newsletter["beehiiv_create_post_blocked"] is True

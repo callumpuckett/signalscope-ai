@@ -110,7 +110,8 @@ def test_logout_clears_access_and_redirects_without_error():
         with client.session_transaction() as current_session:
             current_session["owner_logged_in"] = True
 
-        response = client.get("/logout")
+        assert client.get("/logout").status_code == 405
+        response = client.post("/logout")
 
         with client.session_transaction() as current_session:
             assert current_session.get("owner_logged_in") is not True
