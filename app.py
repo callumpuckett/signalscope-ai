@@ -389,19 +389,19 @@ STOCKRADAR_NAVIGATION_ITEMS = (
         "id": "logout-owner",
         "section": "Account",
         "label": "Logout",
-        "href": "/logout",
         "icon": "🚪",
         "locations": ("dashboard", "app"),
         "access": "owner",
+        "logout": True,
     },
     {
         "id": "logout-premium",
         "section": "Account",
         "label": "End Premium Session",
-        "href": "/logout",
         "icon": "🚪",
         "locations": ("dashboard", "app"),
         "access": "premium",
+        "logout": True,
     },
     {
         "id": "upgrade-account",
@@ -526,6 +526,35 @@ def stockradar_navigation_script():
     return STOCKRADAR_NAVIGATION_SCRIPT
 
 
+STOCKRADAR_LOGOUT_CONTROL_TEMPLATE = """
+<form class="{{ form_class }}" method="post" action="{{ url_for('logout') }}" data-stockradar-logout-control="{{ location }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="{{ button_class }}" type="submit">{% if show_icon and item.icon %}{{ item.icon }} {% endif %}{{ item.label }}</button>
+</form>
+"""
+
+
+def stockradar_logout_control(item, location="app-header"):
+    if location == "dashboard-sidebar":
+        form_class = "nav-logout-form"
+        button_class = "nav-link"
+        show_icon = True
+    else:
+        location = "app-header"
+        form_class = "public-nav-logout-form"
+        button_class = "public-nav-link"
+        show_icon = False
+
+    return render_template_string(
+        STOCKRADAR_LOGOUT_CONTROL_TEMPLATE,
+        item=item,
+        location=location,
+        form_class=form_class,
+        button_class=button_class,
+        show_icon=show_icon,
+    )
+
+
 STOCKRADAR_HEADER_NAVIGATION_TEMPLATE = """
 <style id="stockradar-primary-navigation-styles">
 .public-header{position:relative;z-index:11000;width:100%;padding:16px max(28px,env(safe-area-inset-right)) 16px max(28px,env(safe-area-inset-left));background:rgba(7,17,24,.96);border-bottom:1px solid rgba(148,163,184,.12);backdrop-filter:blur(18px);}
@@ -565,8 +594,8 @@ STOCKRADAR_HEADER_NAVIGATION_TEMPLATE = """
         <nav class="public-nav-links" id="stockradar-primary-menu" data-stockradar-primary-nav="true" data-stockradar-menu aria-label="Primary navigation">
         {% for section_name, items in navigation_sections %}
             {% for item in items %}
-            {% if item.id.startswith('logout-') %}
-            <form class="public-nav-logout-form" method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="public-nav-link" type="submit">{{ item.label }}</button></form>
+            {% if item.logout %}
+            {{ stockradar_logout_control(item, 'app-header') | safe }}
             {% else %}
             <a class="public-nav-link{% if item.public_class %} {{ item.public_class }}{% endif %}"{% if item.id == 'investment-compass' %} data-nav-id="investment-compass"{% endif %} href="{{ item.href }}">{{ item.label }}</a>
             {% endif %}
@@ -589,6 +618,7 @@ def stockradar_header_navigation(location="public"):
 
 app.jinja_env.globals["stockradar_navigation_sections"] = stockradar_navigation_sections
 app.jinja_env.globals["stockradar_navigation_script"] = stockradar_navigation_script
+app.jinja_env.globals["stockradar_logout_control"] = stockradar_logout_control
 app.jinja_env.globals["stockradar_header_navigation"] = stockradar_header_navigation
 
 
@@ -11234,8 +11264,8 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
         <div class="nav-section-label">{{ section_name }}</div>
         {% if section_name == 'Main Menu' %}<div class="menu-help">Use these links to jump straight to the tool you need.</div>{% endif %}
         {% for item in navigation_items %}
-        {% if item.id.startswith('logout-') %}
-        <form class="nav-logout-form" method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="nav-link" type="submit">{% if item.icon %}{{ item.icon }} {% endif %}{{ item.label }}</button></form>
+        {% if item.logout %}
+        {{ stockradar_logout_control(item, 'dashboard-sidebar') | safe }}
         {% else %}
         <a class="nav-link{% if item.active_tab %} tab-button{% endif %}{% if item.active %} active-tab{% endif %}{% if item.dashboard_class %} {{ item.dashboard_class }}{% endif %}"{% if item.manage_subscription %} data-account-manage-subscription="true"{% endif %}{% if item.id == 'investment-compass' %} data-nav-id="investment-compass"{% endif %} href="{{ item.href }}">{% if item.icon %}{{ item.icon }} {% endif %}{{ item.label }}{% if item.badge %} <span class="nav-premium-badge">{{ item.badge }}</span>{% endif %}</a>
         {% endif %}
