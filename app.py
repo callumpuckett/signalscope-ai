@@ -12,6 +12,7 @@ from urllib.error import URLError
 import csv
 import copy
 import hashlib
+import ipaddress
 import json
 import os
 import pandas as pd
@@ -269,7 +270,10 @@ def configured_url(environment_name, default):
 
 STRIPE_SUCCESS_URL = configured_url("STRIPE_SUCCESS_URL", DEFAULT_STRIPE_SUCCESS_URL)
 NEWSAPI_KEY = os.environ.get("NEWSAPI_KEY", "").strip()
-NEWSLETTER_EMBED_HTML = os.environ.get("NEWSLETTER_EMBED_HTML", "").strip()
+TURNSTILE_SITE_KEY = os.environ.get("TURNSTILE_SITE_KEY", "").strip()
+TURNSTILE_SECRET_KEY = os.environ.get("TURNSTILE_SECRET_KEY", "").strip()
+TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+TURNSTILE_REQUEST_TIMEOUT_SECONDS = 8
 NEWSLETTER_EMAIL_ENABLED = os.environ.get("NEWSLETTER_EMAIL_ENABLED", "").strip().lower() == "true"
 NEWSLETTER_SMTP_HOST = os.environ.get("NEWSLETTER_SMTP_HOST", "").strip()
 NEWSLETTER_SMTP_PORT = int(os.environ.get("NEWSLETTER_SMTP_PORT", "587"))
@@ -8040,6 +8044,89 @@ def valid_newsletter_email(email):
     return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", normalize_email(email)))
 
 
+def turnstile_configured():
+    return bool(TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY)
+
+
+def newsletter_request_remote_ip():
+    candidates = (
+        request.headers.get("CF-Connecting-IP", ""),
+        request.remote_addr or "",
+    )
+    for candidate in candidates:
+        clean_candidate = str(candidate or "").strip()
+        if not clean_candidate:
+            continue
+        try:
+            return str(ipaddress.ip_address(clean_candidate))
+        except ValueError:
+            continue
+    return ""
+
+
+def verify_turnstile_token(token, remote_ip=""):
+    if not turnstile_configured():
+        return {"success": False, "reason": "configuration_missing"}
+
+    clean_token = str(token or "").strip()
+    if not clean_token or len(clean_token) > 2048:
+        return {"success": False, "reason": "token_missing_or_invalid"}
+
+    payload = {
+        "secret": TURNSTILE_SECRET_KEY,
+        "response": clean_token,
+    }
+    clean_remote_ip = str(remote_ip or "").strip()
+    if clean_remote_ip:
+        payload["remoteip"] = clean_remote_ip
+
+    request_object = urllib.request.Request(
+        TURNSTILE_VERIFY_URL,
+        data=urllib.parse.urlencode(payload).encode("utf-8"),
+        method="POST",
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(
+            request_object,
+            timeout=TURNSTILE_REQUEST_TIMEOUT_SECONDS,
+        ) as response:
+            response_body = response.read(16384).decode("utf-8")
+            result = json.loads(response_body) if response_body else {}
+    except (
+        urllib.error.HTTPError,
+        urllib.error.URLError,
+        TimeoutError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+    ):
+        app.logger.warning("Turnstile verification service was unavailable.")
+        return {"success": False, "reason": "verification_unavailable"}
+
+    if not isinstance(result, dict):
+        app.logger.warning("Turnstile verification returned an invalid response.")
+        return {"success": False, "reason": "verification_unavailable"}
+
+    if result.get("success") is True:
+        return {"success": True, "reason": ""}
+
+    error_codes = result.get("error-codes")
+    if not isinstance(error_codes, list):
+        error_codes = []
+    safe_codes = [
+        re.sub(r"[^a-z0-9_-]", "", str(code).lower())[:80]
+        for code in error_codes[:5]
+    ]
+    app.logger.info(
+        "Turnstile rejected a newsletter signup%s.",
+        f" ({','.join(code for code in safe_codes if code)})" if safe_codes else "",
+    )
+    return {"success": False, "reason": "verification_failed"}
+
+
 def load_newsletter_subscribers():
     data = newsletter_storage_load("subscribers")
     if not isinstance(data.get("subscribers"), list):
@@ -9243,10 +9330,11 @@ newsletter_landing_html = """
 <meta name="twitter:title" content="StockRadar Weekly — Free Market Newsletter">
 <meta name="twitter:description" content="The 5-minute market signal: what is strengthening, what is weakening and what may matter next.">
 <link rel="alternate" type="application/rss+xml" title="StockRadar Weekly RSS" href="/newsletter/rss">
+{% if turnstile_site_key %}<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>{% endif %}
 <style>
 *{box-sizing:border-box;}:root{--font-hero:clamp(40px,5vw,52px);--font-section:clamp(26px,2.4vw,34px);--font-body:16px;--font-small:13px;--font-kicker:11px;--font-cta:14px;}body{margin:0;min-height:100vh;padding:42px 22px;background:radial-gradient(circle at 18% 8%,rgba(0,255,170,.11),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;font-size:var(--font-body);}
 .wrap{max-width:900px;margin:0 auto;}.back{color:#69c9f2;text-decoration:none;font-weight:900;}.hero{margin-top:24px;padding:46px;border-radius:30px;background:linear-gradient(180deg,rgba(18,29,42,.97),rgba(12,22,33,.97));border:1px solid rgba(148,163,184,.16);box-shadow:0 24px 70px rgba(0,0,0,.30);}
-.eyebrow{color:#4adea3;font-size:var(--font-kicker);font-weight:950;letter-spacing:.13em;text-transform:uppercase;}h1{color:#f2f5f8;font-size:var(--font-hero);line-height:1.04;margin:14px 0 18px;letter-spacing:0;}p{color:#b9c5d2;line-height:1.7;font-size:var(--font-body);}.signup{margin-top:28px;padding:24px;border-radius:22px;background:#0d1826;border:1px solid rgba(74,222,163,.22);}form{display:flex;gap:10px;flex-wrap:wrap;}input{flex:1;min-width:240px;border:1px solid rgba(148,163,184,.24);background:#07111d;color:#e5edf5;border-radius:14px;padding:14px 15px;font-size:16px;}button{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;border:0;border-radius:14px;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#061018;font-weight:950;font-size:var(--font-cta);line-height:1.1;padding:13px 18px;cursor:pointer;}.status{margin:0 0 16px;padding:13px 14px;border-radius:14px;background:rgba(74,222,163,.10);border:1px solid rgba(74,222,163,.22);color:#d1fae5;font-size:14px;line-height:1.55;}.status.error{background:rgba(248,113,113,.10);border-color:rgba(248,113,113,.24);color:#fecaca;}.fallback{color:#f4cf79;font-weight:900;margin:18px 0 0;font-size:var(--font-small);}.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-top:24px;}.note{padding:18px;border-radius:18px;background:rgba(148,163,184,.07);color:#c6d0da;line-height:1.6;font-size:14px;}.bridge{margin-top:22px;padding:18px;border-radius:18px;background:linear-gradient(135deg,rgba(74,222,163,.10),rgba(56,189,248,.08));border:1px solid rgba(74,222,163,.18);color:#d1fae5;font-size:15px;}.feed-link{display:inline-block;margin-top:22px;color:#69c9f2;font-size:14px;font-weight:900;text-decoration:none;}@media(max-width:700px){:root{--font-hero:clamp(32px,9vw,38px);--font-section:clamp(24px,6vw,28px);}body{padding:24px 16px}.hero{padding:28px}.notes{grid-template-columns:1fr;}button,input{width:100%;}}
+.eyebrow{color:#4adea3;font-size:var(--font-kicker);font-weight:950;letter-spacing:.13em;text-transform:uppercase;}h1{color:#f2f5f8;font-size:var(--font-hero);line-height:1.04;margin:14px 0 18px;letter-spacing:0;}p{color:#b9c5d2;line-height:1.7;font-size:var(--font-body);}.signup{margin-top:28px;padding:24px;border-radius:22px;background:#0d1826;border:1px solid rgba(74,222,163,.22);}form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:start;}input{min-width:240px;border:1px solid rgba(148,163,184,.24);background:#07111d;color:#e5edf5;border-radius:14px;padding:14px 15px;font-size:16px;}.turnstile-field,.turnstile-unavailable{grid-column:1/-1;max-width:100%;overflow:visible;}.turnstile-unavailable{margin:0;padding:12px 13px;border-radius:13px;background:rgba(248,113,113,.10);border:1px solid rgba(248,113,113,.24);color:#fecaca;font-size:14px;line-height:1.5;}button{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;border:0;border-radius:14px;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#061018;font-weight:950;font-size:var(--font-cta);line-height:1.1;padding:13px 18px;cursor:pointer;}.status{margin:0 0 16px;padding:13px 14px;border-radius:14px;background:rgba(74,222,163,.10);border:1px solid rgba(74,222,163,.22);color:#d1fae5;font-size:14px;line-height:1.55;}.status.error{background:rgba(248,113,113,.10);border-color:rgba(248,113,113,.24);color:#fecaca;}.fallback{color:#f4cf79;font-weight:900;margin:18px 0 0;font-size:var(--font-small);}.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-top:24px;}.note{padding:18px;border-radius:18px;background:rgba(148,163,184,.07);color:#c6d0da;line-height:1.6;font-size:14px;}.bridge{margin-top:22px;padding:18px;border-radius:18px;background:linear-gradient(135deg,rgba(74,222,163,.10),rgba(56,189,248,.08));border:1px solid rgba(74,222,163,.18);color:#d1fae5;font-size:15px;}.feed-link{display:inline-block;margin-top:22px;color:#69c9f2;font-size:14px;font-weight:900;text-decoration:none;}@media(max-width:700px){:root{--font-hero:clamp(32px,9vw,38px);--font-section:clamp(24px,6vw,28px);}body{padding:24px 16px}.hero{padding:28px}.notes{grid-template-columns:1fr;}form{grid-template-columns:1fr;}.turnstile-field,.turnstile-unavailable{grid-column:auto;}button,input{width:100%;}}
 </style>
 </head>
 <body>
@@ -9263,16 +9351,15 @@ newsletter_landing_html = """
 {% endif %}
 <form method="POST" action="/newsletter">
 <input type="email" name="email" placeholder="you@example.com" autocomplete="email" required>
+{% if turnstile_site_key %}
+<div class="turnstile-field"><div class="cf-turnstile" data-sitekey="{{ turnstile_site_key }}"></div></div>
+{% else %}
+<p class="turnstile-unavailable" role="alert">Newsletter signup protection is temporarily unavailable. Please try again shortly.</p>
+{% endif %}
 <button type="submit">Join Free</button>
 </form>
 <p class="fallback">Free to join. After signup, the latest issue is emailed automatically if email delivery is configured. The regular weekly issue normally arrives Friday.</p>
 <p class="fallback">Your email is used to send StockRadar Weekly, StockRadar updates and market briefs. Signals are educational research prompts, not personalised financial advice.</p>
-{% if newsletter_embed_html %}
-<details style="margin-top:16px;">
-<summary style="color:#69c9f2;font-weight:900;cursor:pointer;">Use alternate signup form</summary>
-{{ newsletter_embed_html | safe }}
-</details>
-{% endif %}
 </section>
 <div class="notes">
 <div class="note"><strong>What strengthened</strong><br>A concise recap of areas showing stronger signals.</div>
@@ -11372,24 +11459,40 @@ def newsletter():
             subscription_error = True
             subscription_message = "Please enter a valid email address."
         else:
-            try:
-                create_beehiiv_subscription(submitted_email)
-                subscription_message = (
-                    "Subscribed successfully through Beehiiv. Please check your inbox if confirmation is required."
-                )
-            except Exception as error:
-                app.logger.error(
-                    "Beehiiv newsletter subscription failed: %s",
-                    sanitise_newsletter_error(error),
-                )
+            turnstile_result = verify_turnstile_token(
+                request.form.get("cf-turnstile-response", ""),
+                newsletter_request_remote_ip(),
+            )
+            if not turnstile_result["success"]:
                 subscription_error = True
-                subscription_message = (
-                    "Newsletter signup is temporarily unavailable. Please try again shortly."
-                )
+                turnstile_reason = turnstile_result["reason"]
+                if turnstile_reason == "configuration_missing":
+                    subscription_message = "Newsletter signup protection is temporarily unavailable. Please try again shortly."
+                elif turnstile_reason == "verification_unavailable":
+                    subscription_message = "The security check is temporarily unavailable. Please try again shortly."
+                elif turnstile_reason == "token_missing_or_invalid":
+                    subscription_message = "Please complete the security check before joining the newsletter."
+                else:
+                    subscription_message = "The security check could not be confirmed. Please try it again."
+            else:
+                try:
+                    create_beehiiv_subscription(submitted_email)
+                    subscription_message = (
+                        "Subscribed successfully through Beehiiv. Please check your inbox if confirmation is required."
+                    )
+                except Exception as error:
+                    app.logger.error(
+                        "Beehiiv newsletter subscription failed: %s",
+                        sanitise_newsletter_error(error),
+                    )
+                    subscription_error = True
+                    subscription_message = (
+                        "Newsletter signup is temporarily unavailable. Please try again shortly."
+                    )
 
     return render_template_string(
         newsletter_landing_html,
-        newsletter_embed_html=NEWSLETTER_EMBED_HTML,
+        turnstile_site_key=TURNSTILE_SITE_KEY,
         subscription_message=subscription_message,
         subscription_error=subscription_error,
     )

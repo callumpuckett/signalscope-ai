@@ -175,12 +175,20 @@ def test_newsletter_public_routes_remain_available(monkeypatch):
 
 def test_newsletter_subscribe_uses_beehiiv_not_local_storage(monkeypatch):
     with (
+        patch.object(
+            app,
+            "verify_turnstile_token",
+            return_value={"success": True, "reason": ""},
+        ),
         patch.object(app, "create_beehiiv_subscription", return_value={"id": "sub_123"}) as subscribe,
         patch.object(app, "upsert_newsletter_subscriber") as local_subscribe,
     ):
         response = app.app.test_client().post(
             "/newsletter",
-            data={"email": "reader@example.test"},
+            data={
+                "email": "reader@example.test",
+                "cf-turnstile-response": "verified-token",
+            },
         )
     assert response.status_code == 200
     subscribe.assert_called_once_with("reader@example.test")
@@ -189,12 +197,20 @@ def test_newsletter_subscribe_uses_beehiiv_not_local_storage(monkeypatch):
 
 def test_subscription_api_error_does_not_store_locally(monkeypatch):
     with (
+        patch.object(
+            app,
+            "verify_turnstile_token",
+            return_value={"success": True, "reason": ""},
+        ),
         patch.object(app, "create_beehiiv_subscription", side_effect=RuntimeError("beehiiv_http_403")),
         patch.object(app, "upsert_newsletter_subscriber") as local_subscribe,
     ):
         response = app.app.test_client().post(
             "/newsletter",
-            data={"email": "reader@example.test"},
+            data={
+                "email": "reader@example.test",
+                "cf-turnstile-response": "verified-token",
+            },
         )
     assert response.status_code == 200
     assert b"temporarily unavailable" in response.data
