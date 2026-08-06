@@ -18,13 +18,22 @@ def render_home(path="/", premium=False, owner=False):
     if premium or owner:
         with client.session_transaction() as current_session:
             if premium:
-                current_session["premium_active"] = True
+                current_session["stripe_subscription_id"] = "sub_test_active"
             if owner:
                 current_session["owner_logged_in"] = True
 
     with (
         patch.object(app, "get_cached_dashboard_data", return_value=DASHBOARD_DATA),
         patch.object(app, "get_stock_universe", return_value=[]),
+        patch.object(
+            app,
+            "premium_entitlement_record",
+            return_value=(
+                {"premium_active": True, "entitlement_version": 1}
+                if premium
+                else None
+            ),
+        ),
     ):
         return client.get(path)
 
@@ -148,8 +157,13 @@ def test_login_and_portfolio_routes_preserve_existing_access_behaviour():
     )
 
     with client.session_transaction() as current_session:
-        current_session["premium_active"] = True
-    unlocked_portfolio = client.get("/portfolio-fit")
+        current_session["stripe_subscription_id"] = "sub_test_active"
+    with patch.object(
+        app,
+        "premium_entitlement_record",
+        return_value={"premium_active": True, "entitlement_version": 1},
+    ):
+        unlocked_portfolio = client.get("/portfolio-fit")
     unlocked_page = unlocked_portfolio.get_data(as_text=True)
     assert unlocked_portfolio.status_code == 200
     assert 'action="/portfolio-fit#portfolio-result"' in unlocked_page
@@ -190,7 +204,7 @@ def test_non_entitled_session_can_still_open_the_public_homepage():
         current_session["premium_email"] = "free-reader@example.test"
 
     with (
-        patch.object(app, "premium_entitlement_active", return_value=False),
+        patch.object(app, "premium_entitlement_record", return_value=None),
         patch.object(app, "get_cached_dashboard_data", return_value=DASHBOARD_DATA),
         patch.object(app, "get_stock_universe", return_value=[]),
     ):

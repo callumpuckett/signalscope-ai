@@ -21,6 +21,7 @@ STORE_DEFAULTS = {
     "delivery": {"deliveries": [], "runs": []},
     "beehiiv": {"issues": {}},
     "subscribers": {"subscribers": []},
+    "premium_entitlements": {"records": []},
 }
 
 
@@ -111,6 +112,13 @@ POSTGRES_SCHEMA_STATEMENTS = (
         status TEXT NOT NULL,
         details JSONB NOT NULL,
         completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS stockradar_application_state (
+        state_key TEXT PRIMARY KEY,
+        payload JSONB NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
     """,
 )
@@ -505,6 +513,20 @@ class PostgresNewsletterStorage(NewsletterStorageBackend):
             data["subscribers"] = [
                 json_payload(row[0]) for row in cursor.fetchall()
             ]
+        elif store_name == "premium_entitlements":
+            cursor.execute(
+                """
+                SELECT payload
+                FROM stockradar_application_state
+                WHERE state_key = %s
+                """,
+                ("premium_entitlements",),
+            )
+            row = cursor.fetchone()
+            if row:
+                payload = json_payload(row[0])
+                if isinstance(payload.get("records"), list):
+                    data = payload
         else:
             raise ValueError("unknown_newsletter_store")
         return data
@@ -701,6 +723,23 @@ class PostgresNewsletterStorage(NewsletterStorageBackend):
                 ),
             )
 
+    def _sync_premium_entitlements(self, cursor, data):
+        cursor.execute(
+            """
+            INSERT INTO stockradar_application_state (
+                state_key, payload, updated_at
+            )
+            VALUES (%s, %s, NOW())
+            ON CONFLICT (state_key) DO UPDATE SET
+                payload = EXCLUDED.payload,
+                updated_at = NOW()
+            """,
+            (
+                "premium_entitlements",
+                Jsonb(data),
+            ),
+        )
+
     def _sync_state_with_cursor(self, cursor, store_name, data, overwrite=True):
         if store_name == "issues":
             self._sync_issues(cursor, data)
@@ -714,6 +753,8 @@ class PostgresNewsletterStorage(NewsletterStorageBackend):
             self._sync_beehiiv(cursor, data, overwrite=overwrite)
         elif store_name == "subscribers":
             self._sync_subscribers(cursor, data, overwrite=overwrite)
+        elif store_name == "premium_entitlements":
+            self._sync_premium_entitlements(cursor, data)
         else:
             raise ValueError("unknown_newsletter_store")
 

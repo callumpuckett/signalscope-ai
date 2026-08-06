@@ -9,14 +9,17 @@ from zoneinfo import ZoneInfo
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 from urllib.error import URLError
+from decimal import Decimal, InvalidOperation
 import csv
 import copy
 import hashlib
+import hmac
 import ipaddress
 import json
 import os
 import pandas as pd
 import re
+import secrets
 import smtplib
 import ssl
 import tempfile
@@ -25,6 +28,9 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+
+from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.security import check_password_hash
 
 from newsletter_storage import (
     DegradedNewsletterStorage,
@@ -65,6 +71,18 @@ def configure_session_security(flask_app, secret_key, production):
         SESSION_COOKIE_SAMESITE="Lax",
     )
 
+
+def configure_render_proxy(flask_app, enabled):
+    if enabled:
+        flask_app.wsgi_app = ProxyFix(
+            flask_app.wsgi_app,
+            x_for=1,
+            x_proto=1,
+            x_host=0,
+            x_port=0,
+            x_prefix=0,
+        )
+
 try:
     import yfinance as yf
 except Exception:
@@ -76,6 +94,10 @@ except ImportError:
     stripe = None
 
 app = Flask(__name__)
+configure_render_proxy(
+    app,
+    os.environ.get("RENDER", "").strip().lower() == "true",
+)
 
 
 NEWSLETTER_SIDE_TAB_MARKER = 'data-stockradar-newsletter-tab="true"'
@@ -526,15 +548,16 @@ SESSION_SECRET = (
 configure_session_security(app, SESSION_SECRET, IS_PRODUCTION)
 OWNER_EMAIL = os.environ.get("SIGNALSCOPE_OWNER_EMAIL", "").strip().lower()
 OWNER_PASSWORD = os.environ.get("SIGNALSCOPE_OWNER_PASSWORD", "")
+OWNER_PASSWORD_HASH = os.environ.get("SIGNALSCOPE_OWNER_PASSWORD_HASH", "").strip()
 SUPPORT_EMAIL = os.environ.get("SUPPORT_EMAIL", "").strip()
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_PRICE_ID = os.environ.get("STRIPE_PRICE_ID", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_PRODUCT_ID = os.environ.get("STRIPE_PRODUCT_ID", "").strip()
 PREMIUM_PAYMENTS_ENABLED = os.environ.get("PREMIUM_PAYMENTS_ENABLED", "").strip().lower() == "true"
 PRODUCTION_BASE_URL = "https://www.stockradarhq.com"
 RENDER_FALLBACK_BASE_URL = "https://signalscope-ai-1-0v3g.onrender.com"
 APP_ROOT = os.path.dirname(os.path.abspath(__file__))
-PREMIUM_ENTITLEMENTS_PATH = os.path.join(APP_ROOT, "premium_entitlements.json")
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 
 
@@ -614,6 +637,9 @@ def stockradar_data_path(filename):
     if not clean_name or clean_name in {".", ".."}:
         raise ValueError("invalid_data_filename")
     return os.path.join(STOCKRADAR_DATA_DIR, clean_name)
+
+
+PREMIUM_ENTITLEMENTS_PATH = stockradar_data_path("premium_entitlements.json")
 
 
 DEFAULT_STRIPE_SUCCESS_URL = (
@@ -1212,6 +1238,16 @@ def subscription_status_is_active(status):
 
 
 def load_premium_entitlements():
+    if NEWSLETTER_STORAGE is not None:
+        try:
+            data = NEWSLETTER_STORAGE.load_state("premium_entitlements")
+        except Exception:
+            app.logger.exception("Failed to read premium entitlement storage.")
+            return {"records": []}
+        if isinstance(data, dict) and isinstance(data.get("records"), list):
+            return data
+        return {"records": []}
+
     try:
         with open(PREMIUM_ENTITLEMENTS_PATH, "r", encoding="utf-8") as handle:
             data = json.load(handle)
@@ -1228,6 +1264,15 @@ def load_premium_entitlements():
 
 
 def save_premium_entitlements(data):
+    if NEWSLETTER_STORAGE is not None:
+        try:
+            return bool(
+                NEWSLETTER_STORAGE.save_state("premium_entitlements", data)
+            )
+        except Exception:
+            app.logger.exception("Failed to write premium entitlement storage.")
+            return False
+
     try:
         directory = os.path.dirname(PREMIUM_ENTITLEMENTS_PATH)
         if directory:
@@ -1241,15 +1286,6 @@ def save_premium_entitlements(data):
     except Exception:
         app.logger.exception("Failed to write premium entitlement storage.")
         return False
-
-
-def entitlement_matches(record, customer_id="", subscription_id="", email=""):
-    record_email = normalize_email(record.get("customer_email"))
-    return bool(
-        customer_id and record.get("stripe_customer_id") == customer_id
-        or subscription_id and record.get("stripe_subscription_id") == subscription_id
-        or email and record_email == normalize_email(email)
-    )
 
 
 def update_premium_entitlement(
@@ -1268,55 +1304,115 @@ def update_premium_entitlement(
         app.logger.warning("Skipping premium entitlement update without Stripe identifiers.")
         return None
 
-    data = load_premium_entitlements()
-    records = data.setdefault("records", [])
-    now = utc_timestamp()
+    update_result = {"record": None}
 
-    matching_record = None
-    for record in records:
-        if entitlement_matches(record, customer_id, subscription_id, email):
-            matching_record = record
-            break
+    def apply_entitlement_update(data):
+        records = data.setdefault("records", [])
+        now = utc_timestamp()
+        matching_record = None
+        if subscription_id:
+            matching_record = next(
+                (
+                    record for record in records
+                    if record.get("stripe_subscription_id")
+                    == subscription_id
+                ),
+                None,
+            )
+        if matching_record is None and customer_id:
+            matching_record = next(
+                (
+                    record for record in records
+                    if record.get("stripe_customer_id") == customer_id
+                ),
+                None,
+            )
+        if matching_record is None and email:
+            matching_record = next(
+                (
+                    record for record in records
+                    if normalize_email(record.get("customer_email"))
+                    == email
+                ),
+                None,
+            )
 
-    if matching_record is None:
-        matching_record = {"created_at": now}
-        records.append(matching_record)
+        if matching_record is None:
+            matching_record = {"created_at": now}
+            records.append(matching_record)
 
-    if email:
-        matching_record["customer_email"] = email
-    if customer_id:
-        matching_record["stripe_customer_id"] = customer_id
-    if subscription_id:
-        matching_record["stripe_subscription_id"] = subscription_id
+        if email:
+            matching_record["customer_email"] = email
+        if customer_id:
+            matching_record["stripe_customer_id"] = customer_id
+        if subscription_id:
+            matching_record["stripe_subscription_id"] = subscription_id
 
-    matching_record["subscription_status"] = str(subscription_status or "").strip().lower()
-    matching_record["premium_active"] = bool(premium_active)
-    matching_record["updated_at"] = now
-    if event_type:
-        matching_record["last_event"] = event_type
+        matching_record["subscription_status"] = str(
+            subscription_status or ""
+        ).strip().lower()
+        matching_record["premium_active"] = bool(premium_active)
+        matching_record["entitlement_version"] = int(
+            matching_record.get("entitlement_version") or 0
+        ) + 1
+        matching_record["updated_at"] = now
+        if event_type:
+            matching_record["last_event"] = event_type
+        update_result["record"] = copy.deepcopy(matching_record)
+        return True
 
-    return matching_record if save_premium_entitlements(data) else None
+    if NEWSLETTER_STORAGE is not None:
+        stored = NEWSLETTER_STORAGE.update_state(
+            "premium_entitlements",
+            apply_entitlement_update,
+        )
+    else:
+        data = load_premium_entitlements()
+        apply_entitlement_update(data)
+        stored = save_premium_entitlements(data)
+
+    return update_result["record"] if stored else None
 
 
-def premium_entitlement_active(customer_id="", subscription_id="", email=""):
+def premium_entitlement_record(customer_id="", subscription_id="", email=""):
     customer_id = stripe_identifier(customer_id)
     subscription_id = stripe_identifier(subscription_id)
     email = normalize_email(email)
 
     if not any([customer_id, subscription_id, email]):
-        return False
+        return None
 
     data = load_premium_entitlements()
-    matches = [
-        record for record in data.get("records", [])
-        if entitlement_matches(record, customer_id, subscription_id, email)
-    ]
+    records = data.get("records", [])
+    if subscription_id:
+        matches = [
+            record for record in records
+            if record.get("stripe_subscription_id") == subscription_id
+        ]
+    elif customer_id:
+        matches = [
+            record for record in records
+            if record.get("stripe_customer_id") == customer_id
+        ]
+    else:
+        matches = [
+            record for record in records
+            if normalize_email(record.get("customer_email")) == email
+        ]
 
     if not matches:
-        return False
+        return None
 
-    latest = sorted(matches, key=lambda item: item.get("updated_at", ""), reverse=True)[0]
-    return latest.get("premium_active") is True
+    return sorted(
+        matches,
+        key=lambda item: item.get("updated_at", ""),
+        reverse=True,
+    )[0]
+
+
+def premium_entitlement_active(customer_id="", subscription_id="", email=""):
+    record = premium_entitlement_record(customer_id, subscription_id, email)
+    return bool(record and record.get("premium_active") is True)
 
 
 def checkout_session_email(checkout_session):
@@ -1332,6 +1428,170 @@ def checkout_session_payment_verified(checkout_session):
     payment_status = str(stripe_value(checkout_session, "payment_status", "") or "").lower()
     checkout_status = str(stripe_value(checkout_session, "status", "") or "").lower()
     return payment_status == "paid" if payment_status else checkout_status == "complete"
+
+
+CHECKOUT_INTENT_MAX_AGE_SECONDS = 30 * 60
+CHECKOUT_SESSION_ID_PATTERN = re.compile(r"^cs_(test|live)_[A-Za-z0-9_]+$")
+CHECKOUT_FLOW_NAME = "stockradar-premium-v1"
+
+
+def stripe_expected_livemode():
+    secret_key = str(STRIPE_SECRET_KEY or "").strip()
+    if secret_key.startswith(("sk_live_", "rk_live_")):
+        return True
+    if secret_key.startswith(("sk_test_", "rk_test_")):
+        return False
+    return None
+
+
+def stripe_object_livemode_matches(stripe_object):
+    expected_livemode = stripe_expected_livemode()
+    object_livemode = stripe_value(stripe_object, "livemode")
+    return (
+        expected_livemode is not None
+        and isinstance(object_livemode, bool)
+        and object_livemode == expected_livemode
+    )
+
+
+def checkout_session_id_valid(checkout_session_id):
+    session_id = str(checkout_session_id or "").strip()
+    if not session_id or len(session_id) > 255:
+        return False
+    match = CHECKOUT_SESSION_ID_PATTERN.fullmatch(session_id)
+    expected_livemode = stripe_expected_livemode()
+    if not match or expected_livemode is None:
+        return False
+    return match.group(1) == ("live" if expected_livemode else "test")
+
+
+def create_checkout_intent():
+    checkout_intent = secrets.token_urlsafe(32)
+    session["checkout_intent"] = checkout_intent
+    session["checkout_intent_created_at"] = time.time()
+    return checkout_intent
+
+
+def checkout_intent_reference(checkout_intent):
+    return hashlib.sha256(str(checkout_intent or "").encode("utf-8")).hexdigest()
+
+
+def checkout_session_line_item_matches(checkout_session):
+    line_items = stripe_value(checkout_session, "line_items", {}) or {}
+    items = stripe_value(line_items, "data", []) or []
+    for item in items:
+        price = stripe_value(item, "price", {}) or {}
+        if stripe_identifier(price) != STRIPE_PRICE_ID:
+            continue
+        if not STRIPE_PRODUCT_ID:
+            return True
+        product = stripe_value(price, "product", "")
+        if stripe_identifier(product) == STRIPE_PRODUCT_ID:
+            return True
+    return False
+
+
+def checkout_session_metadata_matches(checkout_session):
+    metadata = stripe_value(checkout_session, "metadata", {}) or {}
+    checkout_intent = str(
+        stripe_value(metadata, "stockradar_checkout_intent", "") or ""
+    )
+    client_reference_id = str(
+        stripe_value(checkout_session, "client_reference_id", "") or ""
+    )
+    if (
+        str(stripe_value(metadata, "stockradar_checkout_flow", "") or "")
+        != CHECKOUT_FLOW_NAME
+        or str(stripe_value(metadata, "stockradar_price_id", "") or "")
+        != STRIPE_PRICE_ID
+        or not checkout_intent
+        or len(checkout_intent) > 255
+        or not hmac.compare_digest(
+            client_reference_id,
+            checkout_intent_reference(checkout_intent),
+        )
+    ):
+        return False
+    if STRIPE_PRODUCT_ID and (
+        str(stripe_value(metadata, "stockradar_product_id", "") or "")
+        != STRIPE_PRODUCT_ID
+    ):
+        return False
+    return True
+
+
+def checkout_session_server_context_matches(checkout_session):
+    checkout_session_id = stripe_identifier(stripe_value(checkout_session, "id"))
+    return bool(
+        checkout_session_id_valid(checkout_session_id)
+        and stripe_object_livemode_matches(checkout_session)
+        and str(stripe_value(checkout_session, "mode", "") or "").lower()
+        == "subscription"
+        and checkout_session_payment_verified(checkout_session)
+        and stripe_identifier(
+            stripe_value(checkout_session, "subscription")
+        ).startswith("sub_")
+        and stripe_identifier(stripe_value(checkout_session, "customer")).startswith(
+            "cus_"
+        )
+        and checkout_session_metadata_matches(checkout_session)
+    )
+
+
+def validate_checkout_entitlement(
+    checkout_session,
+    checkout_session_id,
+    checkout_intent,
+    checkout_intent_created_at,
+    now=None,
+):
+    current_time = time.time() if now is None else float(now)
+    retrieved_id = stripe_identifier(stripe_value(checkout_session, "id"))
+    subscription_id = stripe_identifier(stripe_value(checkout_session, "subscription"))
+    customer_id = stripe_identifier(stripe_value(checkout_session, "customer"))
+    premium_email = normalize_email(checkout_session_email(checkout_session))
+    metadata = stripe_value(checkout_session, "metadata", {}) or {}
+    stored_intent = str(checkout_intent or "")
+    returned_intent = str(stripe_value(metadata, "stockradar_checkout_intent", "") or "")
+    client_reference_id = str(
+        stripe_value(checkout_session, "client_reference_id", "") or ""
+    )
+
+    try:
+        intent_created_at = float(checkout_intent_created_at)
+        checkout_created_at = float(stripe_value(checkout_session, "created"))
+    except (TypeError, ValueError):
+        return None
+
+    if retrieved_id != checkout_session_id:
+        return None
+    if not checkout_session_server_context_matches(checkout_session):
+        return None
+    if not premium_email or not valid_newsletter_email(premium_email):
+        return None
+    if (
+        not stored_intent
+        or current_time - intent_created_at > CHECKOUT_INTENT_MAX_AGE_SECONDS
+        or intent_created_at > current_time + 60
+        or checkout_created_at < intent_created_at - 60
+        or checkout_created_at > current_time + 60
+    ):
+        return None
+    if not hmac.compare_digest(returned_intent, stored_intent):
+        return None
+    if not hmac.compare_digest(
+        client_reference_id,
+        checkout_intent_reference(stored_intent),
+    ):
+        return None
+    if not checkout_session_line_item_matches(checkout_session):
+        return None
+
+    return {
+        "customer_id": customer_id,
+        "subscription_id": subscription_id,
+        "premium_email": premium_email,
+    }
 
 
 def remember_premium_session_identifiers(customer_id="", subscription_id="", email=""):
@@ -1351,19 +1611,196 @@ def owner_has_access():
     return session.get("owner_logged_in") is True
 
 
+PREMIUM_SESSION_KEYS = (
+    "premium_active",
+    "stripe_customer_id",
+    "stripe_subscription_id",
+    "premium_email",
+    "entitlement_version",
+    "checkout_intent",
+    "checkout_intent_created_at",
+)
+
+
+def clear_premium_session():
+    for key in PREMIUM_SESSION_KEYS:
+        session.pop(key, None)
+
+
+def stripe_subscription_entitlement_matches(subscription):
+    subscription_id = stripe_identifier(stripe_value(subscription, "id"))
+    customer_id = stripe_identifier(stripe_value(subscription, "customer"))
+    status = str(stripe_value(subscription, "status", "") or "").lower()
+    items = stripe_nested_value(subscription, "items", "data") or []
+    matching_price = False
+    for item in items:
+        price = stripe_value(item, "price", {}) or {}
+        if stripe_identifier(price) != STRIPE_PRICE_ID:
+            continue
+        if STRIPE_PRODUCT_ID and stripe_identifier(
+            stripe_value(price, "product", "")
+        ) != STRIPE_PRODUCT_ID:
+            continue
+        matching_price = True
+        break
+    return bool(
+        subscription_id.startswith("sub_")
+        and customer_id.startswith("cus_")
+        and stripe_object_livemode_matches(subscription)
+        and subscription_status_is_active(status)
+        and matching_price
+    )
+
+
+def revalidate_legacy_premium_session():
+    subscription_id = stripe_identifier(
+        session.get("stripe_subscription_id")
+    )
+    expected_customer_id = stripe_identifier(session.get("stripe_customer_id"))
+    premium_email = normalize_email(session.get("premium_email"))
+    if (
+        not stripe_credentials_configured()
+        or not subscription_id.startswith("sub_")
+    ):
+        return None
+
+    try:
+        subscription = stripe.Subscription.retrieve(
+            subscription_id,
+            expand=["items.data.price.product"],
+        )
+    except Exception:
+        app.logger.warning("Legacy Premium session revalidation failed.")
+        return None
+
+    retrieved_subscription_id = stripe_identifier(
+        stripe_value(subscription, "id")
+    )
+    retrieved_customer_id = stripe_identifier(
+        stripe_value(subscription, "customer")
+    )
+    if (
+        retrieved_subscription_id != subscription_id
+        or (
+            expected_customer_id
+            and retrieved_customer_id != expected_customer_id
+        )
+        or not stripe_subscription_entitlement_matches(subscription)
+    ):
+        return None
+
+    return update_premium_entitlement(
+        customer_id=retrieved_customer_id,
+        subscription_id=retrieved_subscription_id,
+        email=premium_email,
+        subscription_status=str(
+            stripe_value(subscription, "status", "") or ""
+        ).lower(),
+        premium_active=True,
+        event_type="legacy-session-revalidation",
+    )
+
+
 def premium_has_access():
-    if owner_has_access() or session.get("premium_active") is True:
+    if owner_has_access():
         return True
 
-    return premium_entitlement_active(
+    record = premium_entitlement_record(
         customer_id=session.get("stripe_customer_id"),
         subscription_id=session.get("stripe_subscription_id"),
         email=session.get("premium_email"),
     )
+    if record is None:
+        record = revalidate_legacy_premium_session()
+    if not record or record.get("premium_active") is not True:
+        clear_premium_session()
+        return False
+
+    session["premium_active"] = True
+    session["entitlement_version"] = int(record.get("entitlement_version") or 0)
+    return True
 
 
 def owner_login_configured():
-    return bool(OWNER_EMAIL and OWNER_PASSWORD)
+    return bool(OWNER_EMAIL and (OWNER_PASSWORD_HASH or OWNER_PASSWORD))
+
+
+LOGIN_RATE_LIMIT_MAX_FAILURES = 5
+LOGIN_RATE_LIMIT_WINDOW_SECONDS = 15 * 60
+LOGIN_RATE_LIMIT_BLOCK_SECONDS = 15 * 60
+LOGIN_RATE_LIMIT_STATE = {"ip": {}, "identity": {}}
+LOGIN_RATE_LIMIT_LOCK = threading.Lock()
+
+
+def login_client_ip():
+    try:
+        return str(ipaddress.ip_address(request.remote_addr or ""))
+    except ValueError:
+        return "unknown"
+
+
+def login_identity_key(email):
+    normalized = normalize_email(email)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def login_rate_limit_keys(email):
+    return (("ip", login_client_ip()), ("identity", login_identity_key(email)))
+
+
+def login_rate_limit_status(email, now=None):
+    current_time = time.monotonic() if now is None else float(now)
+    retry_after = 0
+    with LOGIN_RATE_LIMIT_LOCK:
+        for category, key in login_rate_limit_keys(email):
+            record = LOGIN_RATE_LIMIT_STATE[category].get(key)
+            if not record:
+                continue
+            if current_time - record["window_started"] > LOGIN_RATE_LIMIT_WINDOW_SECONDS:
+                LOGIN_RATE_LIMIT_STATE[category].pop(key, None)
+                continue
+            retry_after = max(
+                retry_after,
+                int(max(0, record.get("blocked_until", 0) - current_time)),
+            )
+    return retry_after
+
+
+def record_login_failure(email, now=None):
+    current_time = time.monotonic() if now is None else float(now)
+    with LOGIN_RATE_LIMIT_LOCK:
+        for category, key in login_rate_limit_keys(email):
+            record = LOGIN_RATE_LIMIT_STATE[category].get(key)
+            if (
+                not record
+                or current_time - record["window_started"] > LOGIN_RATE_LIMIT_WINDOW_SECONDS
+            ):
+                record = {"count": 0, "window_started": current_time, "blocked_until": 0}
+                LOGIN_RATE_LIMIT_STATE[category][key] = record
+            record["count"] += 1
+            if record["count"] >= LOGIN_RATE_LIMIT_MAX_FAILURES:
+                record["blocked_until"] = current_time + LOGIN_RATE_LIMIT_BLOCK_SECONDS
+
+
+def reset_login_failures(email):
+    with LOGIN_RATE_LIMIT_LOCK:
+        for category, key in login_rate_limit_keys(email):
+            LOGIN_RATE_LIMIT_STATE[category].pop(key, None)
+
+
+def owner_credentials_valid(email, password):
+    email_matches = hmac.compare_digest(normalize_email(email), OWNER_EMAIL)
+    if OWNER_PASSWORD_HASH:
+        try:
+            password_matches = check_password_hash(OWNER_PASSWORD_HASH, password)
+        except (ValueError, TypeError):
+            password_matches = False
+    else:
+        password_matches = bool(OWNER_PASSWORD) and hmac.compare_digest(
+            str(password or ""),
+            OWNER_PASSWORD,
+        )
+    return email_matches and password_matches
 
 
 def disclaimer_footer():
@@ -8971,6 +9408,7 @@ def newsletter_storage_paths():
         "delivery": NEWSLETTER_DELIVERY_LOG_PATH,
         "beehiiv": NEWSLETTER_BEEHIIV_STATE_PATH,
         "subscribers": NEWSLETTER_SUBSCRIBERS_PATH,
+        "premium_entitlements": PREMIUM_ENTITLEMENTS_PATH,
     }
 
 
@@ -10926,13 +11364,9 @@ ul{color:#cbd5e1;line-height:1.75;padding-left:20px;}
     <div class="grid">
         <div class="card">
             <h2>Build your starter profile</h2>
-<form method="POST" action="/beginner#beginner-result">
-{% if result %}
-<div id="beginner-result" class="card result">
-    <p class="kicker">Your beginner profile</p>
-    <h2>{{ result.profile }}</h2>
-    <p style="color:#00ffaa;font-weight:950;margin-top:-4px;">✅ Beginner plan created successfully.</p>
-    <p>{{ result.summary }}</p>             <div class="form-grid">
+            {% if validation_error %}<div class="warning" role="alert">{{ validation_error }}</div>{% endif %}
+            <form method="POST" action="/beginner#beginner-result">
+                <div class="form-grid">
                     <div class="field"><label for="goal">Main goal</label><select id="goal" name="goal"><option value="growth">Long-term growth</option><option value="income">Income later</option><option value="learning">Learn investing first</option><option value="balanced">Balanced growth and stability</option></select></div>
                     <div class="field"><label for="horizon">Time horizon</label><select id="horizon" name="horizon"><option value="10plus">10+ years</option><option value="5to10">5–10 years</option><option value="2to5">2–5 years</option><option value="short">Under 2 years</option></select></div>
                     <div class="field"><label for="risk">Risk comfort</label><select id="risk" name="risk"><option value="medium">Medium</option><option value="low">Low</option><option value="high">High</option></select></div>
@@ -10977,6 +11411,7 @@ ul{color:#cbd5e1;line-height:1.75;padding-left:20px;}
     </ul>
 
 <a class="button" href="/?tab=signals#Starter-Buy-Framework">Open AI Signals</a>
+</div>
 {% endif %}
     <div class="card"><h2>How this connects to the main dashboard</h2><p>The beginner path gives the user a structure first. The AI signal table then becomes a research tool instead of a gambling screen.</p></div>
 </div>
@@ -10988,18 +11423,60 @@ window.addEventListener('load', function(){
     }
 });
 </script>
+{{ newsletter_side_tab() | safe }}
 </body>
 </html>
 """
 
 
+BEGINNER_FIELD_OPTIONS = {
+    "goal": {"growth", "income", "learning", "balanced"},
+    "horizon": {"10plus", "5to10", "2to5", "short"},
+    "risk": {"medium", "low", "high"},
+    "experience": {"new", "some", "confident"},
+    "style": {"simple", "stocks", "active"},
+}
+BEGINNER_MONTHLY_AMOUNT_LIMIT = Decimal("1000000")
+
+
+def validate_beginner_form(form):
+    cleaned = {}
+    defaults = {
+        "goal": "growth",
+        "horizon": "10plus",
+        "risk": "medium",
+        "experience": "new",
+        "style": "simple",
+    }
+    for field, allowed in BEGINNER_FIELD_OPTIONS.items():
+        value = str(form.get(field, defaults[field]) or "").strip().lower()
+        if value not in allowed:
+            return None, "Please choose one of the available Investment Compass options."
+        cleaned[field] = value
+
+    raw_amount = str(form.get("amount", "") or "").strip()
+    if not raw_amount:
+        cleaned["amount"] = None
+        return cleaned, ""
+    if len(raw_amount) > 32:
+        return None, "Please enter a valid monthly amount between £0 and £1,000,000."
+    try:
+        amount = Decimal(raw_amount)
+    except (InvalidOperation, ValueError):
+        return None, "Please enter a valid monthly amount between £0 and £1,000,000."
+    if not amount.is_finite() or amount < 0 or amount > BEGINNER_MONTHLY_AMOUNT_LIMIT:
+        return None, "Please enter a valid monthly amount between £0 and £1,000,000."
+    cleaned["amount"] = amount
+    return cleaned, ""
+
+
 def build_beginner_result(form):
-    goal = form.get("goal", "growth")
-    horizon = form.get("horizon", "10plus")
-    risk = form.get("risk", "medium")
-    experience = form.get("experience", "new")
-    style = form.get("style", "simple")
-    amount = form.get("amount", "").strip()
+    goal = form["goal"]
+    horizon = form["horizon"]
+    risk = form["risk"]
+    experience = form["experience"]
+    style = form["style"]
+    amount = form.get("amount")
 
     if horizon == "short":
         return {
@@ -11029,7 +11506,14 @@ def build_beginner_result(form):
         etf, quality, defensive, learning = 70, 15, 10, 5
         summary = "This is a sensible middle route: a diversified core, a small quality-stock layer and enough flexibility to learn without overtrading."
 
-    monthly_line = f"At around £{amount} per month, automate the core first and keep stock research controlled." if amount else "Decide a monthly amount first, then split it using the model rather than buying randomly."
+    if amount is not None:
+        formatted_amount = f"{amount:,.2f}".rstrip("0").rstrip(".")
+        monthly_line = (
+            f"At around £{formatted_amount} per month, automate the core first and "
+            "keep stock research controlled."
+        )
+    else:
+        monthly_line = "Decide a monthly amount first, then split it using the model rather than buying randomly."
 
     steps = [
         monthly_line,
@@ -11056,116 +11540,18 @@ def build_beginner_result(form):
 @app.route("/beginner", methods=["GET", "POST"])
 def beginner():
     result = None
-    result_html = ""
+    validation_error = ""
 
     if request.method == "POST":
-        result = build_beginner_result(request.form)
-        steps_html = "".join(f"<li>{step}</li>" for step in result["steps"])
-        result_html = f"""
-        <div id="beginner-result" class="card result">
-            <p class="kicker">Your beginner profile</p>
-            <h2>{result["profile"]}</h2>
-            <p style="color:#00ffaa;font-weight:950;margin-top:-4px;">✅ Beginner plan created successfully.</p>
-            <p>{result["summary"]}</p>
-            <div class="model-grid">
-                <div class="model-box"><strong>{result["etf"]}%</strong><span>Core ETFs</span></div>
-                <div class="model-box"><strong>{result["quality"]}%</strong><span>Quality stocks</span></div>
-                <div class="model-box"><strong>{result["defensive"]}%</strong><span>Defensive names</span></div>
-                <div class="model-box"><strong>{result["learning"]}%</strong><span>Learning picks</span></div>
-            </div>
-            <h2 style="margin-top:24px;">Next steps</h2>
-            <ul>{steps_html}</ul>
-            <a class="button" href="/?tab=signals#Starter-Buy-Framework">Open AI Signals</a>
-           </div>
-        """
+        cleaned_form, validation_error = validate_beginner_form(request.form)
+        if cleaned_form is not None:
+            result = build_beginner_result(cleaned_form)
 
-    page_html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Investment Compass — StockRadar</title>
-    <style>
-    *{{box-sizing:border-box;}}
-    html{{scroll-behavior:smooth;}}
-    body{{margin:0;background:radial-gradient(circle at 20% 10%,rgba(0,255,170,0.15),transparent 28%),radial-gradient(circle at 90% 10%,rgba(255,184,107,0.12),transparent 28%),linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}}
-    a{{color:#38bdf8;text-decoration:none;font-weight:900;}}
-    a:hover{{text-decoration:underline;}}
-    .wrap{{max-width:1180px;margin:0 auto;}}
-    .back{{display:inline-block;margin-bottom:22px;}}
-    .hero,.card{{background:linear-gradient(180deg,rgba(23,23,23,0.96),rgba(14,14,14,0.96));border:1px solid rgba(255,255,255,0.11);border-radius:30px;padding:32px;box-shadow:0 30px 85px rgba(0,0,0,0.42);margin-bottom:22px;}}
-    .kicker{{color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;}}
-    h1{{font-size:46px;line-height:1.04;margin:0 0 16px 0;letter-spacing:-0.04em;}}
-    h2{{margin:0 0 12px 0;}}
-    p{{color:#cbd5e1;line-height:1.72;}}
-    .grid{{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;}}
-    .form-grid{{display:grid;grid-template-columns:1fr 1fr;gap:14px;}}
-    .field label{{display:block;color:#94a3b8;font-size:11px;text-transform:uppercase;letter-spacing:0.12em;font-weight:950;margin-bottom:8px;}}
-    select,input{{width:100%;background:#020617;border:1px solid rgba(255,255,255,0.13);border-radius:15px;color:white;padding:14px;font-weight:800;outline:none;}}
-    button,.button{{display:inline-block;border:none;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-radius:15px;padding:14px 18px;font-weight:950;cursor:pointer;text-decoration:none;margin-top:16px;}}
-    .result{{border:1px solid rgba(0,255,170,0.20);background:linear-gradient(135deg,rgba(0,255,170,0.12),rgba(56,189,248,0.08));}}
-    .model-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:16px;}}
-    .model-box{{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:18px;padding:16px;}}
-    .model-box strong{{display:block;font-size:26px;margin-bottom:6px;}}
-    .warning{{background:rgba(239,68,68,0.09);border:1px solid rgba(239,68,68,0.20);border-radius:20px;padding:18px;color:#fecaca;line-height:1.65;}}
-    ul{{color:#cbd5e1;line-height:1.75;padding-left:20px;}}
-    .tag{{display:inline-block;background:rgba(56,189,248,0.12);border:1px solid rgba(56,189,248,0.22);color:#bae6fd;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:950;margin:4px 6px 4px 0;}}
-    @media(max-width:900px){{body{{padding:24px;}}.grid,.form-grid,.model-grid{{grid-template-columns:1fr;}}h1{{font-size:34px;}}}}
-    @media(max-width:480px){{body{{padding:16px;overflow-x:hidden;}}.hero,.card{{padding:22px 18px;border-radius:22px;overflow-wrap:anywhere;}}h1{{font-size:30px;}}select,input,button,.button{{min-height:44px;}}}}
-    </style>
-    </head>
-    <body>
-    {stockradar_header_navigation("app")}
-    <div class="wrap">
-        <a class="back" href="/">← Back to dashboard</a>
-        <div class="hero">
-            <p class="kicker">starter investor profile</p>
-            <h1>Start with a simple structure before chasing stock picks.</h1>
-            <p>Answer five plain-English questions. StockRadar will give you a beginner profile, a starter allocation model and the key risks to understand before using the AI signals dashboard.</p>
-            <div><span class="tag">ETF-first thinking</span><span class="tag">Risk guidance</span><span class="tag">Plain English</span><span class="tag">Educational only</span></div>
-        </div>
-        <div class="grid">
-            <div class="card">
-                <h2>Build your starter profile</h2>
-                <form method="POST" action="/beginner#beginner-result">
-                    <div class="form-grid">
-                        <div class="field"><label for="goal">Main goal</label><select id="goal" name="goal"><option value="growth">Long-term growth</option><option value="income">Income later</option><option value="learning">Learn investing first</option><option value="balanced">Balanced growth and stability</option></select></div>
-                        <div class="field"><label for="horizon">Time horizon</label><select id="horizon" name="horizon"><option value="10plus">10+ years</option><option value="5to10">5–10 years</option><option value="2to5">2–5 years</option><option value="short">Under 2 years</option></select></div>
-                        <div class="field"><label for="risk">Risk comfort</label><select id="risk" name="risk"><option value="medium">Medium</option><option value="low">Low</option><option value="high">High</option></select></div>
-                        <div class="field"><label for="experience">Experience</label><select id="experience" name="experience"><option value="new">Brand new</option><option value="some">Some basics</option><option value="confident">Confident beginner</option></select></div>
-                        <div class="field"><label for="amount">Monthly amount</label><input id="amount" name="amount" type="number" min="0" step="10" placeholder="100"></div>
-                        <div class="field"><label for="style">Preferred style</label><select id="style" name="style"><option value="simple">Keep it simple</option><option value="stocks">ETFs plus some stocks</option><option value="active">More active research</option></select></div>
-                    </div>
-                    <button type="submit">Create beginner plan</button>
-                </form>
-            </div>
-            <div class="card">
-                <h2>What beginners should avoid first</h2>
-                <ul>
-                    <li>Buying random stocks because they are trending online.</li>
-                    <li>Putting short-term savings or emergency cash into volatile shares.</li>
-                    <li>Owning only one sector, especially only technology.</li>
-                    <li>Thinking BUY means guaranteed profit or SELL means guaranteed collapse.</li>
-                    <li>Checking prices every hour when the plan is long-term.</li>
-                </ul>
-                <div class="warning"><strong>Important:</strong> StockRadar is educational market software, not personal financial advice.</div>
-            </div>
-        </div>
-        {result_html}
-        <div class="card"><h2>How this connects to the main dashboard</h2><p>The beginner path gives the user a structure first. The AI signal table then becomes a research tool instead of a gambling screen.</p></div>
-    </div>
-    <script>
-    window.addEventListener('load', function(){{
-        var result = document.getElementById('beginner-result');
-        if(result){{result.scrollIntoView({{behavior:'smooth', block:'start'}});}}
-    }});
-    </script>
-    {newsletter_side_tab()}
-    </body>
-    </html>
-    """
-
-    return page_html
+    return render_template_string(
+        beginner_html,
+        result=result,
+        validation_error=validation_error,
+    )
 
 login_html = """
 <!DOCTYPE html>
@@ -12541,6 +12927,15 @@ def create_checkout_session():
 </html>
         """), 400
 
+    checkout_intent = create_checkout_intent()
+    checkout_metadata = {
+        "stockradar_checkout_flow": CHECKOUT_FLOW_NAME,
+        "stockradar_checkout_intent": checkout_intent,
+        "stockradar_price_id": STRIPE_PRICE_ID,
+    }
+    if STRIPE_PRODUCT_ID:
+        checkout_metadata["stockradar_product_id"] = STRIPE_PRODUCT_ID
+
     try:
         checkout_session = stripe.checkout.Session.create(
             mode="subscription",
@@ -12548,9 +12943,14 @@ def create_checkout_session():
             success_url=STRIPE_SUCCESS_URL or url_for("checkout_success", _external=True),
             cancel_url=STRIPE_CANCEL_URL or url_for("upgrade", _external=True),
             allow_promotion_codes=True,
+            client_reference_id=checkout_intent_reference(checkout_intent),
+            metadata=checkout_metadata,
+            subscription_data={"metadata": checkout_metadata},
         )
         return redirect(checkout_session.url, code=303)
     except Exception:
+        session.pop("checkout_intent", None)
+        session.pop("checkout_intent_created_at", None)
         app.logger.error("Stripe Checkout session creation failed.")
         return render_template_string("""
 <!doctype html>
@@ -12581,6 +12981,8 @@ def create_checkout_session():
 @app.route("/checkout-success")
 def checkout_success():
     checkout_session_id = request.args.get("session_id", "").strip()
+    checkout_intent = session.pop("checkout_intent", "")
+    checkout_intent_created_at = session.pop("checkout_intent_created_at", None)
     premium_activated = False
     heading = "Payment verification required"
     message = "Premium access has not been activated. Please complete checkout from the upgrade page."
@@ -12590,35 +12992,52 @@ def checkout_success():
         heading = "Payment verification unavailable"
         message = "Premium access has not been activated because Stripe Checkout is not configured."
         response_status = 503
-    elif not checkout_session_id:
-        message = "Premium access has not been activated because the Stripe checkout session is missing."
+    elif not checkout_session_id_valid(checkout_session_id):
+        message = "Premium access has not been activated because the checkout reference is invalid."
     else:
         try:
-            verified_session = stripe.checkout.Session.retrieve(checkout_session_id)
-            payment_verified = checkout_session_payment_verified(verified_session)
+            verified_session = stripe.checkout.Session.retrieve(
+                checkout_session_id,
+                expand=["line_items.data.price.product"],
+            )
+            entitlement = validate_checkout_entitlement(
+                verified_session,
+                checkout_session_id,
+                checkout_intent,
+                checkout_intent_created_at,
+            )
 
-            if payment_verified:
-                customer_id = stripe_identifier(stripe_value(verified_session, "customer"))
-                subscription_id = stripe_identifier(stripe_value(verified_session, "subscription"))
-                premium_email = checkout_session_email(verified_session)
-
-                session["premium_active"] = True
-                remember_premium_session_identifiers(customer_id, subscription_id, premium_email)
-                update_premium_entitlement(
-                    customer_id=customer_id,
-                    subscription_id=subscription_id,
-                    email=premium_email,
+            if entitlement:
+                entitlement_record = update_premium_entitlement(
+                    customer_id=entitlement["customer_id"],
+                    subscription_id=entitlement["subscription_id"],
+                    email=entitlement["premium_email"],
                     subscription_status="active",
                     premium_active=True,
                     event_type="checkout-success",
                 )
-                premium_activated = True
-                heading = "✅ Premium activated"
-                message = "Your verified premium dashboard session is now active."
-                response_status = 200
+                if entitlement_record:
+                    session.clear()
+                    session["premium_active"] = True
+                    remember_premium_session_identifiers(
+                        entitlement["customer_id"],
+                        entitlement["subscription_id"],
+                        entitlement["premium_email"],
+                    )
+                    session["entitlement_version"] = int(
+                        entitlement_record.get("entitlement_version") or 0
+                    )
+                    premium_activated = True
+                    heading = "✅ Premium activated"
+                    message = "Your verified premium dashboard session is now active."
+                    response_status = 200
+                else:
+                    heading = "Premium activation unavailable"
+                    message = "Premium access has not been activated. Please contact support."
+                    response_status = 503
             else:
-                heading = "Payment pending"
-                message = "Premium access has not been activated because Stripe has not confirmed payment."
+                heading = "Payment verification required"
+                message = "Premium access has not been activated because the checkout details could not be verified."
         except Exception:
             heading = "Payment verification failed"
             message = "Premium access has not been activated. Please return to the upgrade page and try again."
@@ -12675,10 +13094,11 @@ def stripe_webhook():
     event_data = stripe_nested_value(event, "data", "object") or {}
 
     if event_type == "checkout.session.completed":
+        if not checkout_session_server_context_matches(event_data):
+            return jsonify({"received": True, "ignored": event_type}), 200
         customer_id = stripe_identifier(stripe_value(event_data, "customer"))
         subscription_id = stripe_identifier(stripe_value(event_data, "subscription"))
         premium_email = checkout_session_email(event_data)
-        payment_verified = checkout_session_payment_verified(event_data)
         status = (
             str(stripe_value(event_data, "payment_status", "") or "").lower()
             or str(stripe_value(event_data, "status", "") or "").lower()
@@ -12688,12 +13108,21 @@ def stripe_webhook():
             subscription_id=subscription_id,
             email=premium_email,
             subscription_status=status,
-            premium_active=payment_verified,
+            premium_active=True,
             event_type=event_type,
         )
     elif event_type in {"customer.subscription.updated", "customer.subscription.deleted"}:
         customer_id = stripe_identifier(stripe_value(event_data, "customer"))
         subscription_id = stripe_identifier(stripe_value(event_data, "id"))
+        existing_record = premium_entitlement_record(
+            subscription_id=subscription_id
+        )
+        if (
+            not stripe_object_livemode_matches(event_data)
+            or not existing_record
+            or existing_record.get("stripe_subscription_id") != subscription_id
+        ):
+            return jsonify({"received": True, "ignored": event_type}), 200
         status = str(stripe_value(event_data, "status", "") or "").lower()
         premium_active = (
             False
@@ -12708,18 +13137,42 @@ def stripe_webhook():
             event_type=event_type,
         )
     elif event_type == "invoice.payment_failed":
+        subscription_id = stripe_identifier(
+            stripe_value(event_data, "subscription")
+        )
+        existing_record = premium_entitlement_record(
+            subscription_id=subscription_id
+        )
+        if (
+            not stripe_object_livemode_matches(event_data)
+            or not existing_record
+            or existing_record.get("stripe_subscription_id") != subscription_id
+        ):
+            return jsonify({"received": True, "ignored": event_type}), 200
         update_premium_entitlement(
             customer_id=stripe_identifier(stripe_value(event_data, "customer")),
-            subscription_id=stripe_identifier(stripe_value(event_data, "subscription")),
+            subscription_id=subscription_id,
             email=stripe_value(event_data, "customer_email", ""),
             subscription_status="payment_failed",
             premium_active=False,
             event_type=event_type,
         )
     elif event_type == "invoice.payment_succeeded":
+        subscription_id = stripe_identifier(
+            stripe_value(event_data, "subscription")
+        )
+        existing_record = premium_entitlement_record(
+            subscription_id=subscription_id
+        )
+        if (
+            not stripe_object_livemode_matches(event_data)
+            or not existing_record
+            or existing_record.get("stripe_subscription_id") != subscription_id
+        ):
+            return jsonify({"received": True, "ignored": event_type}), 200
         update_premium_entitlement(
             customer_id=stripe_identifier(stripe_value(event_data, "customer")),
-            subscription_id=stripe_identifier(stripe_value(event_data, "subscription")),
+            subscription_id=subscription_id,
             email=stripe_value(event_data, "customer_email", ""),
             subscription_status="paid",
             premium_active=True,
@@ -12734,20 +13187,38 @@ def stripe_webhook():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     login_error = None
+    response_status = 200
+    response_headers = {}
 
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
+        retry_after = login_rate_limit_status(email)
 
-        if not owner_login_configured():
-            login_error = "login is not configured. Set SIGNALSCOPE_OWNER_EMAIL and SIGNALSCOPE_OWNER_PASSWORD in your environment."
-        elif email == OWNER_EMAIL and password == OWNER_PASSWORD:
+        if retry_after:
+            login_error = "Too many login attempts. Please wait before trying again."
+            response_status = 429
+            response_headers["Retry-After"] = str(max(1, retry_after))
+        elif owner_login_configured() and owner_credentials_valid(email, password):
+            reset_login_failures(email)
+            session.clear()
             session["owner_logged_in"] = True
             return redirect(url_for("owner"))
         else:
-            login_error = "Invalid owner email or password."
+            record_login_failure(email)
+            retry_after = login_rate_limit_status(email)
+            if retry_after:
+                login_error = "Too many login attempts. Please wait before trying again."
+                response_status = 429
+                response_headers["Retry-After"] = str(max(1, retry_after))
+            else:
+                login_error = "Invalid email or password."
 
-    return render_template_string(login_html, login_error=login_error)
+    return (
+        render_template_string(login_html, login_error=login_error),
+        response_status,
+        response_headers,
+    )
 
 
 @app.route("/owner")
@@ -12759,8 +13230,7 @@ def owner():
 
 @app.route("/logout")
 def logout():
-    session.pop("owner_logged_in", None)
-    session.pop("premium_active", None)
+    session.clear()
     return redirect(url_for("dashboard"))
 
 

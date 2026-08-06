@@ -60,23 +60,31 @@ def test_checkout_success_without_session_id_does_not_unlock_premium():
     assert response.status_code == 400
 
 
-def test_verified_paid_stripe_session_unlocks_premium():
-    paid_session = SimpleNamespace(payment_status="paid", status="complete")
+def test_paid_status_alone_does_not_unlock_premium():
+    paid_session = SimpleNamespace(
+        id="cs_test_paid",
+        payment_status="paid",
+        status="complete",
+    )
 
     with (
         patch.object(app, "stripe_checkout_configured", return_value=True),
+        patch.object(app, "STRIPE_SECRET_KEY", "sk_test_configured"),
         patch.object(app.stripe.checkout.Session, "retrieve", return_value=paid_session) as retrieve,
     ):
         with app.app.test_client() as client:
             response = client.get("/checkout-success?session_id=cs_test_paid")
 
             with client.session_transaction() as current_session:
-                assert current_session.get("premium_active") is True
+                assert current_session.get("premium_active") is not True
                 assert current_session.get("owner_logged_in") is not True
 
-    retrieve.assert_called_once_with("cs_test_paid")
-    assert response.status_code == 200
-    assert b"Premium activated" in response.data
+    retrieve.assert_called_once_with(
+        "cs_test_paid",
+        expand=["line_items.data.price.product"],
+    )
+    assert response.status_code == 400
+    assert b"could not be verified" in response.data
 
 
 def test_unpaid_stripe_session_does_not_unlock_premium():
@@ -84,6 +92,7 @@ def test_unpaid_stripe_session_does_not_unlock_premium():
 
     with (
         patch.object(app, "stripe_checkout_configured", return_value=True),
+        patch.object(app, "STRIPE_SECRET_KEY", "sk_test_configured"),
         patch.object(app.stripe.checkout.Session, "retrieve", return_value=unpaid_session),
     ):
         with app.app.test_client() as client:
@@ -93,7 +102,7 @@ def test_unpaid_stripe_session_does_not_unlock_premium():
                 assert current_session.get("owner_logged_in") is not True
 
     assert response.status_code == 400
-    assert b"Payment pending" in response.data
+    assert b"could not be verified" in response.data
 
 
 def test_logout_clears_access_and_redirects_without_error():
@@ -186,23 +195,36 @@ def test_enabled_checkout_uses_official_success_and_cancel_urls():
 
     assert response.status_code == 303
     assert response.headers["Location"] == checkout_session.url
-    create_session.assert_called_once_with(
-        mode="subscription",
-        line_items=[{"price": "price_test_present", "quantity": 1}],
-        success_url=(
-            "https://www.stockradarhq.com/"
-            "checkout-success?session_id={CHECKOUT_SESSION_ID}"
-        ),
-        cancel_url="https://www.stockradarhq.com/upgrade",
-        allow_promotion_codes=True,
+    create_session.assert_called_once()
+    checkout_args = create_session.call_args.kwargs
+    assert checkout_args["mode"] == "subscription"
+    assert checkout_args["line_items"] == [
+        {"price": "price_test_present", "quantity": 1}
+    ]
+    assert checkout_args["success_url"] == (
+        "https://www.stockradarhq.com/"
+        "checkout-success?session_id={CHECKOUT_SESSION_ID}"
+    )
+    assert checkout_args["cancel_url"] == "https://www.stockradarhq.com/upgrade"
+    assert checkout_args["allow_promotion_codes"] is True
+    assert len(checkout_args["client_reference_id"]) == 64
+    assert checkout_args["metadata"]["stockradar_checkout_flow"] == (
+        app.CHECKOUT_FLOW_NAME
+    )
+    assert checkout_args["metadata"]["stockradar_price_id"] == (
+        "price_test_present"
+    )
+    assert checkout_args["subscription_data"]["metadata"] == (
+        checkout_args["metadata"]
     )
 
 
-def test_paid_checkout_does_not_grant_owner_admin_access():
+def test_unbound_paid_checkout_does_not_grant_premium_or_owner_access():
     paid_session = SimpleNamespace(payment_status="paid", status="complete")
 
     with (
         patch.object(app, "stripe_checkout_configured", return_value=True),
+        patch.object(app, "STRIPE_SECRET_KEY", "sk_test_configured"),
         patch.object(app.stripe.checkout.Session, "retrieve", return_value=paid_session),
     ):
         with app.app.test_client() as client:
@@ -210,9 +232,9 @@ def test_paid_checkout_does_not_grant_owner_admin_access():
             admin_response = client.get("/admin/newsletter-preview")
 
             with client.session_transaction() as current_session:
-                assert current_session.get("premium_active") is True
+                assert current_session.get("premium_active") is not True
                 assert current_session.get("owner_logged_in") is not True
 
-    assert response.status_code == 200
+    assert response.status_code == 400
     assert admin_response.status_code == 302
     assert "/login" in admin_response.headers["Location"]

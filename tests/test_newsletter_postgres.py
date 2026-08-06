@@ -35,6 +35,7 @@ class MemoryPostgres:
             "runs": {},
             "beehiiv": {},
             "subscribers": {},
+            "application_state": {},
             "migrations": {},
         }
         self.statements = []
@@ -218,6 +219,16 @@ class MemoryCursor:
             if "do update" in lowered or email not in self.database.tables["subscribers"]:
                 self.database.tables["subscribers"][email] = payload
             self.results = []
+        elif "from stockradar_application_state" in lowered:
+            payload = self.database.tables["application_state"].get(
+                str(params[0])
+            )
+            self.results = [(copy.deepcopy(payload),)] if payload else []
+        elif lowered.startswith("insert into stockradar_application_state"):
+            self.database.tables["application_state"][str(params[0])] = (
+                unwrap_json(params[1])
+            )
+            self.results = []
         elif "from newsletter_storage_migrations" in lowered:
             migration = self.database.tables["migrations"].get(str(params[0]))
             self.results = [migration] if migration else []
@@ -346,6 +357,32 @@ def test_postgres_restart_loads_finalized_issue(monkeypatch):
     assert restarted.load_issue_by_id(
         "stockradar-weekly-2026-W30"
     )["metadata"]["marker"] == "first"
+
+
+def test_postgres_restart_preserves_premium_entitlements(monkeypatch):
+    backend, database = postgres_backend()
+    monkeypatch.setattr(app, "NEWSLETTER_STORAGE", backend)
+    stored_record = app.update_premium_entitlement(
+        customer_id="cus_active",
+        subscription_id="sub_active",
+        email="reader@example.test",
+        subscription_status="active",
+        premium_active=True,
+        event_type="checkout-success",
+    )
+    assert stored_record["premium_active"] is True
+    assert stored_record["entitlement_version"] == 1
+
+    restarted = PostgresNewsletterStorage(
+        "postgresql://user:password@db.example.test/stockradar",
+        connector=database.connector,
+    )
+    assert restarted.initialize_schema()
+
+    records = restarted.load_state("premium_entitlements")["records"]
+    assert len(records) == 1
+    assert records[0]["stripe_subscription_id"] == "sub_active"
+    assert records[0]["premium_active"] is True
 
 
 def test_concurrent_postgres_finalization_keeps_one_issue(monkeypatch):

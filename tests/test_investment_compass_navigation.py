@@ -20,12 +20,20 @@ def render_dashboard(path="/", owner=False, premium=False):
             if owner:
                 current_session["owner_logged_in"] = True
             if premium:
-                current_session["premium_active"] = True
+                current_session["stripe_subscription_id"] = "sub_test_active"
 
     with (
         patch.object(app, "get_cached_dashboard_data", return_value=DASHBOARD_DATA),
         patch.object(app, "get_stock_universe", return_value=[]),
-        patch.object(app, "premium_entitlement_active", return_value=False),
+        patch.object(
+            app,
+            "premium_entitlement_record",
+            return_value=(
+                {"premium_active": True, "entitlement_version": 1}
+                if premium
+                else None
+            ),
+        ),
     ):
         return client.get(path)
 
@@ -96,7 +104,7 @@ def test_signed_out_free_and_premium_compass_access_remains_public():
     with free_client.session_transaction() as current_session:
         current_session["premium_active"] = False
         current_session["premium_email"] = "free-reader@example.test"
-    with patch.object(app, "premium_entitlement_active", return_value=False):
+    with patch.object(app, "premium_entitlement_record", return_value=None):
         free_page = free_client.get("/beginner")
         locked_portfolio = free_client.get("/portfolio-fit")
         locked_compare = free_client.get("/compare?symbol_a=AAPL&symbol_b=MSFT")
@@ -108,11 +116,16 @@ def test_signed_out_free_and_premium_compass_access_remains_public():
 
     premium_client = app.app.test_client()
     with premium_client.session_transaction() as current_session:
-        current_session["premium_active"] = True
-    assert premium_client.get("/beginner").status_code == 200
-    assert "Upgrade to unlock portfolio fit reviews" not in premium_client.get(
-        "/portfolio-fit"
-    ).get_data(as_text=True)
+        current_session["stripe_subscription_id"] = "sub_test_active"
+    with patch.object(
+        app,
+        "premium_entitlement_record",
+        return_value={"premium_active": True, "entitlement_version": 1},
+    ):
+        assert premium_client.get("/beginner").status_code == 200
+        assert "Upgrade to unlock portfolio fit reviews" not in premium_client.get(
+            "/portfolio-fit"
+        ).get_data(as_text=True)
 
 
 def test_relevant_standalone_pages_use_the_same_app_navigation():
@@ -165,7 +178,7 @@ def test_stock_report_uses_the_same_app_navigation():
         patch.object(app, "stock_history", return_value=chart_data),
         patch.object(app, "stock_lifetime_growth", return_value=chart_data),
         patch.object(app, "get_dividend_context", return_value=dividend_context),
-        patch.object(app, "premium_entitlement_active", return_value=False),
+        patch.object(app, "premium_entitlement_record", return_value=None),
     ):
         response = app.app.test_client().get("/stock/AAPL")
 

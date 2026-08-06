@@ -56,12 +56,20 @@ def render_dashboard(owner=False, premium=False):
             if owner:
                 current_session["owner_logged_in"] = True
             if premium:
-                current_session["premium_active"] = True
+                current_session["stripe_subscription_id"] = "sub_test_active"
 
     with (
         patch.object(app, "get_cached_dashboard_data", return_value=DASHBOARD_DATA),
         patch.object(app, "get_stock_universe", return_value=[]),
-        patch.object(app, "premium_entitlement_active", return_value=False),
+        patch.object(
+            app,
+            "premium_entitlement_record",
+            return_value=(
+                {"premium_active": True, "entitlement_version": 1}
+                if premium
+                else None
+            ),
+        ),
     ):
         return client.get("/")
 
@@ -71,7 +79,7 @@ def render_stock_page():
         patch.object(app, "stock_history", return_value=STOCK_CHART_DATA),
         patch.object(app, "stock_lifetime_growth", return_value=STOCK_LIFETIME_DATA),
         patch.object(app, "get_dividend_context", return_value=DIVIDEND_CONTEXT),
-        patch.object(app, "premium_entitlement_active", return_value=False),
+        patch.object(app, "premium_entitlement_record", return_value=None),
     ):
         return app.app.test_client().get("/stock/AAPL")
 
