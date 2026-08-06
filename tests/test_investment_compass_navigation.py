@@ -182,6 +182,7 @@ def test_mobile_menu_is_keyboard_touch_and_viewport_safe():
 
     for source in (header_component, dashboard_template):
         assert "min-height:44px" in source
+        assert "box-sizing:border-box" in source
         assert "100dvh" in source
         assert "overflow-x:hidden" in source
         assert "overflow-y:auto" in source

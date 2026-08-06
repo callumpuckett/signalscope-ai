@@ -454,8 +454,8 @@ STOCKRADAR_HEADER_NAVIGATION_TEMPLATE = """
 .public-header .logo{display:block;width:190px;margin:0;flex:0 0 auto;text-decoration:none;}
 .public-header .logo-img{display:block;width:100%;max-width:190px;max-height:52px;height:auto;object-fit:contain;}
 .public-header .logo-fallback{display:none;font-size:25px;font-weight:950;background:linear-gradient(135deg,#fff,#00ffaa,#ffb86b);-webkit-background-clip:text;color:transparent;}
-.public-nav-links{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
-.public-nav-link{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 12px;border-radius:13px;color:#d6e0e9;text-decoration:none;font:900 13px/1.2 Arial,sans-serif;white-space:nowrap;}
+.public-nav-links{box-sizing:border-box;display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
+.public-nav-link{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 12px;border-radius:13px;color:#d6e0e9;text-decoration:none;font:900 13px/1.2 Arial,sans-serif;white-space:nowrap;}
 .public-nav-link:hover{background:rgba(148,163,184,.09);text-decoration:none;}
 .public-nav-login{visibility:visible;opacity:1;border:1px solid rgba(148,163,184,.24);background:rgba(148,163,184,.08);}
 .public-nav-primary{background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;}
@@ -10099,14 +10099,14 @@ a{color:#38bdf8;text-decoration:none;font-weight:800;}
 a:hover{text-decoration:underline;}
 .sidebar{width:280px;min-height:100vh;padding:28px;background:rgba(7,17,24,0.92);border-right:1px solid rgba(148,163,184,0.12);position:sticky;top:0;}
 .sidebar-header{display:block;}
-.sidebar-nav{display:block;}
+.sidebar-nav{box-sizing:border-box;display:block;}
 .sidebar-menu-toggle{display:none;align-items:center;justify-content:center;min-width:48px;min-height:44px;margin:0;padding:10px 14px;border:1px solid rgba(148,163,184,.28);border-radius:13px;background:rgba(148,163,184,.10);color:#f8fafc;font:900 14px/1 Arial,sans-serif;cursor:pointer;}
 .sidebar-menu-toggle:focus-visible,.nav-link:focus-visible{outline:3px solid #fbbf24;outline-offset:3px;}
 .nav-premium-badge{color:#ffb86b;font-size:11px;font-weight:950;}
 .logo{display:block;max-width:224px;margin-bottom:18px;text-decoration:none;}
 .logo-img{display:block;width:100%;max-width:224px;max-height:62px;height:auto;object-fit:contain;}
 .logo-fallback{display:none;font-size:25px;font-weight:950;background:linear-gradient(135deg,#fff,#00ffaa,#ffb86b);-webkit-background-clip:text;color:transparent;}
-.nav-link{display:block;padding:13px 14px;border-radius:16px;color:#cbd7e3;margin:8px 0;background:rgba(148,163,184,0.055);text-decoration:none;font-weight:850;line-height:1.25;}
+.nav-link{box-sizing:border-box;display:block;padding:13px 14px;border-radius:16px;color:#cbd7e3;margin:8px 0;background:rgba(148,163,184,0.055);text-decoration:none;font-weight:850;line-height:1.25;}
 .nav-link:hover{background:rgba(0,255,170,0.10);text-decoration:none;}
 .nav-section-label{color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.13em;font-weight:950;margin:18px 0 8px 0;}
 .tab-button{display:block;border:1px solid transparent;width:100%;text-align:left;cursor:pointer;font-family:inherit;text-decoration:none;appearance:none;-webkit-appearance:none;}
