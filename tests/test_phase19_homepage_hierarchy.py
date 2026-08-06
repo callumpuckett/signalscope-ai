@@ -59,6 +59,7 @@ def test_logged_out_homepage_has_compact_public_navigation_and_stock_search():
     assert 'href="/how-it-works">How It Works</a>' in page
     assert 'href="/newsletter">Newsletter</a>' in page
     assert 'href="/upgrade">Premium</a>' in page
+    assert 'href="/login">Login</a>' in page
     assert "Search a stock or ETF" in page
     assert 'placeholder="Try Microsoft, Apple, SPY or MSFT"' in page
     assert "View free report" in page
@@ -73,6 +74,86 @@ def test_logged_out_homepage_has_compact_public_navigation_and_stock_search():
     assert 'id="overview-section"' not in page
     assert 'aria-label="Current signal overview"' not in page
     assert "UK market status" not in page
+
+
+def test_signed_out_desktop_navigation_contains_visible_login():
+    page = render_home().get_data(as_text=True)
+    nav_start = page.index('<nav class="public-nav-links"')
+    nav_end = page.index("</nav>", nav_start)
+    public_nav = page[nav_start:nav_end]
+
+    assert (
+        '<a class="public-nav-link public-nav-login" href="/login">Login</a>'
+        in public_nav
+    )
+    assert (
+        ".public-nav-login{display:inline-flex;visibility:visible;opacity:1;"
+        in page
+    )
+
+
+def test_signed_out_mobile_navigation_keeps_login_visible_at_breakpoint():
+    page = render_home().get_data(as_text=True)
+
+    assert 'aria-label="Primary navigation"' in page
+    assert (
+        '<a class="public-nav-link public-nav-login" href="/login">Login</a>'
+        in page
+    )
+    assert "@media(max-width:640px)" in page
+    assert (
+        ".public-nav-links{grid-column:1/-1;justify-content:flex-start;"
+        "display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;"
+        "overflow:visible;}"
+        in page
+    )
+    assert (
+        ".public-nav-login{display:inline-flex;visibility:visible;opacity:1;}"
+        in page
+    )
+
+
+def test_public_homepage_restores_build_your_portfolio_cta():
+    page = render_home().get_data(as_text=True)
+
+    assert page.count(">Build Your Portfolio</a>") == 1
+    assert (
+        '<a class="cta-secondary public-portfolio-cta" '
+        'href="/portfolio-fit">Build Your Portfolio</a>'
+        in page
+    )
+    assert "Build your own portfolio with AI help" not in page
+    assert (
+        ".public-portfolio-cta{display:inline-flex;align-items:center;"
+        "justify-content:center;visibility:visible;opacity:1;}"
+        in page
+    )
+    assert (
+        ".public-portfolio-cta{display:inline-flex;visibility:visible;"
+        "opacity:1;width:100%;}"
+        in page
+    )
+
+
+def test_login_and_portfolio_routes_preserve_existing_access_behaviour():
+    client = app.app.test_client()
+
+    assert client.get("/login").status_code == 200
+
+    locked_portfolio = client.get("/portfolio-fit")
+    assert locked_portfolio.status_code == 200
+    assert (
+        "<strong>Locked:</strong> Upgrade to unlock portfolio fit reviews."
+        in locked_portfolio.get_data(as_text=True)
+    )
+
+    with client.session_transaction() as current_session:
+        current_session["premium_active"] = True
+    unlocked_portfolio = client.get("/portfolio-fit")
+    unlocked_page = unlocked_portfolio.get_data(as_text=True)
+    assert unlocked_portfolio.status_code == 200
+    assert 'action="/portfolio-fit#portfolio-result"' in unlocked_page
+    assert "<strong>Locked:</strong>" not in unlocked_page
 
 
 def test_explicit_dashboard_tabs_keep_advanced_navigation_and_relocated_sections():

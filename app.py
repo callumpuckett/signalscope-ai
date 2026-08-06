@@ -9670,6 +9670,7 @@ a:hover{text-decoration:underline;}
 .public-nav-links{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
 .public-nav-link{display:inline-flex;align-items:center;justify-content:center;padding:10px 12px;border-radius:13px;color:#d6e0e9;text-decoration:none;font-size:13px;font-weight:900;white-space:nowrap;}
 .public-nav-link:hover{background:rgba(148,163,184,0.09);text-decoration:none;}
+.public-nav-login{display:inline-flex;visibility:visible;opacity:1;border:1px solid rgba(148,163,184,0.24);background:rgba(148,163,184,0.08);}
 .public-nav-primary{background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;}
 .public-nav-primary:hover{background:linear-gradient(135deg,#5bedaF,#f4cc7b);color:#071018;}
 .top-intel-layout .live-alert-strip{margin-bottom:0;}
@@ -9768,6 +9769,8 @@ a:hover{text-decoration:underline;}
 .hero-card .hero-subtitle{color:#bdc9d5;line-height:1.68;max-width:900px;font-size:16px;margin:0;}
 .public-hero .hero-subtitle{max-width:720px;font-size:18px;line-height:1.55;}
 .hero-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:24px;}
+.public-home-actions{overflow:visible;}
+.public-portfolio-cta{display:inline-flex;align-items:center;justify-content:center;visibility:visible;opacity:1;}
 .cta-primary,.cta-secondary{display:inline-block;padding:14px 18px;border-radius:15px;text-decoration:none;font-weight:950;font-size:var(--font-cta);line-height:1.1;}
 .cta-primary{background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;box-shadow:0 14px 34px rgba(0,255,170,0.12);}
 .cta-secondary{background:rgba(148,163,184,0.09);border:1px solid rgba(148,163,184,0.20);color:#e2e8f0;}
@@ -9874,7 +9877,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 .filter-status{margin-top:12px;color:#94a3b8;font-size:13px;font-weight:800;}
 .hidden-signal-row{display:none;}
 	@media(max-width:900px){:root{--font-hero:clamp(32px,9vw,38px);--font-section:clamp(24px,6vw,28px);}body{flex-direction:column;}.sidebar{width:100%;min-height:auto;position:relative;top:auto;padding:18px 16px;overflow-x:auto;white-space:nowrap;border-right:0;border-bottom:1px solid rgba(148,163,184,0.12);}.sidebar .logo{display:inline-block;max-width:170px;margin-bottom:12px;vertical-align:middle;}.sidebar .logo-img{max-width:170px;max-height:46px;}.sidebar .nav-section-label,.sidebar .menu-help,.sidebar .menu-divider,.sidebar .owner-box{display:none;}.sidebar .nav-link{display:inline-block;width:auto;padding:10px 12px;margin:0 6px 0 0;font-size:13px;}.main{padding:20px 16px;width:100%;}.top-bar{position:relative;justify-content:stretch;}.smart-search{width:100%;}.live-alert-strip{width:100%;}.live-alert-header{padding:8px 11px;font-size:11px;}.live-alert-track{padding:5px 0;}.live-alert-loop{gap:14px;animation-duration:48s;}.live-headline{flex-basis:540px;min-height:28px;padding:3px 14px 3px 0;gap:6px;}.live-news-title{font-size:12px;max-width:225px;}.market-news-stocks{display:inline-flex;}.market-news-stocks .live-affected-label{font-size:9px;}.market-news-impact .live-meta{display:none;}.market-news-impact .live-score{font-size:9px;}.summary-grid,.market-grid,.feature-grid,.impact-grid,.radar-summary,.signal-guide-grid,.filter-grid,.trust-strip,.signal-snapshot-grid{grid-template-columns:1fr;}.product-step-grid{grid-template-columns:1fr;}.premium-example-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.premium-brief-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.premium-home-grid{grid-template-columns:repeat(2,minmax(0,1fr));max-width:720px;}.newsletter-cta-card{align-items:flex-start;flex-direction:column;}.hero-card{padding:28px 22px}.hero-card h1{font-size:var(--font-hero);line-height:1.05;}.hero-card .hero-subtitle{font-size:15px;}.hero-actions a,.premium-price-row a{width:100%;text-align:center;}}
-	@media(max-width:640px){.public-header{padding:12px 14px;}.public-header-inner{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px 12px;}.public-header .logo{width:154px;}.public-header .logo-img{max-width:154px;max-height:42px;}.public-nav-links{grid-column:1/-1;justify-content:flex-start;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;}.public-nav-link{padding:9px 6px;font-size:12px;white-space:normal;text-align:center;}.public-nav-primary{grid-column:2;grid-row:1;min-width:86px;}.public-nav-links .public-nav-primary{grid-column:auto;grid-row:auto;}.product-steps,.free-report-preview{padding:20px 18px;}.hero-search-panel{margin-top:22px;padding-top:20px;}.hero-search-panel .smart-search-row{flex-direction:column;}.hero-search-panel .smart-search button{width:100%;min-height:42px;}.suggested-searches-label{width:100%;}.suggested-search-chip{flex:1 1 calc(50% - 8px);}.free-report-preview-header{gap:12px;}.free-report-preview .cta-primary{width:100%;text-align:center;}.premium-home-card{padding:20px 18px;}.premium-home-header{text-align:left;margin-bottom:14px;}.premium-home-card h2{font-size:clamp(28px,7vw,34px);}.premium-example-header{flex-direction:column;gap:8px;}.premium-example-grid,.premium-home-grid{grid-template-columns:1fr;max-width:none;}.premium-home-feature{min-height:0;padding:16px;}.premium-home-cta-banner{align-items:flex-start;flex-direction:column;gap:6px;width:100%;}.premium-home-cta-banner small{text-align:left;}}
+	@media(max-width:640px){.public-header{padding:12px 14px;}.public-header-inner{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px 12px;}.public-header .logo{width:154px;}.public-header .logo-img{max-width:154px;max-height:42px;}.public-nav-links{grid-column:1/-1;justify-content:flex-start;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;overflow:visible;}.public-nav-link{padding:9px 6px;font-size:12px;white-space:normal;text-align:center;}.public-nav-login{display:inline-flex;visibility:visible;opacity:1;}.public-nav-primary{grid-column:2;grid-row:1;min-width:86px;}.public-nav-links .public-nav-primary{grid-column:auto;grid-row:auto;}.product-steps,.free-report-preview{padding:20px 18px;}.hero-search-panel{margin-top:22px;padding-top:20px;}.hero-search-panel .smart-search-row{flex-direction:column;}.hero-search-panel .smart-search button{width:100%;min-height:42px;}.suggested-searches-label{width:100%;}.suggested-search-chip{flex:1 1 calc(50% - 8px);}.free-report-preview-header{gap:12px;}.free-report-preview .cta-primary{width:100%;text-align:center;}.public-home-actions{display:flex;overflow:visible;}.public-portfolio-cta{display:inline-flex;visibility:visible;opacity:1;width:100%;}.premium-home-card{padding:20px 18px;}.premium-home-header{text-align:left;margin-bottom:14px;}.premium-home-card h2{font-size:clamp(28px,7vw,34px);}.premium-example-header{flex-direction:column;gap:8px;}.premium-example-grid,.premium-home-grid{grid-template-columns:1fr;max-width:none;}.premium-home-feature{min-height:0;padding:16px;}.premium-home-cta-banner{align-items:flex-start;flex-direction:column;gap:6px;width:100%;}.premium-home-cta-banner small{text-align:left;}}
 </style>
 </head>
 <body class="{% if is_public_home %}public-home{% else %}dashboard-view{% endif %}" data-public-home="{{ 'true' if is_public_home else 'false' }}">
@@ -9887,6 +9890,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
             <a class="public-nav-link" href="/how-it-works">How It Works</a>
             <a class="public-nav-link" href="/newsletter">Newsletter</a>
             <a class="public-nav-link" href="/upgrade">Premium</a>
+            <a class="public-nav-link public-nav-login" href="/login">Login</a>
         </nav>
     </div>
 </header>
@@ -10010,6 +10014,9 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
                 </div>
                 <p class="example-reassurance">New to investing? Start with a company or fund you already recognise.</p>
             </section>
+            <div class="hero-actions public-home-actions" aria-label="Portfolio tools">
+                <a class="cta-secondary public-portfolio-cta" href="/portfolio-fit">Build Your Portfolio</a>
+            </div>
         {% else %}
 	        <p style="color:#4adea3;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 12px;">AI-assisted market research</p>
 	        <h1>Learn to think like an investor.</h1>
