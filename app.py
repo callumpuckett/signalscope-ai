@@ -149,6 +149,364 @@ def newsletter_side_tab():
 app.jinja_env.globals["newsletter_side_tab"] = newsletter_side_tab
 
 
+STOCKRADAR_NAVIGATION_ITEMS = (
+    {
+        "id": "search",
+        "section": "Main Menu",
+        "label": "Search",
+        "href": "#stock-search",
+        "icon": "🔎",
+        "locations": ("public",),
+        "access": "all",
+        "public_class": "public-nav-primary",
+    },
+    {
+        "id": "overview",
+        "section": "Main Menu",
+        "label": "Overview",
+        "href": "/?tab=overview",
+        "icon": "🏠",
+        "locations": ("dashboard", "app"),
+        "access": "all",
+        "active_tab": "overview",
+    },
+    {
+        "id": "investment-compass",
+        "section": "Main Menu",
+        "label": "Investment Compass",
+        "href": "/beginner",
+        "icon": "🌱",
+        "locations": ("public", "dashboard", "app"),
+        "access": "all",
+    },
+    {
+        "id": "signals",
+        "section": "Main Menu",
+        "label": "AI Signals",
+        "href": "/?tab=signals",
+        "icon": "📊",
+        "locations": ("dashboard", "app"),
+        "access": "all",
+        "active_tab": "signals",
+    },
+    {
+        "id": "impact-radar",
+        "section": "Main Menu",
+        "label": "Impact Radar",
+        "href": "/?tab=radar",
+        "icon": "🌍",
+        "locations": ("dashboard", "app"),
+        "access": "all",
+        "active_tab": "radar",
+    },
+    {
+        "id": "watchlist",
+        "section": "Main Menu",
+        "label": "AI Watchlist",
+        "href": "/?tab=watchlist",
+        "icon": "📋",
+        "locations": ("dashboard", "app"),
+        "access": "all",
+        "active_tab": "watchlist",
+    },
+    {
+        "id": "premium-watchlist",
+        "section": "Main Menu",
+        "label": "Premium Watchlist",
+        "href": "/premium-watchlist",
+        "icon": "🧠",
+        "locations": ("dashboard", "app"),
+        "access": "all",
+        "badge": "Premium",
+    },
+    {
+        "id": "compare",
+        "section": "Main Menu",
+        "label": "Compare Stocks",
+        "href": "/compare",
+        "icon": "⚖️",
+        "locations": ("dashboard", "app"),
+        "access": "all",
+        "badge": "Premium",
+    },
+    {
+        "id": "portfolio-builder",
+        "section": "Risk Check",
+        "label": "Portfolio Builder",
+        "href": "/portfolio-fit",
+        "icon": "🧩",
+        "locations": ("dashboard", "app"),
+        "access": "all",
+        "badge": "Premium",
+    },
+    {
+        "id": "stock-universe",
+        "section": "Risk Check",
+        "label": "Stock Universe",
+        "href": "/universe",
+        "icon": "🌍",
+        "locations": ("dashboard", "app"),
+        "access": "all",
+    },
+    {
+        "id": "how-it-works",
+        "section": "Main Menu",
+        "label": "How It Works",
+        "href": "/how-it-works",
+        "icon": "",
+        "locations": ("public",),
+        "access": "all",
+    },
+    {
+        "id": "newsletter",
+        "section": "Main Menu",
+        "label": "Newsletter",
+        "href": "/newsletter",
+        "icon": "",
+        "locations": ("public",),
+        "access": "all",
+    },
+    {
+        "id": "premium",
+        "section": "Main Menu",
+        "label": "Premium",
+        "href": "/upgrade",
+        "icon": "",
+        "locations": ("public",),
+        "access": "all",
+    },
+    {
+        "id": "owner-account",
+        "section": "Account",
+        "label": "Premium Active",
+        "href": "/owner",
+        "icon": "✅",
+        "locations": ("dashboard", "app"),
+        "access": "owner",
+        "dashboard_class": "pro-button",
+    },
+    {
+        "id": "premium-account",
+        "section": "Account",
+        "label": "Premium Active",
+        "href": "/manage-subscription",
+        "icon": "✅",
+        "locations": ("dashboard", "app"),
+        "access": "premium",
+        "dashboard_class": "pro-button",
+    },
+    {
+        "id": "manage-subscription",
+        "section": "Account",
+        "label": "Manage Subscription",
+        "href": "/manage-subscription",
+        "icon": "",
+        "locations": ("dashboard", "app"),
+        "access": "entitled",
+        "dashboard_class": "account-manage-subscription",
+        "manage_subscription": True,
+    },
+    {
+        "id": "logout-owner",
+        "section": "Account",
+        "label": "Logout",
+        "href": "/logout",
+        "icon": "🚪",
+        "locations": ("dashboard", "app"),
+        "access": "owner",
+    },
+    {
+        "id": "logout-premium",
+        "section": "Account",
+        "label": "End Premium Session",
+        "href": "/logout",
+        "icon": "🚪",
+        "locations": ("dashboard", "app"),
+        "access": "premium",
+    },
+    {
+        "id": "upgrade-account",
+        "section": "Account",
+        "label": "Upgrade to Premium — £5/month",
+        "href": "/upgrade",
+        "icon": "🚀",
+        "locations": ("dashboard", "app"),
+        "access": "anonymous",
+        "dashboard_class": "pro-button",
+    },
+    {
+        "id": "login",
+        "section": "Account",
+        "label": "Login",
+        "href": "/login",
+        "icon": "🔐",
+        "locations": ("public", "dashboard", "app"),
+        "access": "anonymous",
+        "public_class": "public-nav-login",
+    },
+)
+
+
+def navigation_access_matches(access, owner_logged_in, has_premium_access):
+    if access == "owner":
+        return owner_logged_in
+    if access == "premium":
+        return has_premium_access and not owner_logged_in
+    if access == "entitled":
+        return owner_logged_in or has_premium_access
+    if access == "anonymous":
+        return not owner_logged_in and not has_premium_access
+    return True
+
+
+def stockradar_navigation_sections(location, active_tab=""):
+    owner_logged_in = owner_has_access()
+    has_premium_access = premium_has_access()
+    sections = []
+
+    for section_name in ("Main Menu", "Risk Check", "Account"):
+        section_items = []
+        for navigation_item in STOCKRADAR_NAVIGATION_ITEMS:
+            if section_name != navigation_item["section"]:
+                continue
+            if location not in navigation_item["locations"]:
+                continue
+            if not navigation_access_matches(
+                navigation_item["access"],
+                owner_logged_in,
+                has_premium_access,
+            ):
+                continue
+
+            item = dict(navigation_item)
+            if item["id"] == "search" and request.path != "/":
+                item["href"] = "/#stock-search"
+            item["active"] = bool(
+                item.get("active_tab")
+                and item.get("active_tab") == active_tab
+            )
+            section_items.append(item)
+
+        if section_items:
+            sections.append((section_name, section_items))
+
+    return sections
+
+
+STOCKRADAR_NAVIGATION_SCRIPT = """
+<script>
+(function(){
+    function closeNavigation(root, button, menu){
+        root.classList.remove('nav-menu-open');
+        button.setAttribute('aria-expanded','false');
+    }
+    function initialiseNavigation(root){
+        var button=root.querySelector('[data-stockradar-menu-toggle]');
+        var menu=root.querySelector('[data-stockradar-menu]');
+        if(!button||!menu||root.getAttribute('data-navigation-ready')==='true'){return;}
+        root.setAttribute('data-navigation-ready','true');
+        button.addEventListener('click',function(){
+            var opening=button.getAttribute('aria-expanded')!=='true';
+            root.classList.toggle('nav-menu-open',opening);
+            button.setAttribute('aria-expanded',opening?'true':'false');
+        });
+        menu.querySelectorAll('a').forEach(function(link){
+            link.addEventListener('click',function(){closeNavigation(root,button,menu);});
+        });
+        root.addEventListener('keydown',function(event){
+            if(event.key==='Escape'&&button.getAttribute('aria-expanded')==='true'){
+                closeNavigation(root,button,menu);
+                button.focus();
+            }
+        });
+        document.addEventListener('click',function(event){
+            if(!root.contains(event.target)&&button.getAttribute('aria-expanded')==='true'){
+                closeNavigation(root,button,menu);
+            }
+        });
+        window.addEventListener('orientationchange',function(){
+            if(button.getAttribute('aria-expanded')==='true'){
+                closeNavigation(root,button,menu);
+            }
+        });
+    }
+    function initialiseAll(){
+        document.querySelectorAll('[data-stockradar-navigation]').forEach(initialiseNavigation);
+    }
+    if(document.readyState==='loading'){
+        document.addEventListener('DOMContentLoaded',initialiseAll);
+    }else{
+        initialiseAll();
+    }
+})();
+</script>
+"""
+
+
+def stockradar_navigation_script():
+    return STOCKRADAR_NAVIGATION_SCRIPT
+
+
+STOCKRADAR_HEADER_NAVIGATION_TEMPLATE = """
+<style id="stockradar-primary-navigation-styles">
+.public-header{position:relative;z-index:11000;width:100%;padding:16px max(28px,env(safe-area-inset-right)) 16px max(28px,env(safe-area-inset-left));background:rgba(7,17,24,.96);border-bottom:1px solid rgba(148,163,184,.12);backdrop-filter:blur(18px);}
+.public-header-inner{position:relative;display:flex;align-items:center;justify-content:space-between;gap:22px;width:min(1180px,100%);margin:0 auto;}
+.public-header .logo{display:block;width:190px;margin:0;flex:0 0 auto;text-decoration:none;}
+.public-header .logo-img{display:block;width:100%;max-width:190px;max-height:52px;height:auto;object-fit:contain;}
+.public-header .logo-fallback{display:none;font-size:25px;font-weight:950;background:linear-gradient(135deg,#fff,#00ffaa,#ffb86b);-webkit-background-clip:text;color:transparent;}
+.public-nav-links{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
+.public-nav-link{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 12px;border-radius:13px;color:#d6e0e9;text-decoration:none;font:900 13px/1.2 Arial,sans-serif;white-space:nowrap;}
+.public-nav-link:hover{background:rgba(148,163,184,.09);text-decoration:none;}
+.public-nav-login{visibility:visible;opacity:1;border:1px solid rgba(148,163,184,.24);background:rgba(148,163,184,.08);}
+.public-nav-primary{background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;}
+.stockradar-menu-toggle{display:none;align-items:center;justify-content:center;min-width:48px;min-height:44px;margin:0;padding:10px 14px;border:1px solid rgba(148,163,184,.28);border-radius:13px;background:rgba(148,163,184,.10);color:#f8fafc;font:900 14px/1 Arial,sans-serif;cursor:pointer;}
+.stockradar-menu-toggle:focus-visible,.public-nav-link:focus-visible{outline:3px solid #fbbf24;outline-offset:3px;}
+@media(max-width:700px){
+    .public-header{padding:calc(12px + env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) 12px max(14px,env(safe-area-inset-left));}
+    .public-header-inner{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;}
+    .public-header .logo{width:154px;}
+    .public-header .logo-img{max-width:154px;max-height:42px;}
+    .stockradar-menu-toggle{display:inline-flex;}
+    .public-nav-links{display:none;position:absolute;top:calc(100% + 10px);right:0;left:0;z-index:11001;grid-template-columns:1fr;gap:6px;max-height:calc(100dvh - 92px - env(safe-area-inset-top) - env(safe-area-inset-bottom));padding:10px 10px max(10px,env(safe-area-inset-bottom));overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;border:1px solid rgba(148,163,184,.22);border-radius:18px;background:#0b1521;box-shadow:0 24px 70px rgba(0,0,0,.58);}
+    .public-header-inner.nav-menu-open .public-nav-links{display:grid;}
+    .public-nav-link{width:100%;justify-content:flex-start;padding:12px 14px;white-space:normal;text-align:left;}
+}
+@media(display-mode:standalone){
+    .public-header{padding-top:max(12px,env(safe-area-inset-top));}
+    .public-nav-links{padding-bottom:max(10px,env(safe-area-inset-bottom));}
+}
+@media(min-width:701px){.public-nav-links{display:flex!important;}.public-nav-links[aria-hidden="true"]{display:flex!important;}}
+</style>
+<header class="public-header">
+    <div class="public-header-inner" data-stockradar-navigation="true">
+        <a class="logo" href="/" aria-label="StockRadar home"><img class="logo-img" src="/static/stockradar-main-logo.png" alt="StockRadar" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-block';"><span class="logo-fallback">StockRadar</span></a>
+        <button class="stockradar-menu-toggle" type="button" aria-expanded="false" aria-controls="stockradar-primary-menu" data-stockradar-menu-toggle>Menu</button>
+        <nav class="public-nav-links" id="stockradar-primary-menu" data-stockradar-primary-nav="true" data-stockradar-menu aria-label="Primary navigation">
+        {% for section_name, items in navigation_sections %}
+            {% for item in items %}
+            <a class="public-nav-link{% if item.public_class %} {{ item.public_class }}{% endif %}"{% if item.id == 'investment-compass' %} data-nav-id="investment-compass"{% endif %} href="{{ item.href }}">{{ item.label }}</a>
+            {% endfor %}
+        {% endfor %}
+        </nav>
+    </div>
+</header>
+{{ navigation_script | safe }}
+"""
+
+
+def stockradar_header_navigation(location="public"):
+    return render_template_string(
+        STOCKRADAR_HEADER_NAVIGATION_TEMPLATE,
+        navigation_sections=stockradar_navigation_sections(location),
+        navigation_script=stockradar_navigation_script(),
+    )
+
+
+app.jinja_env.globals["stockradar_navigation_sections"] = stockradar_navigation_sections
+app.jinja_env.globals["stockradar_navigation_script"] = stockradar_navigation_script
+app.jinja_env.globals["stockradar_header_navigation"] = stockradar_header_navigation
+
+
 @app.after_request
 def add_security_headers(response):
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -3744,6 +4102,7 @@ ul{padding-left:22px;margin:12px 0 0;}
 </style>
 </head>
 <body>
+{{ stockradar_header_navigation('app') | safe }}
 <div class="wrap">
     <a href="/">← Back to dashboard</a>
     <div class="card">
@@ -4319,6 +4678,7 @@ def premium_watchlist():
         </style>
         </head>
         <body>
+        {{ stockradar_header_navigation('app') | safe }}
         <div class="wrap">
             <a href="/">← Back to dashboard</a>
             <div class="card">
@@ -4378,6 +4738,7 @@ def premium_watchlist():
     </style>
     </head>
     <body>
+    {{ stockradar_header_navigation('app') | safe }}
     <div class="wrap">
         <a href="/">← Back to dashboard</a>
         <div class="card">
@@ -4587,6 +4948,7 @@ def portfolio_fit():
         </style>
         </head>
         <body>
+        {{ stockradar_header_navigation('app') | safe }}
         <div class="wrap">
             <a href="/">← Back to dashboard</a>
             <div class="card">
@@ -4638,6 +5000,7 @@ def portfolio_fit():
     </style>
     </head>
     <body>
+    {{ stockradar_header_navigation('app') | safe }}
     <div class="wrap">
         <a href="/">← Back to dashboard</a>
         <div class="card">
@@ -9735,6 +10098,11 @@ body.public-home{display:block;}
 a{color:#38bdf8;text-decoration:none;font-weight:800;}
 a:hover{text-decoration:underline;}
 .sidebar{width:280px;min-height:100vh;padding:28px;background:rgba(7,17,24,0.92);border-right:1px solid rgba(148,163,184,0.12);position:sticky;top:0;}
+.sidebar-header{display:block;}
+.sidebar-nav{display:block;}
+.sidebar-menu-toggle{display:none;align-items:center;justify-content:center;min-width:48px;min-height:44px;margin:0;padding:10px 14px;border:1px solid rgba(148,163,184,.28);border-radius:13px;background:rgba(148,163,184,.10);color:#f8fafc;font:900 14px/1 Arial,sans-serif;cursor:pointer;}
+.sidebar-menu-toggle:focus-visible,.nav-link:focus-visible{outline:3px solid #fbbf24;outline-offset:3px;}
+.nav-premium-badge{color:#ffb86b;font-size:11px;font-weight:950;}
 .logo{display:block;max-width:224px;margin-bottom:18px;text-decoration:none;}
 .logo-img{display:block;width:100%;max-width:224px;max-height:62px;height:auto;object-fit:contain;}
 .logo-fallback{display:none;font-size:25px;font-weight:950;background:linear-gradient(135deg,#fff,#00ffaa,#ffb86b);-webkit-background-clip:text;color:transparent;}
@@ -9963,56 +10331,35 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 .filter-button.active-filter{background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-color:transparent;}
 .filter-status{margin-top:12px;color:#94a3b8;font-size:13px;font-weight:800;}
 .hidden-signal-row{display:none;}
-	@media(max-width:900px){:root{--font-hero:clamp(32px,9vw,38px);--font-section:clamp(24px,6vw,28px);}body{flex-direction:column;}.sidebar{width:100%;min-height:auto;position:relative;top:auto;padding:18px 16px;overflow-x:auto;white-space:nowrap;border-right:0;border-bottom:1px solid rgba(148,163,184,0.12);}.sidebar .logo{display:inline-block;max-width:170px;margin-bottom:12px;vertical-align:middle;}.sidebar .logo-img{max-width:170px;max-height:46px;}.sidebar .nav-section-label,.sidebar .menu-help,.sidebar .menu-divider,.sidebar .owner-box{display:none;}.sidebar .nav-link{display:inline-block;width:auto;padding:10px 12px;margin:0 6px 0 0;font-size:13px;}.main{padding:20px 16px;width:100%;}.top-bar{position:relative;justify-content:stretch;}.smart-search{width:100%;}.live-alert-strip{width:100%;}.live-alert-header{padding:8px 11px;font-size:11px;}.live-alert-track{padding:5px 0;}.live-alert-loop{gap:14px;animation-duration:48s;}.live-headline{flex-basis:540px;min-height:28px;padding:3px 14px 3px 0;gap:6px;}.live-news-title{font-size:12px;max-width:225px;}.market-news-stocks{display:inline-flex;}.market-news-stocks .live-affected-label{font-size:9px;}.market-news-impact .live-meta{display:none;}.market-news-impact .live-score{font-size:9px;}.summary-grid,.market-grid,.feature-grid,.impact-grid,.radar-summary,.signal-guide-grid,.filter-grid,.trust-strip,.signal-snapshot-grid{grid-template-columns:1fr;}.product-step-grid{grid-template-columns:1fr;}.premium-example-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.premium-brief-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.premium-home-grid{grid-template-columns:repeat(2,minmax(0,1fr));max-width:720px;}.newsletter-cta-card{align-items:flex-start;flex-direction:column;}.hero-card{padding:28px 22px}.hero-card h1{font-size:var(--font-hero);line-height:1.05;}.hero-card .hero-subtitle{font-size:15px;}.hero-actions a,.premium-price-row a{width:100%;text-align:center;}}
+	@media(max-width:900px){:root{--font-hero:clamp(32px,9vw,38px);--font-section:clamp(24px,6vw,28px);}body{flex-direction:column;}.sidebar{width:100%;min-height:auto;position:relative;top:auto;z-index:11000;padding:12px max(16px,env(safe-area-inset-right)) 12px max(16px,env(safe-area-inset-left));overflow:visible;white-space:normal;border-right:0;border-bottom:1px solid rgba(148,163,184,0.12);}.sidebar-navigation-shell{position:relative;}.sidebar-header{display:flex;align-items:center;justify-content:space-between;gap:12px;}.sidebar .logo{display:block;max-width:170px;margin:0;}.sidebar .logo-img{max-width:170px;max-height:46px;}.sidebar-menu-toggle{display:inline-flex;}.sidebar-nav{display:none;position:absolute;top:calc(100% + 8px);right:0;left:0;z-index:11001;max-height:calc(100dvh - 82px - env(safe-area-inset-top) - env(safe-area-inset-bottom));padding:10px 10px max(12px,env(safe-area-inset-bottom));overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;border:1px solid rgba(148,163,184,.22);border-radius:18px;background:#0b1521;box-shadow:0 24px 70px rgba(0,0,0,.58);}.sidebar-navigation-shell.nav-menu-open .sidebar-nav{display:block;}.sidebar .nav-section-label{display:block;margin:12px 6px 6px;}.sidebar .menu-help,.sidebar .owner-box{display:block;margin:8px 6px 12px;}.sidebar .menu-divider{display:block;margin:10px 0;}.sidebar .nav-link{display:flex;align-items:center;width:100%;min-height:44px;padding:11px 12px;margin:4px 0;font-size:13px;white-space:normal;}.main{padding:20px 16px;width:100%;}.top-bar{position:relative;justify-content:stretch;}.smart-search{width:100%;}.live-alert-strip{width:100%;}.live-alert-header{padding:8px 11px;font-size:11px;}.live-alert-track{padding:5px 0;}.live-alert-loop{gap:14px;animation-duration:48s;}.live-headline{flex-basis:540px;min-height:28px;padding:3px 14px 3px 0;gap:6px;}.live-news-title{font-size:12px;max-width:225px;}.market-news-stocks{display:inline-flex;}.market-news-stocks .live-affected-label{font-size:9px;}.market-news-impact .live-meta{display:none;}.market-news-impact .live-score{font-size:9px;}.summary-grid,.market-grid,.feature-grid,.impact-grid,.radar-summary,.signal-guide-grid,.filter-grid,.trust-strip,.signal-snapshot-grid{grid-template-columns:1fr;}.product-step-grid{grid-template-columns:1fr;}.premium-example-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.premium-brief-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.premium-home-grid{grid-template-columns:repeat(2,minmax(0,1fr));max-width:720px;}.newsletter-cta-card{align-items:flex-start;flex-direction:column;}.hero-card{padding:28px 22px}.hero-card h1{font-size:var(--font-hero);line-height:1.05;}.hero-card .hero-subtitle{font-size:15px;}.hero-actions a,.premium-price-row a{width:100%;text-align:center;}}
+	@media(display-mode:standalone){.sidebar{padding-top:max(12px,env(safe-area-inset-top));padding-bottom:max(12px,env(safe-area-inset-bottom));}body{padding-bottom:env(safe-area-inset-bottom);}}
 	@media(max-width:640px){.public-header{padding:12px 14px;}.public-header-inner{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px 12px;}.public-header .logo{width:154px;}.public-header .logo-img{max-width:154px;max-height:42px;}.public-nav-links{grid-column:1/-1;justify-content:flex-start;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;overflow:visible;}.public-nav-link{padding:9px 6px;font-size:12px;white-space:normal;text-align:center;}.public-nav-login{display:inline-flex;visibility:visible;opacity:1;}.public-nav-primary{grid-column:2;grid-row:1;min-width:86px;}.public-nav-links .public-nav-primary{grid-column:auto;grid-row:auto;}.product-steps,.free-report-preview{padding:20px 18px;}.hero-search-panel{margin-top:22px;padding-top:20px;}.hero-search-panel .smart-search-row{flex-direction:column;}.hero-search-panel .smart-search button{width:100%;min-height:42px;}.suggested-searches-label{width:100%;}.suggested-search-chip{flex:1 1 calc(50% - 8px);}.free-report-preview-header{gap:12px;}.free-report-preview .cta-primary{width:100%;text-align:center;}.public-home-actions{display:flex;overflow:visible;}.public-portfolio-cta{display:inline-flex;visibility:visible;opacity:1;width:100%;}.premium-home-card{padding:20px 18px;}.premium-home-header{text-align:left;margin-bottom:14px;}.premium-home-card h2{font-size:clamp(28px,7vw,34px);}.premium-example-header{flex-direction:column;gap:8px;}.premium-example-grid,.premium-home-grid{grid-template-columns:1fr;max-width:none;}.premium-home-feature{min-height:0;padding:16px;}.premium-home-cta-banner{align-items:flex-start;flex-direction:column;gap:6px;width:100%;}.premium-home-cta-banner small{text-align:left;}}
 </style>
 </head>
 <body class="{% if is_public_home %}public-home{% else %}dashboard-view{% endif %}" data-public-home="{{ 'true' if is_public_home else 'false' }}">
 {% if is_public_home %}
-<header class="public-header">
-    <div class="public-header-inner">
-        <a class="logo" href="/" aria-label="StockRadar home"><img class="logo-img" src="/static/stockradar-main-logo.png" alt="StockRadar" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-block';"><span class="logo-fallback">StockRadar</span></a>
-        <nav class="public-nav-links" aria-label="Primary navigation">
-            <a class="public-nav-link public-nav-primary" href="#stock-search">Search</a>
-            <a class="public-nav-link" href="/how-it-works">How It Works</a>
-            <a class="public-nav-link" href="/newsletter">Newsletter</a>
-            <a class="public-nav-link" href="/upgrade">Premium</a>
-            <a class="public-nav-link public-nav-login" href="/login">Login</a>
-        </nav>
-    </div>
-</header>
+{{ stockradar_header_navigation('public') | safe }}
 {% else %}
 <div class="sidebar">
-    <a class="logo" href="/" aria-label="StockRadar"><img class="logo-img" src="/static/stockradar-main-logo.png" alt="StockRadar" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-block';"><span class="logo-fallback">StockRadar</span></a>
-    <div class="nav-section-label">Main Menu</div>
-    <div class="menu-help">Use these tabs to jump straight to the section you need.</div>
-     <a class="nav-link tab-button {% if active_tab == 'overview' %}active-tab{% endif %}" href="/?tab=overview">🏠 Overview</a>
-    <a class="nav-link" href="/beginner">🌱 Investment Compass</a>
-    <a class="nav-link tab-button {% if active_tab == 'signals' %}active-tab{% endif %}" href="/?tab=signals">📊 AI Signals</a>
-    <a class="nav-link tab-button {% if active_tab == 'radar' %}active-tab{% endif %}" href="/?tab=radar">🌍 Impact Radar</a>
-    <a class="nav-link tab-button {% if active_tab == 'watchlist' %}active-tab{% endif %}" href="/?tab=watchlist">📋 AI Watchlist</a>
-    <a class="nav-link" href="/premium-watchlist">🧠 Premium Watchlist</a>
-    <a class="nav-link" href="/compare">⚖️ Compare Stocks <span style="color:#ffb86b;font-size:11px;font-weight:950;">Premium</span></a>
-    <div class="nav-section-label">Risk Check</div>
-        <a class="nav-link" href="/portfolio-fit">🧩 Portfolio Fit</a>
-        <a class="nav-link" href="/universe">🌍 Stock Universe</a>
-    <div class="menu-divider"></div>
-
-    <div class="nav-section-label">Account</div>
-    {% if owner_logged_in %}
-        <a class="nav-link pro-button" href="/owner">✅ Premium Active</a>
-        <a class="nav-link account-manage-subscription" data-account-manage-subscription="true" href="/manage-subscription">Manage Subscription</a>
-        <a class="nav-link" href="/logout">🚪 Logout</a>
-    {% elif has_premium_access %}
-        <a class="nav-link pro-button" href="/manage-subscription">✅ Premium Active</a>
-        <a class="nav-link account-manage-subscription" data-account-manage-subscription="true" href="/manage-subscription">Manage Subscription</a>
-        <a class="nav-link" href="/logout">🚪 End Premium Session</a>
-    {% else %}
-        <a class="nav-link pro-button" href="/upgrade">🚀 Upgrade to Premium — £5/month</a>
-        <a class="nav-link" href="/login">🔐 Login</a>
-    {% endif %}
-    <div class="owner-box">Premium unlocks full AI reasoning, risk reads, next-move analysis and market intelligence.</div>
+  <div class="sidebar-navigation-shell" data-stockradar-navigation="true">
+    <div class="sidebar-header">
+        <a class="logo" href="/" aria-label="StockRadar"><img class="logo-img" src="/static/stockradar-main-logo.png" alt="StockRadar" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-block';"><span class="logo-fallback">StockRadar</span></a>
+        <button class="sidebar-menu-toggle" type="button" aria-expanded="false" aria-controls="dashboard-primary-menu" data-stockradar-menu-toggle>Menu</button>
+    </div>
+    <nav class="sidebar-nav" id="dashboard-primary-menu" data-stockradar-primary-nav="true" data-stockradar-menu aria-label="Dashboard navigation">
+    {% for section_name, navigation_items in stockradar_navigation_sections('dashboard', active_tab) %}
+        <div class="nav-section-label">{{ section_name }}</div>
+        {% if section_name == 'Main Menu' %}<div class="menu-help">Use these links to jump straight to the tool you need.</div>{% endif %}
+        {% for item in navigation_items %}
+        <a class="nav-link{% if item.active_tab %} tab-button{% endif %}{% if item.active %} active-tab{% endif %}{% if item.dashboard_class %} {{ item.dashboard_class }}{% endif %}"{% if item.manage_subscription %} data-account-manage-subscription="true"{% endif %}{% if item.id == 'investment-compass' %} data-nav-id="investment-compass"{% endif %} href="{{ item.href }}">{% if item.icon %}{{ item.icon }} {% endif %}{{ item.label }}{% if item.badge %} <span class="nav-premium-badge">{{ item.badge }}</span>{% endif %}</a>
+        {% endfor %}
+        {% if section_name != 'Account' %}<div class="menu-divider"></div>{% endif %}
+    {% endfor %}
+        <div class="owner-box">Premium unlocks full AI reasoning, risk reads, next-move analysis and market intelligence.</div>
+    </nav>
+  </div>
 </div>
+{{ stockradar_navigation_script() | safe }}
 {% endif %}
 
 
@@ -10563,9 +10910,11 @@ button,.button{display:inline-block;border:none;background:linear-gradient(135de
 ul{color:#cbd5e1;line-height:1.75;padding-left:20px;}
 .tag{display:inline-block;background:rgba(56,189,248,0.12);border:1px solid rgba(56,189,248,0.22);color:#bae6fd;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:950;margin:4px 6px 4px 0;}
 @media(max-width:900px){body{padding:24px;}.grid,.form-grid,.model-grid{grid-template-columns:1fr;}h1{font-size:34px;}}
+@media(max-width:480px){body{padding:16px;overflow-x:hidden;}.hero,.card{padding:22px 18px;border-radius:22px;overflow-wrap:anywhere;}h1{font-size:30px;}select,input,button,.button{min-height:44px;}}
 </style>
 </head>
 <body>
+{{ stockradar_header_navigation('app') | safe }}
 <div class="wrap">
     <a class="back" href="/">← Back to dashboard</a>
     <div class="hero">
@@ -10762,9 +11111,11 @@ def beginner():
     ul{{color:#cbd5e1;line-height:1.75;padding-left:20px;}}
     .tag{{display:inline-block;background:rgba(56,189,248,0.12);border:1px solid rgba(56,189,248,0.22);color:#bae6fd;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:950;margin:4px 6px 4px 0;}}
     @media(max-width:900px){{body{{padding:24px;}}.grid,.form-grid,.model-grid{{grid-template-columns:1fr;}}h1{{font-size:34px;}}}}
+    @media(max-width:480px){{body{{padding:16px;overflow-x:hidden;}}.hero,.card{{padding:22px 18px;border-radius:22px;overflow-wrap:anywhere;}}h1{{font-size:30px;}}select,input,button,.button{{min-height:44px;}}}}
     </style>
     </head>
     <body>
+    {stockradar_header_navigation("app")}
     <div class="wrap">
         <a class="back" href="/">← Back to dashboard</a>
         <div class="hero">
@@ -10883,6 +11234,7 @@ p{color:#cbd5e1;line-height:1.68;font-size:var(--font-body);}
 </style>
 </head>
 <body>
+{{ stockradar_header_navigation('app') | safe }}
 <div class="wrap">
     <a class="back" href="/">← Back to Dashboard</a>
 
@@ -11115,6 +11467,7 @@ stock_detail_html = """
 	</style>
 </head>
 <body>
+{{ stockradar_header_navigation('app') | safe }}
 <div class="card"><p><a href="/">← Back to Dashboard</a></p><h1>{{ stock_display_label(symbol) }} Stock Detail</h1><p style="color:#94a3b8;">Live chart view for {{ range_label }}. Use the buttons below to change timeframe.</p></div>
 
 	<div class="ai-grid"><div class="ai-card"><small>{% if has_premium_access %}Current Signal{% else %}Free Signal Preview{% endif %}</small><h2 class="{% if ai_context.signal == 'BUY' %}buy{% elif ai_context.signal == 'SELL' %}sell{% elif ai_context.signal == 'HOLD' %}hold{% endif %}">{{ ai_context.signal }}</h2><p>The headline signal shows what the scanner is flagging for {{ stock_display_label(symbol) }}.</p><span class="signal-badge">Live stock page: {{ stock_display_label(symbol) }}</span></div><div class="ai-card warning"><small>{% if has_premium_access %}Current Confidence{% else %}Free Confidence Preview{% endif %}</small><div class="confidence-large">{{ ai_context.confidence }}</div><div class="free-meter">{{ ai_context.confidence_meter }}</div><span class="free-strength">Signal strength: {{ ai_context.strength_label }}</span><p style="margin-top:12px;">The score and meter are a research prompt. Premium explains how to interpret them, what risk to check and what evidence matters next.</p></div><div class="ai-card risk"><small>{% if has_premium_access %}Premium Active{% else %}Premium Preview{% endif %}</small><h2>Decision context</h2>{% if has_premium_access %}<p>The Premium report below puts the simple answer first, followed by practical checks and optional supporting detail.</p><span class="signal-badge">Premium unlocked</span>{% else %}<p>Premium explains the decision layer behind {{ stock_display_label(symbol) }}: risk level, portfolio role, concentration warning and the next trigger to watch.</p><a class="signal-badge" href="/upgrade">Explore Premium</a>{% endif %}</div></div>
