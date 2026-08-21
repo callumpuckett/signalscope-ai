@@ -1,6 +1,8 @@
 from copy import deepcopy
 from unittest.mock import patch
 
+from bs4 import BeautifulSoup
+
 import app
 
 
@@ -102,6 +104,7 @@ def test_public_hero_integrates_the_single_stock_search_journey():
 
 def test_suggested_examples_open_real_existing_reports():
     page = render_public_home().get_data(as_text=True)
+    document = BeautifulSoup(page, "html.parser")
 
     expected_links = {
         "Microsoft — MSFT": "/stock/MSFT",
@@ -110,7 +113,12 @@ def test_suggested_examples_open_real_existing_reports():
         "S&amp;P 500 ETF — SPY": "/stock/SPY",
     }
     for label, href in expected_links.items():
-        assert f'href="{href}">{label}</a>' in page
+        link = document.select_one(f'.suggested-search-chip[href="{href}"]')
+        assert link is not None
+        assert link.select_one(".company-identity-name").get_text(strip=True) == (
+            BeautifulSoup(label, "html.parser").get_text()
+        )
+        assert link.select_one("img.company-logo-image")["alt"].endswith(" logo")
 
     assert (
         "New to investing? Start with a company or fund you already recognise."
@@ -120,6 +128,7 @@ def test_suggested_examples_open_real_existing_reports():
 
 def test_three_steps_and_free_preview_use_the_required_compact_copy():
     page = render_public_home().get_data(as_text=True)
+    document = BeautifulSoup(page, "html.parser")
 
     assert "<strong>Search</strong><span>Choose a company or fund you recognise.</span>" in page
     assert "<strong>Understand</strong><span>See the current signal in plain English.</span>" in page
@@ -128,7 +137,11 @@ def test_three_steps_and_free_preview_use_the_required_compact_copy():
         in page
     )
     assert "See a free report in action" in page
-    assert '<strong class="free-report-preview-name">Microsoft</strong>' in page
+    preview_name = document.select_one("strong.free-report-preview-name")
+    assert preview_name.select_one(".company-identity-name").get_text(strip=True) == (
+        "Microsoft"
+    )
+    assert preview_name.select_one("img.company-logo-image")["alt"] == "Microsoft logo"
     assert '<span class="free-report-preview-ticker">MSFT</span>' in page
     assert '<span class="free-report-signal hold">HOLD</span>' in page
     assert "Signal strength: Moderate" in page

@@ -1,0 +1,114 @@
+.company-identity {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+    max-width: 100%;
+    vertical-align: middle;
+}
+
+.company-identity-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.company-logo-frame {
+    position: relative;
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    overflow: hidden;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 7px;
+    background: #f8fafc;
+    color: #334155;
+}
+
+.company-logo-image {
+    position: relative;
+    z-index: 1;
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    padding: 2px;
+    object-fit: contain;
+    object-position: center;
+    background: #f8fafc;
+}
+
+.company-logo-fallback {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font: 900 10px/1 Arial, sans-serif;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.company-logo-image[hidden] {
+    display: none;
+}
+
+.company-identity--detail {
+    gap: 11px;
+}
+
+.company-identity--detail .company-logo-frame {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+}
+
+.company-identity--card .company-logo-frame {
+    width: 30px;
+    height: 30px;
+}
+
+.company-identity--compact {
+    gap: 6px;
+}
+
+.company-identity--compact .company-logo-frame {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+}
+
+.company-identity--compact .company-logo-fallback {
+    font-size: 8px;
+}
+
+@media (max-width: 760px) {
+    .company-identity {
+        gap: 7px;
+    }
+
+    .company-identity--detail .company-logo-frame {
+        width: 30px;
+        height: 30px;
+    }
+
+    .company-identity--card .company-logo-frame {
+        width: 27px;
+        height: 27px;
+    }
+
+    .company-identity--compact .company-logo-frame {
+        width: 24px;
+        height: 24px;
+    }
+}
+
+@media (max-width: 420px) {
+    .company-identity--detail .company-logo-frame,
+    .company-identity--card .company-logo-frame {
+        width: 26px;
+        height: 26px;
+    }
+}

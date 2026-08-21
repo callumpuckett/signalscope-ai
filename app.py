@@ -16,6 +16,7 @@ import hashlib
 import hmac
 import ipaddress
 import json
+import math
 import os
 import pandas as pd
 import re
@@ -31,6 +32,7 @@ import urllib.request
 
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash
+from markupsafe import Markup, escape as html_escape
 
 try:
     from flask_wtf.csrf import CSRFProtect, CSRFError
@@ -2465,6 +2467,15 @@ STOCK_DISPLAY_LOOKUP_CACHE = {
     "rows": None,
     "lookup": {},
 }
+STOCK_IDENTITY_LOOKUP_CACHE = {
+    "rows": None,
+    "lookup": {},
+}
+COMPANY_LOGO_METADATA_CACHE = {}
+COMPANY_LOGO_PROVIDER_BASE_URL = (
+    "https://financialmodelingprep.com/image-stock"
+)
+COMPANY_DOMAIN_LOGO_BASE_URL = "https://www.google.com/s2/favicons"
 DIVIDEND_CONTEXT_CACHE_TTL_SECONDS = 3600
 DIVIDEND_CONTEXT_UNAVAILABLE_CACHE_TTL_SECONDS = 300
 DIVIDEND_CONTEXT_CACHE = {}
@@ -2678,6 +2689,9 @@ def normalise_universe_row(row):
     ).strip()
     exchange = str(lower.get("exchange") or lower.get("market") or "").strip()
     sector = str(lower.get("sector") or SECTOR_MAP.get(ticker, "Stock Universe")).strip()
+    website = str(lower.get("website") or lower.get("company_website") or "").strip()
+    domain = str(lower.get("domain") or "").strip().lower()
+    logo_url = str(lower.get("logo_url") or lower.get("logo") or "").strip()
 
     if not ticker:
         return None
@@ -2687,6 +2701,9 @@ def normalise_universe_row(row):
         "name": name or ticker,
         "exchange": exchange,
         "sector": sector or "Stock Universe",
+        "website": website,
+        "domain": domain,
+        "logo_url": logo_url,
         "url": f"/stock/{ticker}",
         "search_text": f"{ticker} {name} {exchange} {sector}".lower(),
     }
@@ -2763,6 +2780,25 @@ def stock_display_lookup():
         return {}
 
 
+def stock_identity_lookup():
+    try:
+        rows = get_stock_universe()
+        if STOCK_IDENTITY_LOOKUP_CACHE["rows"] is rows:
+            return STOCK_IDENTITY_LOOKUP_CACHE["lookup"]
+
+        lookup = {
+            str(item.get("ticker") or "").strip().upper(): item
+            for item in rows
+            if str(item.get("ticker") or "").strip()
+        }
+        STOCK_IDENTITY_LOOKUP_CACHE["rows"] = rows
+        STOCK_IDENTITY_LOOKUP_CACHE["lookup"] = lookup
+        COMPANY_LOGO_METADATA_CACHE.clear()
+        return lookup
+    except Exception:
+        return {}
+
+
 def stock_display_label(value):
     canonical = canonical_stock_symbol(value)
     if not canonical:
@@ -2781,7 +2817,135 @@ def stock_display_label(value):
     return canonical
 
 
+def safe_company_domain(value):
+    raw_value = str(value or "").strip().lower()
+    if not raw_value:
+        return ""
+    parsed = urlsplit(raw_value if "://" in raw_value else f"https://{raw_value}")
+    hostname = str(parsed.hostname or "").strip().lower().rstrip(".")
+    if not hostname or len(hostname) > 253:
+        return ""
+    if not re.fullmatch(
+        r"(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}",
+        hostname,
+    ):
+        return ""
+    return hostname
+
+
+def safe_company_logo_url(value):
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return ""
+    parsed = urlsplit(raw_value)
+    if parsed.scheme != "https" or not parsed.hostname:
+        return ""
+    return raw_value
+
+
+def company_initials(company_name, ticker):
+    ignored = {
+        "PLC", "INC", "INCORPORATED", "CORP", "CORPORATION", "CO",
+        "COMPANY", "LTD", "LIMITED", "GROUP", "HOLDINGS", "TRUST",
+        "CLASS", "THE", "ETF",
+    }
+    words = [
+        word
+        for word in re.findall(r"[A-Za-z0-9]+", str(company_name or ""))
+        if word.upper() not in ignored
+    ]
+    if len(words) >= 2:
+        return f"{words[0][0]}{words[1][0]}".upper()
+    if words:
+        return words[0][:2].upper()
+    ticker_letters = re.sub(r"[^A-Z0-9]", "", str(ticker or "").upper())
+    return (ticker_letters[:2] or "?").upper()
+
+
+def company_logo_metadata(value):
+    canonical = canonical_stock_symbol(value)
+    if not canonical:
+        canonical = str(value or "").strip().upper()
+    cached = COMPANY_LOGO_METADATA_CACHE.get(canonical)
+    if cached is not None:
+        return dict(cached)
+
+    item = stock_identity_lookup().get(canonical, {})
+    company_name = str(item.get("name") or canonical or "Unknown company").strip()
+    explicit_logo_url = safe_company_logo_url(item.get("logo_url"))
+    domain = safe_company_domain(item.get("domain") or item.get("website"))
+    provider_symbol = quote(canonical, safe="")
+    provider_logo_url = (
+        f"{COMPANY_LOGO_PROVIDER_BASE_URL}/{provider_symbol}.png"
+        if provider_symbol else ""
+    )
+    domain_logo_url = (
+        f"{COMPANY_DOMAIN_LOGO_BASE_URL}?domain={quote(domain, safe='.-')}&sz=128"
+        if domain else ""
+    )
+    primary_logo_url = explicit_logo_url or provider_logo_url or domain_logo_url
+    fallback_logo_url = ""
+    if domain_logo_url and domain_logo_url != primary_logo_url:
+        fallback_logo_url = domain_logo_url
+
+    metadata = {
+        "ticker": canonical,
+        "company_name": company_name,
+        "logo_url": primary_logo_url,
+        "fallback_logo_url": fallback_logo_url,
+        "initials": company_initials(company_name, canonical),
+    }
+    COMPANY_LOGO_METADATA_CACHE[canonical] = metadata
+    return dict(metadata)
+
+
+def stock_identity(value, label=None, size="card", lazy=True):
+    metadata = company_logo_metadata(value)
+    ticker = metadata["ticker"]
+    visible_label = str(label or stock_display_label(ticker) or ticker).strip()
+    accessible_company_name = metadata["company_name"]
+    if accessible_company_name.upper() == ticker and label:
+        accessible_company_name = re.sub(
+            rf"\s*(?:\({re.escape(ticker)}\)|[—-]\s*{re.escape(ticker)})\s*$",
+            "",
+            visible_label,
+            flags=re.IGNORECASE,
+        ).strip() or ticker
+    safe_size = size if size in {"detail", "card", "compact"} else "card"
+    loading = "lazy" if lazy and safe_size != "detail" else "eager"
+    fetch_priority = "high" if safe_size == "detail" else "auto"
+    fallback_attribute = (
+        f' data-logo-fallback-src="{html_escape(metadata["fallback_logo_url"])}"'
+        if metadata["fallback_logo_url"] else ""
+    )
+    image_markup = ""
+    if metadata["logo_url"]:
+        image_markup = (
+            f'<img class="company-logo-image" src="{html_escape(metadata["logo_url"])}" '
+            f'alt="{html_escape(accessible_company_name)} logo" loading="{loading}" '
+            f'fetchpriority="{fetch_priority}" decoding="async" referrerpolicy="no-referrer"'
+            f'{fallback_attribute}>'
+        )
+    return Markup(
+        f'<span class="company-identity company-identity--{safe_size}" '
+        f'data-company-identity="{html_escape(ticker)}">'
+        f'<span class="company-logo-frame">{image_markup}'
+        f'<span class="company-logo-fallback" aria-hidden="true">'
+        f'{html_escape(metadata["initials"])}</span></span>'
+        f'<span class="company-identity-name">{html_escape(visible_label)}</span></span>'
+    )
+
+
+def company_identity_assets():
+    return Markup(
+        '<link rel="stylesheet" href="/static/company_logos.css">'
+        '<script src="/static/company_logos.js"></script>'
+    )
+
+
 app.jinja_env.globals["stock_display_label"] = stock_display_label
+app.jinja_env.globals["stock_identity"] = stock_identity
+app.jinja_env.globals["company_identity_assets"] = company_identity_assets
 
 
 def search_stock_universe(query, limit=12):
@@ -4415,6 +4579,7 @@ def get_dividend_context(symbol):
 
     context = {
         "ticker": cleaned_symbol,
+        "currency": quote_currency or financial_currency,
         "is_etf": is_etf,
         "income_status": income_status,
         "has_dividend_data": has_dividend_data,
@@ -4898,6 +5063,7 @@ compare_html = """
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Compare Stocks — StockRadar</title>
 <meta name="description" content="Compare two stocks with StockRadar Premium decision context. Free users can preview the tool; Premium unlocks the full comparison.">
+{{ company_identity_assets() }}
 <style>
 *{box-sizing:border-box;}
 body{margin:0;background:radial-gradient(circle at 18% 8%,rgba(0,255,170,0.12),transparent 28%),linear-gradient(135deg,#08111c,#101827);color:#e5edf5;font-family:Arial,sans-serif;min-height:100vh;padding:42px 22px;}
@@ -4967,18 +5133,18 @@ ul{padding-left:22px;margin:12px 0 0;}
     {% if has_pair and not has_premium_access %}
     <div class="card">
         <p class="kicker">Locked Premium Comparison</p>
-        <h2>{{ left.label }} vs {{ right.label }}</h2>
+        <h2>{{ stock_identity(left.symbol, left.label, 'card') }} <span aria-hidden="true">vs</span> {{ stock_identity(right.symbol, right.label, 'card') }}</h2>
         <p><strong>Free shows each signal. Premium compares the decision.</strong></p>
         <p class="muted">You can check each stock page for the free signal. The side-by-side decision read is a Premium feature.</p>
         <div class="grid">
             <div class="box">
-                <strong>{{ left.label }}</strong>
+                <strong>{{ stock_identity(left.symbol, left.label, 'compact') }}</strong>
                 <span class="signal-pill {{ left.ai.signal|lower }}">{{ left.ai.signal }}</span>
                 <p class="muted">Free confidence preview: {{ left.ai.confidence }}</p>
                 <a href="/stock/{{ left.symbol }}">Open free stock page</a>
             </div>
             <div class="box">
-                <strong>{{ right.label }}</strong>
+                <strong>{{ stock_identity(right.symbol, right.label, 'compact') }}</strong>
                 <span class="signal-pill {{ right.ai.signal|lower }}">{{ right.ai.signal }}</span>
                 <p class="muted">Free confidence preview: {{ right.ai.confidence }}</p>
                 <a href="/stock/{{ right.symbol }}">Open free stock page</a>
@@ -4995,7 +5161,7 @@ ul{padding-left:22px;margin:12px 0 0;}
     {% if has_pair and has_premium_access %}
     <div class="card">
         <p class="kicker">Premium Comparison</p>
-        <h2>{{ left.label }} vs {{ right.label }}</h2>
+        <h2>{{ stock_identity(left.symbol, left.label, 'card') }} <span aria-hidden="true">vs</span> {{ stock_identity(right.symbol, right.label, 'card') }}</h2>
         <div class="summary"><strong>Key difference to research first</strong><br>{{ strength_summary }}</div>
     </div>
 
@@ -5003,8 +5169,8 @@ ul{padding-left:22px;margin:12px 0 0;}
         <h2>Signal and Confidence Comparison</h2>
         <table>
             <tr><th>Stock</th><th>Signal</th><th>Confidence</th><th>Signal strength</th><th>Decision score read</th></tr>
-            <tr><td><a href="/stock/{{ left.symbol }}">{{ left.label }}</a></td><td><span class="signal-pill {{ left.ai.signal|lower }}">{{ left.ai.signal }}</span></td><td>{{ left.ai.confidence }}</td><td>{{ left.ai.strength_label }}</td><td>{{ left.report.readiness }}. {{ left.report.action_frame }}</td></tr>
-            <tr><td><a href="/stock/{{ right.symbol }}">{{ right.label }}</a></td><td><span class="signal-pill {{ right.ai.signal|lower }}">{{ right.ai.signal }}</span></td><td>{{ right.ai.confidence }}</td><td>{{ right.ai.strength_label }}</td><td>{{ right.report.readiness }}. {{ right.report.action_frame }}</td></tr>
+            <tr><td><a href="/stock/{{ left.symbol }}">{{ stock_identity(left.symbol, left.label, 'compact') }}</a></td><td><span class="signal-pill {{ left.ai.signal|lower }}">{{ left.ai.signal }}</span></td><td>{{ left.ai.confidence }}</td><td>{{ left.ai.strength_label }}</td><td>{{ left.report.readiness }}. {{ left.report.action_frame }}</td></tr>
+            <tr><td><a href="/stock/{{ right.symbol }}">{{ stock_identity(right.symbol, right.label, 'compact') }}</a></td><td><span class="signal-pill {{ right.ai.signal|lower }}">{{ right.ai.signal }}</span></td><td>{{ right.ai.confidence }}</td><td>{{ right.ai.strength_label }}</td><td>{{ right.report.readiness }}. {{ right.report.action_frame }}</td></tr>
         </table>
     </div>
 
@@ -5012,8 +5178,8 @@ ul{padding-left:22px;margin:12px 0 0;}
         <h2>Portfolio Role and Risk</h2>
         <table>
             <tr><th>Stock</th><th>Portfolio role</th><th>Risk level</th><th>Watch-next trigger</th></tr>
-            <tr><td>{{ left.label }}</td><td>{{ left.report.portfolio_role }}<br><span class="muted">{{ left.report.decision_use }}</span></td><td>{{ left.report.risk_level }}<br><span class="muted">{{ left.ai.risk_view }}</span></td><td>{{ left.ai.watch_next }}</td></tr>
-            <tr><td>{{ right.label }}</td><td>{{ right.report.portfolio_role }}<br><span class="muted">{{ right.report.decision_use }}</span></td><td>{{ right.report.risk_level }}<br><span class="muted">{{ right.ai.risk_view }}</span></td><td>{{ right.ai.watch_next }}</td></tr>
+            <tr><td>{{ stock_identity(left.symbol, left.label, 'compact') }}</td><td>{{ left.report.portfolio_role }}<br><span class="muted">{{ left.report.decision_use }}</span></td><td>{{ left.report.risk_level }}<br><span class="muted">{{ left.ai.risk_view }}</span></td><td>{{ left.ai.watch_next }}</td></tr>
+            <tr><td>{{ stock_identity(right.symbol, right.label, 'compact') }}</td><td>{{ right.report.portfolio_role }}<br><span class="muted">{{ right.report.decision_use }}</span></td><td>{{ right.report.risk_level }}<br><span class="muted">{{ right.ai.risk_view }}</span></td><td>{{ right.ai.watch_next }}</td></tr>
         </table>
     </div>
 
@@ -5023,12 +5189,12 @@ ul{padding-left:22px;margin:12px 0 0;}
         <p>Two strong companies may still serve the same role or expose a portfolio to the same risks.</p>
         <div class="grid">
             <article class="box">
-                <strong>{{ left.label }}</strong>
+                <strong>{{ stock_identity(left.symbol, left.label, 'compact') }}</strong>
                 <span>{{ portfolio_role_comparison.left.role_label }}</span>
                 <p class="muted"><b>Core or satellite:</b> {{ portfolio_role_comparison.left.core_label }}. {{ portfolio_role_comparison.left.core_or_satellite }}</p>
             </article>
             <article class="box">
-                <strong>{{ right.label }}</strong>
+                <strong>{{ stock_identity(right.symbol, right.label, 'compact') }}</strong>
                 <span>{{ portfolio_role_comparison.right.role_label }}</span>
                 <p class="muted"><b>Core or satellite:</b> {{ portfolio_role_comparison.right.core_label }}. {{ portfolio_role_comparison.right.core_or_satellite }}</p>
             </article>
@@ -5040,8 +5206,8 @@ ul{padding-left:22px;margin:12px 0 0;}
     <div class="card">
         <h2>Dividend / Income Context</h2>
         <div class="grid">
-            <div class="box"><strong>{{ left.label }}</strong><span>{{ left.income_text }}</span><p class="muted">{{ left.dividend.source_note }}</p></div>
-            <div class="box"><strong>{{ right.label }}</strong><span>{{ right.income_text }}</span><p class="muted">{{ right.dividend.source_note }}</p></div>
+            <div class="box"><strong>{{ stock_identity(left.symbol, left.label, 'compact') }}</strong><span>{{ left.income_text }}</span><p class="muted">{{ left.dividend.source_note }}</p></div>
+            <div class="box"><strong>{{ stock_identity(right.symbol, right.label, 'compact') }}</strong><span>{{ right.income_text }}</span><p class="muted">{{ right.dividend.source_note }}</p></div>
         </div>
     </div>
 
@@ -5049,12 +5215,12 @@ ul{padding-left:22px;margin:12px 0 0;}
         <h2>Portfolio Fit Notes</h2>
         <div class="grid">
             <div class="box">
-                <strong>{{ left.label }}</strong>
+                <strong>{{ stock_identity(left.symbol, left.label, 'compact') }}</strong>
                 <ul>{% for item in left.report.portfolio_fit_points %}<li>{{ item }}</li>{% endfor %}</ul>
                 <p class="warning">{{ left.report.concentration_note }}</p>
             </div>
             <div class="box">
-                <strong>{{ right.label }}</strong>
+                <strong>{{ stock_identity(right.symbol, right.label, 'compact') }}</strong>
                 <ul>{% for item in right.report.portfolio_fit_points %}<li>{{ item }}</li>{% endfor %}</ul>
                 <p class="warning">{{ right.report.concentration_note }}</p>
             </div>
@@ -5167,6 +5333,7 @@ def stock_universe_page():
     <meta name="twitter:card" content="summary">
     <meta name="twitter:title" content="Stock Universe — StockRadar">
     <meta name="twitter:description" content="Search supported stocks, funds and market names in the StockRadar research universe.">
+    {{ company_identity_assets() }}
     <style>
     body{margin:0;background:radial-gradient(circle at 12% 0%,rgba(0,255,170,0.10),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;min-height:100vh;padding:42px;}
     .wrap{max-width:1180px;margin:0 auto;}
@@ -5213,8 +5380,8 @@ def stock_universe_page():
                 <tr><th>Stock</th><th>Company</th><th>Sector</th><th>Exchange</th></tr>
                 {% for item in visible_rows %}
                 <tr>
-                    <td><a href="{{ item.url }}">{{ stock_display_label(item.ticker) }}</a></td>
-                    <td>{{ item.name }}</td>
+                    <td><a href="{{ item.url }}">{{ item.ticker }}</a></td>
+                    <td><a href="{{ item.url }}">{{ stock_identity(item.ticker, stock_display_label(item.ticker), 'compact') }}</a></td>
                     <td>{{ item.sector }}</td>
                     <td>{{ item.exchange or "—" }}</td>
                 </tr>
@@ -5249,6 +5416,7 @@ def premium_decision(symbol):
         <head>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Premium Decision Panel — StockRadar</title>
+        {{ company_identity_assets() }}
         <style>
         *{box-sizing:border-box;}
         body{margin:0;background:linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
@@ -5268,10 +5436,10 @@ def premium_decision(symbol):
         </head>
         <body>
         <div class="wrap">
-            <a href="/stock/{{ symbol }}">← Back to {{ stock_display_label(symbol) }}</a>
+            <a href="/stock/{{ symbol }}">← Back to {{ stock_identity(symbol, stock_display_label(symbol), 'compact') }}</a>
             <div class="card">
                 <p class="kicker">Premium Decision Layer</p>
-                <h1>{{ stock_display_label(symbol) }} Decision Panel</h1>
+                <h1>{{ stock_identity(symbol, stock_display_label(symbol), 'detail', false) }} <span>Decision Panel</span></h1>
                 <p><strong>Free shows the signal. Premium explains the decision.</strong> It helps you ask better questions before acting without revealing the full Premium answer in this preview.</p>
                 <div class="preview-grid">
                     <div class="preview"><strong>Why is this signal showing?</strong>Unlock the plain-English reasoning behind the headline prompt.</div>
@@ -5298,6 +5466,7 @@ def premium_decision(symbol):
     <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ report.headline }} — StockRadar</title>
+    {{ company_identity_assets() }}
     <style>
     *{box-sizing:border-box;}
     :root{--navy:#08111c;--panel:#111d2b;--panel-deep:#0b1623;--text:#f1f5f9;--muted:#aebdca;--green:#4adea3;--amber:#f0c36a;}
@@ -5354,11 +5523,11 @@ def premium_decision(symbol):
     </head>
     <body>
     <main class="wrap">
-        <a class="back" href="/stock/{{ symbol }}">← Back to {{ stock_display_label(symbol) }}</a>
+        <a class="back" href="/stock/{{ symbol }}">← Back to {{ stock_identity(symbol, stock_display_label(symbol), 'compact') }}</a>
 
         <section class="card summary-card" aria-labelledby="premium-summary-heading">
             <p class="kicker">Premium decision summary</p>
-            <h1 id="premium-summary-heading">{{ stock_display_label(symbol) }}</h1>
+            <h1 id="premium-summary-heading">{{ stock_identity(symbol, stock_display_label(symbol), 'detail', false) }}</h1>
             <p class="identity-line">Each Premium report is designed to help you understand the decision process, not simply copy a signal.</p>
             <div class="badges" aria-label="Current signal and confidence">
                 <span class="badge {{ context.signal|lower }}">Signal: {{ context.signal }}</span>
@@ -5550,6 +5719,7 @@ def premium_watchlist():
     <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Premium Watchlist Intelligence — StockRadar</title>
+    {{ company_identity_assets() }}
     <style>
     *{box-sizing:border-box;}
     body{margin:0;background:radial-gradient(circle at 20% 10%,rgba(0,255,170,0.15),transparent 28%),linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
@@ -5581,8 +5751,8 @@ def premium_watchlist():
             <h1>Decision review for the current StockRadar universe.</h1>
             <p>This turns the signal table into a portfolio-style dashboard: strongest signal, caution zone, ETF/market setup, quality/growth/defensive buckets and theme concentration.</p>
             <div class="grid">
-                <div class="box"><strong>Strongest signal</strong>{% if strongest %}<span><a href="/stock/{{ strongest.ticker }}">{{ stock_display_label(strongest.ticker) }}</a> — {{ strongest.signal }} • {{ strongest.confidence }}. Start here, then check risk and portfolio overlap before acting.</span>{% else %}<span>No conviction row available.</span>{% endif %}</div>
-                <div class="box"><strong>Caution stock</strong>{% if highest_risk %}<span>{{ caution_label }}: <a href="/stock/{{ highest_risk.ticker }}">{{ stock_display_label(highest_risk.ticker) }}</a> — {{ highest_risk.signal }} • {{ highest_risk.confidence }}. Review what could weaken the thesis before adding exposure.</span>{% else %}<span>No caution row available.</span>{% endif %}</div>
+                <div class="box"><strong>Strongest signal</strong>{% if strongest %}<span><a href="/stock/{{ strongest.ticker }}">{{ stock_identity(strongest.ticker, stock_display_label(strongest.ticker), 'compact') }}</a> — {{ strongest.signal }} • {{ strongest.confidence }}. Start here, then check risk and portfolio overlap before acting.</span>{% else %}<span>No conviction row available.</span>{% endif %}</div>
+                <div class="box"><strong>Caution stock</strong>{% if highest_risk %}<span>{{ caution_label }}: <a href="/stock/{{ highest_risk.ticker }}">{{ stock_identity(highest_risk.ticker, stock_display_label(highest_risk.ticker), 'compact') }}</a> — {{ highest_risk.signal }} • {{ highest_risk.confidence }}. Review what could weaken the thesis before adding exposure.</span>{% else %}<span>No caution row available.</span>{% endif %}</div>
                 <div class="box"><strong>Compare next</strong><span>Use Compare Stocks when two names look interesting and you need the decision context side by side.</span><br><a href="/compare">Open Compare Stocks</a></div>
             </div>
         </div>
@@ -5591,11 +5761,11 @@ def premium_watchlist():
             <h2>Today's Decision Brief</h2>
             <p>A compact Premium scan from the current StockRadar universe. Use it to choose what deserves deeper research first.</p>
             <div class="grid">
-                {% if decision_brief.strongest %}<div class="box"><strong>Strongest setup</strong><span><a href="/stock/{{ decision_brief.strongest.ticker }}">{{ decision_brief.strongest.label }}</a> — {{ decision_brief.strongest.signal }} • {{ decision_brief.strongest.confidence }}. {{ decision_brief.strongest.reason }}</span></div>{% endif %}
-                {% if decision_brief.caution %}<div class="box"><strong>Caution zone</strong><span><a href="/stock/{{ decision_brief.caution.ticker }}">{{ decision_brief.caution.label }}</a> — {{ decision_brief.caution.signal }}. Review risk before adding exposure.</span></div>{% endif %}
-                {% if decision_brief.market_setup %}<div class="box"><strong>ETF / market setup</strong><span><a href="/stock/{{ decision_brief.market_setup.ticker }}">{{ decision_brief.market_setup.label }}</a> — {{ decision_brief.market_setup.signal }} • broad-market context.</span></div>{% endif %}
-                {% if decision_brief.non_us %}<div class="box"><strong>UK / non-US idea</strong><span><a href="/stock/{{ decision_brief.non_us.ticker }}">{{ decision_brief.non_us.label }}</a> — {{ decision_brief.non_us.signal }} • regional diversification prompt.</span></div>{% endif %}
-                {% if decision_brief.watchlist %}<div class="box"><strong>Watchlist idea</strong><span><a href="/stock/{{ decision_brief.watchlist.ticker }}">{{ decision_brief.watchlist.label }}</a> — check what would make this setup stronger or weaker.</span></div>{% endif %}
+                {% if decision_brief.strongest %}<div class="box"><strong>Strongest setup</strong><span><a href="/stock/{{ decision_brief.strongest.ticker }}">{{ stock_identity(decision_brief.strongest.ticker, decision_brief.strongest.label, 'compact') }}</a> — {{ decision_brief.strongest.signal }} • {{ decision_brief.strongest.confidence }}. {{ decision_brief.strongest.reason }}</span></div>{% endif %}
+                {% if decision_brief.caution %}<div class="box"><strong>Caution zone</strong><span><a href="/stock/{{ decision_brief.caution.ticker }}">{{ stock_identity(decision_brief.caution.ticker, decision_brief.caution.label, 'compact') }}</a> — {{ decision_brief.caution.signal }}. Review risk before adding exposure.</span></div>{% endif %}
+                {% if decision_brief.market_setup %}<div class="box"><strong>ETF / market setup</strong><span><a href="/stock/{{ decision_brief.market_setup.ticker }}">{{ stock_identity(decision_brief.market_setup.ticker, decision_brief.market_setup.label, 'compact') }}</a> — {{ decision_brief.market_setup.signal }} • broad-market context.</span></div>{% endif %}
+                {% if decision_brief.non_us %}<div class="box"><strong>UK / non-US idea</strong><span><a href="/stock/{{ decision_brief.non_us.ticker }}">{{ stock_identity(decision_brief.non_us.ticker, decision_brief.non_us.label, 'compact') }}</a> — {{ decision_brief.non_us.signal }} • regional diversification prompt.</span></div>{% endif %}
+                {% if decision_brief.watchlist %}<div class="box"><strong>Watchlist idea</strong><span><a href="/stock/{{ decision_brief.watchlist.ticker }}">{{ stock_identity(decision_brief.watchlist.ticker, decision_brief.watchlist.label, 'compact') }}</a> — check what would make this setup stronger or weaker.</span></div>{% endif %}
                 <div class="box"><strong>How to use it</strong><span>Open the stock page, review risk and portfolio fit, then compare candidates before making any independent decision.</span></div>
             </div>
         </div>
@@ -5616,7 +5786,7 @@ def premium_watchlist():
             <table>
                 <tr><th>Stock</th><th>Signal</th><th>Confidence</th><th>Role</th></tr>
                 {% for item in quality_names[:8] %}
-                <tr><td><a href="/stock/{{ item.ticker }}">{{ stock_display_label(item.ticker) }}</a></td><td>{{ item.signal }}</td><td>{{ item.confidence }}</td><td>Quality compounder</td></tr>
+                <tr><td><a href="/stock/{{ item.ticker }}">{{ stock_identity(item.ticker, stock_display_label(item.ticker), 'compact') }}</a></td><td>{{ item.signal }}</td><td>{{ item.confidence }}</td><td>Quality compounder</td></tr>
                 {% endfor %}
             </table>
         </div>
@@ -5627,7 +5797,7 @@ def premium_watchlist():
             <table>
                 <tr><th>Stock</th><th>Signal</th><th>Confidence</th><th>Role</th></tr>
                 {% for item in growth_names[:8] %}
-                <tr><td><a href="/stock/{{ item.ticker }}">{{ stock_display_label(item.ticker) }}</a></td><td>{{ item.signal }}</td><td>{{ item.confidence }}</td><td>Controlled growth satellite</td></tr>
+                <tr><td><a href="/stock/{{ item.ticker }}">{{ stock_identity(item.ticker, stock_display_label(item.ticker), 'compact') }}</a></td><td>{{ item.signal }}</td><td>{{ item.confidence }}</td><td>Controlled growth satellite</td></tr>
                 {% endfor %}
             </table>
         </div>
@@ -5638,7 +5808,7 @@ def premium_watchlist():
             <table>
                 <tr><th>Stock</th><th>Signal</th><th>Confidence</th><th>Role</th></tr>
                 {% for item in defensive_names[:8] %}
-                <tr><td><a href="/stock/{{ item.ticker }}">{{ stock_display_label(item.ticker) }}</a></td><td>{{ item.signal }}</td><td>{{ item.confidence }}</td><td>Defensive balance</td></tr>
+                <tr><td><a href="/stock/{{ item.ticker }}">{{ stock_identity(item.ticker, stock_display_label(item.ticker), 'compact') }}</a></td><td>{{ item.signal }}</td><td>{{ item.confidence }}</td><td>Defensive balance</td></tr>
                 {% endfor %}
             </table>
             <div class="note">Premium read: do not just chase the strongest BUY signal. Review whether your next addition improves the overall mix.</div>
@@ -5825,6 +5995,7 @@ def portfolio_fit():
     <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Premium Portfolio Fit Checker — StockRadar</title>
+    {{ company_identity_assets() }}
     <style>
     *{box-sizing:border-box;}
     body{margin:0;background:radial-gradient(circle at 20% 10%,rgba(0,255,170,0.15),transparent 28%),linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
@@ -5877,7 +6048,7 @@ def portfolio_fit():
         <div class="box">
             <strong>{{ result.role_labels[role] }}</strong>
             <span>{{ tickers|length }} holding{% if tickers|length != 1 %}s{% endif %}</span>
-            <p>{% if tickers %}{% for ticker in tickers %}{{ stock_display_label(ticker) }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}None detected{% endif %}</p>
+            <p class="company-identity-list">{% if tickers %}{% for ticker in tickers %}{{ stock_identity(ticker, stock_display_label(ticker), 'compact') }}{% if not loop.last %}<span aria-hidden="true">, </span>{% endif %}{% endfor %}{% else %}None detected{% endif %}</p>
         </div>
         {% endfor %}
     </div>
@@ -5976,6 +6147,9 @@ def extract_history_price_series(history, symbol):
             values = values.iloc[:, 0]
 
         numeric_values = pd.to_numeric(values, errors="coerce").dropna()
+        numeric_values = numeric_values[
+            numeric_values.map(lambda value: math.isfinite(float(value)))
+        ]
         if not numeric_values.empty:
             return numeric_values
 
@@ -5988,10 +6162,19 @@ def normalize_history_points(history, symbol):
 
     for index, value in prices.items():
         date_value = index.isoformat() if hasattr(index, "isoformat") else str(index)
+        timestamp_ms = None
+        try:
+            timestamp_value = pd.Timestamp(index)
+            if timestamp_value.tzinfo is None:
+                timestamp_value = timestamp_value.tz_localize("UTC")
+            timestamp_ms = int(timestamp_value.timestamp() * 1000)
+        except (TypeError, ValueError, OverflowError):
+            pass
         points.append({
             "date": date_value,
             "label": str(index)[:16],
             "price": round(float(value), 2),
+            "timestamp_ms": timestamp_ms,
         })
 
     return points
@@ -6002,6 +6185,125 @@ def money(value):
         return f"{float(value):,.2f}"
     except Exception:
         return "—"
+
+
+def chart_price_direction(prices):
+    valid_prices = []
+    for value in prices or []:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(number):
+            valid_prices.append(number)
+
+    if not valid_prices:
+        return "hold"
+
+    change = valid_prices[-1] - valid_prices[0]
+    tolerance = max(abs(valid_prices[0]), abs(valid_prices[-1]), 1.0) * 1e-9
+    if change > tolerance:
+        return "buy"
+    if change < -tolerance:
+        return "sell"
+    return "hold"
+
+
+def chart_currency_metadata(currency):
+    raw_currency = str(currency or "").strip()
+    if raw_currency in {"GBp", "GBX"}:
+        return {"code": "GBX", "prefix": "", "suffix": "p"}
+
+    currency_code = raw_currency.upper()
+    currency_prefix = FUNDAMENTAL_CURRENCY_SYMBOLS.get(currency_code, "")
+    if currency_code and not currency_prefix:
+        currency_prefix = f"{currency_code} "
+    return {
+        "code": currency_code,
+        "prefix": currency_prefix,
+        "suffix": "",
+    }
+
+
+def format_chart_price(value, currency, signed=False):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "—"
+    if not math.isfinite(number):
+        return "—"
+
+    metadata = chart_currency_metadata(currency)
+    sign = "-" if number < 0 else "+" if signed and number > 0 else ""
+    amount = f"{abs(number):,.2f}"
+    return f"{sign}{metadata['prefix']}{amount}{metadata['suffix']}"
+
+
+def format_chart_timestamp(value, range_key):
+    text = str(value or "").strip()
+    match = re.match(
+        r"^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2}))?",
+        text,
+    )
+    if not match:
+        return text
+
+    year, month, day = (int(match.group(index)) for index in range(1, 4))
+    hour = match.group(4) or "00"
+    minute = match.group(5) or "00"
+    try:
+        observed_date = datetime(year, month, day)
+    except ValueError:
+        return text
+
+    if range_key in {"1h", "24h", "1d"}:
+        return f"{hour}:{minute}"
+    if range_key in {"5d", "1w"}:
+        return f"{observed_date.strftime('%a')} {hour}:{minute}"
+    if range_key in {"1mo", "3mo", "6mo"}:
+        return observed_date.strftime("%d %b")
+    return observed_date.strftime("%d %b %Y")
+
+
+def stock_chart_accessible_summary(chart_data, range_label, currency):
+    prices = list((chart_data or {}).get("prices") or [])
+    if not (chart_data or {}).get("ok") or not prices:
+        return f"Price chart unavailable for {range_label}."
+
+    start = float(prices[0])
+    end = float(prices[-1])
+    change = end - start
+    percent = (change / start) * 100 if start else 0
+    return (
+        f"{range_label} price history. Latest price {format_chart_price(end, currency)}. "
+        f"Period movement {format_chart_price(change, currency, signed=True)} "
+        f"({percent:+.2f}%)."
+    )
+
+
+def stock_chart_points(chart_data, range_key):
+    existing_points = (chart_data or {}).get("points")
+    if isinstance(existing_points, list):
+        return existing_points
+
+    labels = list((chart_data or {}).get("labels") or [])
+    prices = list((chart_data or {}).get("prices") or [])
+    points = []
+    for label, price in zip(labels, prices):
+        try:
+            number = float(price)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(number):
+            continue
+        points.append({
+            "date": str(label),
+            "label": str(label),
+            "price": number,
+            "timestamp_ms": None,
+            "tooltip_label": format_chart_timestamp(label, range_key),
+        })
+    return points
 
 
 def stock_history(symbol, range_key):
@@ -6028,12 +6330,19 @@ def stock_history(symbol, range_key):
         end = prices[-1]
         change = end - start
         percent = (change / start) * 100 if start else 0
-        direction = "buy" if change > 0 else "sell" if change < 0 else "hold"
+        direction = chart_price_direction(prices)
+
+        for point in points:
+            point["tooltip_label"] = format_chart_timestamp(
+                point["date"],
+                range_key,
+            )
 
         return {
             "ok": True,
             "labels": labels,
             "prices": prices,
+            "points": points,
             "start_price": money(start),
             "end_price": money(end),
             "change_amount": f"{change:+.2f}",
@@ -6048,6 +6357,7 @@ def stock_history(symbol, range_key):
             "ok": False,
             "labels": [],
             "prices": [],
+            "points": [],
             "start_price": "—",
             "end_price": "—",
             "change_amount": "—",
@@ -11330,6 +11640,7 @@ html = """
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="StockRadar — AI-Assisted Market Signals">
 <meta name="twitter:description" content="Learn to think like an investor with AI-assisted market signals, practical decision support, live market news and investing education from StockRadar.">
+{{ company_identity_assets() }}
 <style>
 *{box-sizing:border-box;}
 :root{--font-hero:clamp(40px,4.4vw,52px);--font-section:clamp(26px,2.4vw,34px);--font-card-title:19px;--font-body:15px;--font-small:13px;--font-kicker:11px;--font-cta:14px;}
@@ -11629,7 +11940,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
                         <span class="live-affected-label">Affected:</span>
                         {% if headline.get('stock_links') %}
                         {% for stock in headline.get('stock_links', [])[:2] %}
-                        <a class="live-stock-link {{ stock.get('signal_class', 'hold') }}" href="{{ stock.get('url', '/') }}" {% if repeat %}tabindex="-1"{% endif %}>{{ stock.get('display_label') or stock_display_label(stock.get('ticker', 'SPY')) }} <span class="live-stock-action">{{ stock.get('action_text', stock.get('signal', 'HOLD'))|title }}</span></a>
+                        <a class="live-stock-link {{ stock.get('signal_class', 'hold') }}" href="{{ stock.get('url', '/') }}" {% if repeat %}tabindex="-1"{% endif %}>{{ stock_identity(stock.get('ticker', 'SPY'), stock.get('display_label') or stock_display_label(stock.get('ticker', 'SPY')), 'compact') }} <span class="live-stock-action">{{ stock.get('action_text', stock.get('signal', 'HOLD'))|title }}</span></a>
                         {% endfor %}
                         {% set stock_link_total = headline.get('stock_links_total', headline.get('stock_links', [])|length) %}
                         {% if stock_link_total > 2 %}
@@ -11687,10 +11998,10 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
                 </form>
                 <div class="suggested-searches" aria-label="Suggested example reports">
                     <span class="suggested-searches-label">Try an example</span>
-                    <a class="suggested-search-chip" href="/stock/MSFT">Microsoft — MSFT</a>
-                    <a class="suggested-search-chip" href="/stock/AAPL">Apple — AAPL</a>
-                    <a class="suggested-search-chip" href="/stock/AMZN">Amazon — AMZN</a>
-                    <a class="suggested-search-chip" href="/stock/SPY">S&amp;P 500 ETF — SPY</a>
+                    <a class="suggested-search-chip" href="/stock/MSFT">{{ stock_identity('MSFT', 'Microsoft — MSFT', 'compact') }}</a>
+                    <a class="suggested-search-chip" href="/stock/AAPL">{{ stock_identity('AAPL', 'Apple — AAPL', 'compact') }}</a>
+                    <a class="suggested-search-chip" href="/stock/AMZN">{{ stock_identity('AMZN', 'Amazon — AMZN', 'compact') }}</a>
+                    <a class="suggested-search-chip" href="/stock/SPY">{{ stock_identity('SPY', 'S&P 500 ETF — SPY', 'compact') }}</a>
                 </div>
                 <p class="example-reassurance">New to investing? Start with a company or fund you already recognise.</p>
             </section>
@@ -11727,7 +12038,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
         <div class="free-report-preview-header">
             <div>
                 <h2 id="free-report-preview-heading">See a free report in action</h2>
-                <strong class="free-report-preview-name">{{ free_report_preview.company_name }}</strong>
+                <strong class="free-report-preview-name">{{ stock_identity(free_report_preview.ticker, free_report_preview.company_name, 'card') }}</strong>
                 <span class="free-report-preview-ticker">{{ free_report_preview.ticker }}</span>
             </div>
             {% if free_report_preview.is_current %}
@@ -11755,7 +12066,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 	            <div class="premium-example-header">
 	                <div>
 	                    <p class="premium-home-kicker">Example only</p>
-	                    <strong>Microsoft signal preview</strong>
+                    <strong>{{ stock_identity('MSFT', 'Microsoft signal preview', 'card') }}</strong>
 	                </div>
 	                <span class="premium-example-pill">Static preview</span>
 	            </div>
@@ -11774,19 +12085,19 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 	            <div class="premium-brief-grid">
 	                {% if has_premium_access %}
 	                {% if premium_decision_brief.strongest %}
-	                <div class="premium-brief-item"><small>Strongest setup</small><strong>{{ premium_decision_brief.strongest.label }}</strong><span>{{ premium_decision_brief.strongest.signal }} • {{ premium_decision_brief.strongest.confidence }} research prompt</span></div>
+	                <div class="premium-brief-item"><small>Strongest setup</small><strong>{{ stock_identity(premium_decision_brief.strongest.ticker, premium_decision_brief.strongest.label, 'compact') }}</strong><span>{{ premium_decision_brief.strongest.signal }} • {{ premium_decision_brief.strongest.confidence }} research prompt</span></div>
 	                {% endif %}
 	                {% if premium_decision_brief.caution %}
-	                <div class="premium-brief-item"><small>Caution zone</small><strong>{{ premium_decision_brief.caution.label }}</strong><span>{{ premium_decision_brief.caution.signal }} • risk to check before adding exposure</span></div>
+	                <div class="premium-brief-item"><small>Caution zone</small><strong>{{ stock_identity(premium_decision_brief.caution.ticker, premium_decision_brief.caution.label, 'compact') }}</strong><span>{{ premium_decision_brief.caution.signal }} • risk to check before adding exposure</span></div>
 	                {% endif %}
 	                {% if premium_decision_brief.market_setup %}
-	                <div class="premium-brief-item"><small>ETF / market setup</small><strong>{{ premium_decision_brief.market_setup.label }}</strong><span>{{ premium_decision_brief.market_setup.signal }} • broad-market context</span></div>
+	                <div class="premium-brief-item"><small>ETF / market setup</small><strong>{{ stock_identity(premium_decision_brief.market_setup.ticker, premium_decision_brief.market_setup.label, 'compact') }}</strong><span>{{ premium_decision_brief.market_setup.signal }} • broad-market context</span></div>
 	                {% endif %}
 	                {% if premium_decision_brief.non_us %}
-	                <div class="premium-brief-item"><small>UK / non-US idea</small><strong>{{ premium_decision_brief.non_us.label }}</strong><span>{{ premium_decision_brief.non_us.signal }} • regional diversification prompt</span></div>
+	                <div class="premium-brief-item"><small>UK / non-US idea</small><strong>{{ stock_identity(premium_decision_brief.non_us.ticker, premium_decision_brief.non_us.label, 'compact') }}</strong><span>{{ premium_decision_brief.non_us.signal }} • regional diversification prompt</span></div>
 	                {% endif %}
 	                {% if premium_decision_brief.watchlist %}
-	                <div class="premium-brief-item"><small>Watchlist idea</small><strong>{{ premium_decision_brief.watchlist.label }}</strong><span>Review what would make the setup stronger or weaker.</span></div>
+	                <div class="premium-brief-item"><small>Watchlist idea</small><strong>{{ stock_identity(premium_decision_brief.watchlist.ticker, premium_decision_brief.watchlist.label, 'compact') }}</strong><span>Review what would make the setup stronger or weaker.</span></div>
 	                {% endif %}
 	                {% else %}
 	                <div class="premium-brief-item"><small>Strongest setup</small><strong>Locked</strong><span>See which current signal deserves research first — and why.</span></div>
@@ -11855,7 +12166,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
         {% for item in market_snapshot %}
         <div class="market-card">
             <small>{{ item.market }}</small>
-            <h3><a class="stock-link" href="/stock/{{ item.symbol }}">{{ stock_display_label(item.symbol) }}</a></h3>
+            <h3><a class="stock-link" href="/stock/{{ item.symbol }}">{{ stock_identity(item.symbol, stock_display_label(item.symbol), 'card') }}</a></h3>
             <p style="margin:0;">Price: <strong>{{ item.price }}</strong></p>
             <p class="{{ item.direction }}" style="margin-bottom:0;">Move: {{ item.change }}</p>
         </div>
@@ -11890,25 +12201,25 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
             <tr><th>Starter bucket</th><th>Example research names</th><th>Why it helps beginners</th><th>How to use StockRadar</th></tr>
             <tr>
                 <td><strong>Core ETF base</strong></td>
-                <td><a class="stock-link" href="/stock/SPY">{{ stock_display_label('SPY') }}</a>, <a class="stock-link" href="/stock/QQQ">{{ stock_display_label('QQQ') }}</a></td>
+                <td><a class="stock-link" href="/stock/SPY">{{ stock_identity('SPY', stock_display_label('SPY'), 'compact') }}</a>, <a class="stock-link" href="/stock/QQQ">{{ stock_identity('QQQ', stock_display_label('QQQ'), 'compact') }}</a></td>
                 <td>Gives diversified market exposure and reduces the pressure to pick the perfect first stock.</td>
                 <td>Check whether the broad market is BUY, HOLD or SELL before adding risk.</td>
             </tr>
             <tr>
                 <td><strong>Quality compounders</strong></td>
-                <td><a class="stock-link" href="/stock/MSFT">{{ stock_display_label('MSFT') }}</a>, <a class="stock-link" href="/stock/AAPL">{{ stock_display_label('AAPL') }}</a>, <a class="stock-link" href="/stock/GOOGL">{{ stock_display_label('GOOGL') }}</a></td>
+                <td><a class="stock-link" href="/stock/MSFT">{{ stock_identity('MSFT', stock_display_label('MSFT'), 'compact') }}</a>, <a class="stock-link" href="/stock/AAPL">{{ stock_identity('AAPL', stock_display_label('AAPL'), 'compact') }}</a>, <a class="stock-link" href="/stock/GOOGL">{{ stock_identity('GOOGL', stock_display_label('GOOGL'), 'compact') }}</a></td>
                 <td>Large, understandable businesses can help beginners connect company quality with long-term investing.</td>
                 <td>Use confidence, risk read and AI reason to decide whether to research further, not to blindly buy.</td>
             </tr>
             <tr>
                 <td><strong>Growth learning names</strong></td>
-                <td><a class="stock-link" href="/stock/NVDA">{{ stock_display_label('NVDA') }}</a>, <a class="stock-link" href="/stock/AMZN">{{ stock_display_label('AMZN') }}</a>, <a class="stock-link" href="/stock/META">{{ stock_display_label('META') }}</a></td>
+                <td><a class="stock-link" href="/stock/NVDA">{{ stock_identity('NVDA', stock_display_label('NVDA'), 'compact') }}</a>, <a class="stock-link" href="/stock/AMZN">{{ stock_identity('AMZN', stock_display_label('AMZN'), 'compact') }}</a>, <a class="stock-link" href="/stock/META">{{ stock_identity('META', stock_display_label('META'), 'compact') }}</a></td>
                 <td>Shows how growth, AI, cloud and platform businesses behave, but should stay controlled for beginners.</td>
                 <td>Only consider if the signal, confidence and risk view line up with your investor profile.</td>
             </tr>
             <tr>
                 <td><strong>Defensive balance</strong></td>
-                <td><a class="stock-link" href="/stock/KO">{{ stock_display_label('KO') }}</a>, <a class="stock-link" href="/stock/MCD">{{ stock_display_label('MCD') }}</a>, <a class="stock-link" href="/stock/JNJ">{{ stock_display_label('JNJ') }}</a></td>
+                <td><a class="stock-link" href="/stock/KO">{{ stock_identity('KO', stock_display_label('KO'), 'compact') }}</a>, <a class="stock-link" href="/stock/MCD">{{ stock_identity('MCD', stock_display_label('MCD'), 'compact') }}</a>, <a class="stock-link" href="/stock/JNJ">{{ stock_identity('JNJ', stock_display_label('JNJ'), 'compact') }}</a></td>
                 <td>Helps beginners see that not every holding needs to be high-growth technology.</td>
                 <td>Use HOLD/BUY signals to understand stability, downside risk and portfolio balance.</td>
             </tr>
@@ -11933,7 +12244,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
     <div id="buy-panel" class="card panel">
         <h2>Opportunity Watch — BUY Signals</h2>
         {% if buy_rows %}
-        <table><tr><th>Stock</th><th>Confidence</th><th>AI Reason</th></tr>{% for item in buy_rows %}<tr><td class="buy"><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_display_label(item.ticker) }}</a></td><td>{{ item.confidence }}</td><td>{{ item.reason }}</td></tr>{% endfor %}</table>
+        <table><tr><th>Stock</th><th>Confidence</th><th>AI Reason</th></tr>{% for item in buy_rows %}<tr><td class="buy"><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_identity(item.ticker, stock_display_label(item.ticker), 'compact') }}</a></td><td>{{ item.confidence }}</td><td>{{ item.reason }}</td></tr>{% endfor %}</table>
         {% else %}<div class="empty-state">No BUY signals are currently active in your latest scanner output.</div>{% endif %}
         {% if has_premium_access %}<div class="notice"><h3>✅ Premium signal breakdown active</h3><p>You have full premium access. Use the linked tickers above to open the premium stock intelligence pages.</p></div>{% else %}<div class="notice"><h3>🔒 Unlock full AI signal breakdown</h3><p>Premium adds conviction context, risk reads and deeper signal reasoning.</p><a class="upgrade-cta" href="/upgrade">Upgrade to Premium — £5/month</a></div>{% endif %}
     </div>
@@ -11941,7 +12252,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
     <div id="hold-panel" class="card panel">
         <h2>Monitor Zone — HOLD Signals</h2>
         {% if hold_rows %}
-        <table><tr><th>Stock</th><th>Confidence</th><th>AI Reason</th></tr>{% for item in hold_rows %}<tr><td class="hold"><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_display_label(item.ticker) }}</a></td><td>{{ item.confidence }}</td><td>{{ item.reason }}</td></tr>{% endfor %}</table>
+        <table><tr><th>Stock</th><th>Confidence</th><th>AI Reason</th></tr>{% for item in hold_rows %}<tr><td class="hold"><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_identity(item.ticker, stock_display_label(item.ticker), 'compact') }}</a></td><td>{{ item.confidence }}</td><td>{{ item.reason }}</td></tr>{% endfor %}</table>
         {% else %}<div class="empty-state">No HOLD signals are currently active.</div>{% endif %}
         {% if has_premium_access %}<div class="notice"><h3>✅ Premium HOLD analysis active</h3><p>You have full premium access to deeper HOLD interpretation and premium stock pages.</p></div>{% else %}<div class="notice"><h3>🔒 Unlock deeper HOLD analysis</h3><p>Premium explains what would make a HOLD more useful, riskier or worth waiting on.</p><a class="upgrade-cta" href="/upgrade">Upgrade to Premium — £5/month</a></div>{% endif %}
     </div>
@@ -11949,14 +12260,14 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
     <div id="sell-panel" class="card panel">
         <h2>Risk Warning — SELL Signals</h2>
         {% if sell_rows %}
-        <table><tr><th>Stock</th><th>Confidence</th><th>AI Reason</th></tr>{% for item in sell_rows %}<tr><td class="sell"><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_display_label(item.ticker) }}</a></td><td>{{ item.confidence }}</td><td>{{ item.reason }}</td></tr>{% endfor %}</table>
+        <table><tr><th>Stock</th><th>Confidence</th><th>AI Reason</th></tr>{% for item in sell_rows %}<tr><td class="sell"><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_identity(item.ticker, stock_display_label(item.ticker), 'compact') }}</a></td><td>{{ item.confidence }}</td><td>{{ item.reason }}</td></tr>{% endfor %}</table>
         {% else %}<div class="empty-state">No SELL signals are currently active.</div>{% endif %}
         {% if has_premium_access %}<div class="notice"><h3>✅ Premium downside warnings active</h3><p>You have full premium access to downside warnings and premium risk interpretation.</p></div>{% else %}<div class="notice"><h3>🔒 Unlock full downside warnings</h3><p>Premium adds risk interpretation, concentration checks and watch-next triggers for weaker setups.</p><a class="upgrade-cta" href="/upgrade">Upgrade to Premium — £5/month</a></div>{% endif %}
     </div>
 
     <div id="conviction-panel" class="card panel">
         <h2>Premium Focus — Highest AI Conviction</h2>
-        <table><tr><th>Stock</th><th>Conviction</th><th>AI Insight</th></tr>{% for item in conviction_rows %}<tr><td class="buy"><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_display_label(item.ticker) }}</a></td><td>{{ item.confidence }}</td><td>{{ item.reason }}</td></tr>{% endfor %}</table>
+        <table><tr><th>Stock</th><th>Conviction</th><th>AI Insight</th></tr>{% for item in conviction_rows %}<tr><td class="buy"><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_identity(item.ticker, stock_display_label(item.ticker), 'compact') }}</a></td><td>{{ item.confidence }}</td><td>{{ item.reason }}</td></tr>{% endfor %}</table>
         {% if has_premium_access %}<div class="notice"><h3>✅ Premium AI-ranked opportunities active</h3><p>You have full premium access to the AI watchlist, conviction engine and premium market intelligence.</p></div>{% else %}<div class="notice"><h3>🔒 Unlock premium conviction intelligence</h3><p>Premium turns High Conviction into a research shortlist with deeper AI reasoning, risk read and what-to-watch-next context on each linked stock page.</p><a class="upgrade-cta" href="/upgrade">Upgrade to Premium — £5/month</a></div>{% endif %}
     </div>
 
@@ -12003,7 +12314,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
             <tr><th>Stock</th><th>Signal</th><th>Confidence</th><th>Sector</th><th>AI Reason</th></tr>
             {% for item in recommendations %}
             <tr class="signal-row" data-ticker="{{ item.ticker }}" data-signal="{{ item.signal }}" data-sector="{{ item.sector or 'AI Watchlist' }}">
-                <td><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_display_label(item.ticker) }}</a></td>
+                <td><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_identity(item.ticker, stock_display_label(item.ticker), 'compact') }}</a></td>
                 <td class="{% if item.signal == 'BUY' %}buy{% elif item.signal == 'SELL' %}sell{% else %}hold{% endif %}">{{ item.signal }}</td>
                 <td>{{ item.confidence }}</td>
                 <td>{{ item.sector or 'AI Watchlist' }}</td>
@@ -12035,7 +12346,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
         <table>
             <tr><th>Stock</th><th>Signal</th><th>Confidence</th><th>AI Reason</th></tr>
             {% for item in recommendations %}
-            <tr><td><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_display_label(item.ticker) }}</a></td><td class="{% if item.signal == 'BUY' %}buy{% elif item.signal == 'SELL' %}sell{% else %}hold{% endif %}">{{ item.signal }}</td><td>{{ item.confidence }}</td><td>{{ item.reason }}</td></tr>
+            <tr><td><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_identity(item.ticker, stock_display_label(item.ticker), 'compact') }}</a></td><td class="{% if item.signal == 'BUY' %}buy{% elif item.signal == 'SELL' %}sell{% else %}hold{% endif %}">{{ item.signal }}</td><td>{{ item.confidence }}</td><td>{{ item.reason }}</td></tr>
             {% endfor %}
         </table>
     </div>
@@ -12076,7 +12387,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
                 {% endif %}
                 <div class="impact-stocks">
                     {% for stock in item.stocks %}
-                    <a class="impact-stock" href="/stock/{{ stock }}">{{ stock_display_label(stock) }}</a>
+                    <a class="impact-stock" href="/stock/{{ stock }}">{{ stock_identity(stock, stock_display_label(stock), 'compact') }}</a>
                     {% endfor %}
                 </div>
                 {% if has_premium_access %}
@@ -12111,7 +12422,7 @@ if(['PRO','PREMIUM','UPGRADE','PAYMENT','SUBSCRIPTION'].includes(query)){window.
 function setSignalFilter(signal){var select=document.getElementById('signalFilterValue');if(select){select.value=signal;}document.querySelectorAll('[data-signal-filter]').forEach(function(button){button.classList.toggle('active-filter',button.getAttribute('data-signal-filter')===signal);});applySignalFilters();}
 function resetSignalFilters(){var tickerInput=document.getElementById('tickerFilterInput');var sectorSelect=document.getElementById('sectorFilterSelect');if(tickerInput){tickerInput.value='';}if(sectorSelect){sectorSelect.value='ALL';}setSignalFilter('ALL');}
 function applySignalFilters(){var tickerInput=document.getElementById('tickerFilterInput');var sectorSelect=document.getElementById('sectorFilterSelect');var signalSelect=document.getElementById('signalFilterValue');var tickerQuery=tickerInput ? tickerInput.value.trim().toUpperCase() : '';var selectedSector=sectorSelect ? sectorSelect.value : 'ALL';var selectedSignal=signalSelect ? signalSelect.value : 'ALL';var rows=document.querySelectorAll('.signal-row');var visibleCount=0;rows.forEach(function(row){var rowTicker=(row.getAttribute('data-ticker')||'').toUpperCase();var rowSignal=row.getAttribute('data-signal')||'';var rowSector=row.getAttribute('data-sector')||'AI Watchlist';var tickerMatch=!tickerQuery || rowTicker.includes(tickerQuery);var signalMatch=selectedSignal==='ALL' || rowSignal===selectedSignal;var sectorMatch=selectedSector==='ALL' || rowSector===selectedSector;var shouldShow=tickerMatch && signalMatch && sectorMatch;row.classList.toggle('hidden-signal-row',!shouldShow);if(shouldShow){visibleCount+=1;}});var status=document.getElementById('signalFilterStatus');if(status){var signalText=selectedSignal==='ALL'?'all signals':selectedSignal+' signals';var sectorText=selectedSector==='ALL'?'all sectors':selectedSector;var tickerText=tickerQuery?(' matching '+tickerQuery):'';status.textContent='Showing '+visibleCount+' stocks for '+signalText+', '+sectorText+tickerText+'.';}}
-function makeMarketNewsItem(item,duplicate){var card=document.createElement('span');card.className='live-headline'+(duplicate?' ticker-duplicate':'');if(duplicate){card.setAttribute('aria-hidden','true');}var meta=document.createElement('span');meta.className='live-news-meta';meta.textContent=(item.source||'StockRadar Market Impact Feed')+' • '+(item.published_label||'Theme watch');card.appendChild(meta);var title=document.createElement('a');title.className='live-news-title';title.href=item.article_url||'/';title.textContent=item.headline||'Market headlines are reconnecting';if((item.article_url||'').indexOf('http')===0){title.target='_blank';title.rel='noopener noreferrer';}if(duplicate){title.tabIndex=-1;}card.appendChild(title);var allStockLinks=item.stock_links||[];var stockLinks=allStockLinks.slice(0,2);var stocks=document.createElement('span');stocks.className='live-headline-details market-news-stocks';var affected=document.createElement('span');affected.className='live-affected-label';affected.textContent='Affected:';stocks.appendChild(affected);if(stockLinks.length){stockLinks.forEach(function(stock){var link=document.createElement('a');link.className='live-stock-link '+(stock.signal_class||'hold');link.href=stock.url||'/';if(duplicate){link.tabIndex=-1;}link.appendChild(document.createTextNode(stock.display_label||stock.ticker||'SPY'));var action=document.createElement('span');action.className='live-stock-action';var actionText=stock.action_text||stock.signal||'HOLD';action.textContent=actionText.charAt(0).toUpperCase()+actionText.slice(1).toLowerCase();link.appendChild(action);stocks.appendChild(link);});var stockTotal=Math.max(parseInt(item.stock_links_total||allStockLinks.length,10),allStockLinks.length);if(stockTotal>2){var more=document.createElement('span');more.className='live-stock-more';more.textContent='+'+(stockTotal-2)+' more';stocks.appendChild(more);}}else{var marketWide=document.createElement('span');marketWide.className='live-market-wide';marketWide.textContent='Market-wide';stocks.appendChild(marketWide);}card.appendChild(stocks);var impact=document.createElement('span');impact.className='live-headline-details market-news-impact';var score=document.createElement('span');score.className='live-score';score.textContent='Impact '+(item.impact_score||'Pending');var direction=document.createElement('span');direction.className='live-meta';direction.textContent=item.direction||'Theme watch';impact.appendChild(score);impact.appendChild(direction);card.appendChild(impact);return card;}
+function makeMarketNewsItem(item,duplicate){var card=document.createElement('span');card.className='live-headline'+(duplicate?' ticker-duplicate':'');if(duplicate){card.setAttribute('aria-hidden','true');}var meta=document.createElement('span');meta.className='live-news-meta';meta.textContent=(item.source||'StockRadar Market Impact Feed')+' • '+(item.published_label||'Theme watch');card.appendChild(meta);var title=document.createElement('a');title.className='live-news-title';title.href=item.article_url||'/';title.textContent=item.headline||'Market headlines are reconnecting';if((item.article_url||'').indexOf('http')===0){title.target='_blank';title.rel='noopener noreferrer';}if(duplicate){title.tabIndex=-1;}card.appendChild(title);var allStockLinks=item.stock_links||[];var stockLinks=allStockLinks.slice(0,2);var stocks=document.createElement('span');stocks.className='live-headline-details market-news-stocks';var affected=document.createElement('span');affected.className='live-affected-label';affected.textContent='Affected:';stocks.appendChild(affected);if(stockLinks.length){stockLinks.forEach(function(stock){var link=document.createElement('a');link.className='live-stock-link '+(stock.signal_class||'hold');link.href=stock.url||'/';if(duplicate){link.tabIndex=-1;}var stockLabel=stock.display_label||stock.ticker||'SPY';if(window.StockRadarCompanyLogos){link.appendChild(window.StockRadarCompanyLogos.createIdentity(stock.ticker||'SPY',stockLabel,'compact'));}else{link.appendChild(document.createTextNode(stockLabel));}var action=document.createElement('span');action.className='live-stock-action';var actionText=stock.action_text||stock.signal||'HOLD';action.textContent=actionText.charAt(0).toUpperCase()+actionText.slice(1).toLowerCase();link.appendChild(action);stocks.appendChild(link);});var stockTotal=Math.max(parseInt(item.stock_links_total||allStockLinks.length,10),allStockLinks.length);if(stockTotal>2){var more=document.createElement('span');more.className='live-stock-more';more.textContent='+'+(stockTotal-2)+' more';stocks.appendChild(more);}}else{var marketWide=document.createElement('span');marketWide.className='live-market-wide';marketWide.textContent='Market-wide';stocks.appendChild(marketWide);}card.appendChild(stocks);var impact=document.createElement('span');impact.className='live-headline-details market-news-impact';var score=document.createElement('span');score.className='live-score';score.textContent='Impact '+(item.impact_score||'Pending');var direction=document.createElement('span');direction.className='live-meta';direction.textContent=item.direction||'Theme watch';impact.appendChild(score);impact.appendChild(direction);card.appendChild(impact);return card;}
 function browserLocalTimeLabel(date){var fallbackTimeZone='Europe/London';var browserTimeZone=fallbackTimeZone;try{browserTimeZone=Intl.DateTimeFormat().resolvedOptions().timeZone||fallbackTimeZone;}catch(error){browserTimeZone=fallbackTimeZone;}var options={hour:'2-digit',minute:'2-digit',timeZone:browserTimeZone,timeZoneName:'short'};try{return new Intl.DateTimeFormat(undefined,options).format(date||new Date());}catch(error){return new Intl.DateTimeFormat('en-GB',{hour:'2-digit',minute:'2-digit',timeZone:fallbackTimeZone,timeZoneName:'short'}).format(date||new Date());}}
 function updateMarketNewsStatus(liveActive){var status=document.getElementById('marketNewsStatus');if(!status){return;}if(typeof liveActive!=='boolean'){liveActive=status.getAttribute('data-live-news-active')==='true';}status.setAttribute('data-live-news-active',liveActive?'true':'false');status.textContent='Local time: '+browserLocalTimeLabel(new Date())+(liveActive?' • Live headlines':' • Feed reconnecting');}
 function renderMarketNews(items){var track=document.getElementById('marketNewsTrack');if(!track){return;}track.innerHTML='';if(!items||!items.length){var empty=document.createElement('div');empty.className='live-news-empty';empty.textContent='Market headlines temporarily unavailable. StockRadar will refresh when the feed reconnects.';track.appendChild(empty);return;}var loop=document.createElement('div');loop.className='live-alert-loop';for(var repeat=0;repeat<2;repeat+=1){items.forEach(function(item){loop.appendChild(makeMarketNewsItem(item,repeat===1));});}track.appendChild(loop);}
@@ -12559,7 +12870,9 @@ stock_detail_html = """
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{{ stock_display_label(symbol) }} Stock Detail</title>
+{{ company_identity_assets() }}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="{{ url_for('static', filename='stock_chart.js') }}"></script>
 	<style>
 	.stock-premium-report{margin-bottom:22px;}
 	.stock-today-context{margin-bottom:18px;padding:24px;border-radius:24px;background:linear-gradient(145deg,rgba(14,45,48,0.98),rgba(12,26,39,0.98));border:1px solid rgba(74,222,163,0.27);box-shadow:0 20px 56px rgba(0,0,0,0.28);}
@@ -12661,10 +12974,17 @@ stock_detail_html = """
 		.example-report{padding:32px;}.example-report h2{margin:0 0 12px;}.example-report>p{max-width:980px;margin:0 0 22px;}.example-report-grid{align-items:stretch;margin-top:20px;}.example-report-card{display:flex;flex-direction:column;gap:8px;padding:24px;line-height:1.55;}.premium-card-label{display:block;color:#86efac;font-size:12px;font-weight:950;letter-spacing:0.11em;line-height:1.35;text-transform:uppercase;}.premium-card-value{display:block;color:#f8fafc;font-size:20px;font-weight:950;line-height:1.25;overflow-wrap:anywhere;}.premium-card-support{display:block;color:#a8b6c6;font-size:14px;line-height:1.58;margin-top:2px;}.premium-decision-use{margin-top:16px;}.premium-decision-use .premium-card-value{font-size:18px;line-height:1.45;}.example-report-card .confidence-score{line-height:1.05;margin-top:2px;}.example-report-card .confidence-meter{margin:4px 0 2px;}.example-report-actions{margin-top:18px;}.premium-preview-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:18px;}.premium-preview-item{padding:14px;border-radius:15px;background:rgba(7,17,28,0.58);border:1px solid rgba(255,255,255,0.09);line-height:1.45;}.premium-preview-item strong{display:block;color:#f8fafc;font-size:14px;margin-bottom:4px;}.premium-preview-item span{display:block;color:#aebdca;font-size:13px;}@media(max-width:900px){.example-report{padding:24px 20px;}.example-report-card{padding:20px;gap:7px;}.premium-card-value{font-size:18px;}.premium-decision-use .premium-card-value{font-size:17px;}.example-report-actions .payment-button{width:100%;text-align:center;}.premium-preview-grid{grid-template-columns:1fr;}}
 		.range-row{align-items:center;gap:8px;margin:18px 0 14px;padding:7px;background:rgba(8,19,31,0.74);border:1px solid rgba(148,163,184,0.14);border-radius:18px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.03);}.range-button{flex:1 1 104px;min-height:38px;padding:10px 12px;border-radius:12px;background:transparent;border:1px solid transparent;color:#aebdca;font-size:13px;font-weight:900;}.range-button:hover{text-decoration:none;background:rgba(148,163,184,0.08);color:#f8fafc;}.range-button.active{background:rgba(74,222,163,0.16);border-color:rgba(74,222,163,0.28);color:#d1fae5;box-shadow:0 10px 28px rgba(0,255,170,0.08);}.metric-grid{gap:12px;margin-bottom:18px;}.metric{padding:18px;border-radius:18px;background:linear-gradient(180deg,rgba(13,24,37,0.92),rgba(9,18,29,0.92));box-shadow:inset 0 1px 0 rgba(255,255,255,0.03);}.metric small{display:block;color:#8ea0b1;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;font-weight:950;margin-bottom:8px;}.metric h2{margin:0;font-size:clamp(21px,2vw,28px);line-height:1.1;overflow-wrap:anywhere;}.chart-card{padding:20px;border-radius:24px;background:linear-gradient(180deg,rgba(12,24,38,0.98),rgba(7,15,26,0.98));border-color:rgba(148,163,184,0.18);box-shadow:0 18px 48px rgba(0,0,0,0.26);}.chart-card-header{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:14px;}.chart-card-header h2{font-size:20px;line-height:1.15;margin:0;color:#f8fafc;}.chart-card-header span{display:block;color:#91a3b4;font-size:13px;line-height:1.45;margin-top:4px;}.chart-range-pill{flex:0 0 auto;border-radius:999px;padding:7px 10px;background:rgba(56,189,248,0.10);border:1px solid rgba(56,189,248,0.18);color:#bae6fd;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:0.07em;}.chart-shell{height:330px;min-height:330px;padding:14px;border-radius:18px;background:linear-gradient(180deg,rgba(4,12,24,0.98),rgba(8,20,32,0.96));border:1px solid rgba(148,163,184,0.10);}@media(max-width:900px){.range-row{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin:16px 0 12px;padding:6px;border-radius:16px;}.range-button{min-height:38px;padding:9px 8px;font-size:12px;border-radius:11px;}.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:16px;}.metric{padding:14px;border-radius:16px;}.metric small{font-size:10px;letter-spacing:0.07em;margin-bottom:7px;}.metric h2{font-size:20px;line-height:1.08;}.chart-card{padding:16px 12px;border-radius:22px;}.chart-card-header{align-items:flex-start;flex-direction:column;gap:8px;margin-bottom:12px;}.chart-card-header h2{font-size:18px;}.chart-range-pill{font-size:10px;padding:6px 9px;}.chart-shell{height:300px;min-height:300px;padding:10px;border-radius:15px;}}@media(max-width:390px){.metric-grid{grid-template-columns:1fr;}.chart-shell{height:288px;min-height:288px;}}
 	</style>
+	<style>
+	.chart-shell{max-width:100%;}
+	.chart-shell canvas{max-width:100%;touch-action:pan-y;}
+	.chart-tooltip{position:absolute;z-index:2;max-width:calc(100% - 8px);padding:7px 9px;border:1px solid rgba(148,163,184,0.22);border-radius:10px;background:rgba(4,12,24,0.94);box-shadow:0 8px 24px rgba(0,0,0,0.32);color:#f8fafc;font-size:12px;font-weight:850;line-height:1.3;pointer-events:none;white-space:nowrap;opacity:0;transition:opacity 100ms ease;}
+	.chart-tooltip.visible{opacity:1;}
+	.visually-hidden{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important;}
+	</style>
 </head>
 <body>
 {{ stockradar_header_navigation('app') | safe }}
-<div class="card"><p><a href="/">← Back to Dashboard</a></p><h1>{{ stock_display_label(symbol) }} Stock Detail</h1><p style="color:#94a3b8;">Live chart view for {{ range_label }}. Use the buttons below to change timeframe.</p></div>
+<div class="card"><p><a href="/">← Back to Dashboard</a></p><h1>{{ stock_identity(symbol, stock_display_label(symbol), 'detail', false) }} <span>Stock Detail</span></h1><p style="color:#94a3b8;">Live chart view for {{ range_label }}. Use the buttons below to change timeframe.</p></div>
 
 	<div class="ai-grid"><div class="ai-card"><small>{% if has_premium_access %}Current Signal{% else %}Free Signal Preview{% endif %}</small><h2 class="{% if ai_context.signal == 'BUY' %}buy{% elif ai_context.signal == 'SELL' %}sell{% elif ai_context.signal == 'HOLD' %}hold{% endif %}">{{ ai_context.signal }}</h2><p>The headline signal shows what the scanner is flagging for {{ stock_display_label(symbol) }}.</p><span class="signal-badge">Live stock page: {{ stock_display_label(symbol) }}</span></div><div class="ai-card warning"><small>{% if has_premium_access %}Current Confidence{% else %}Free Confidence Preview{% endif %}</small><div class="confidence-large">{{ ai_context.confidence }}</div><div class="free-meter">{{ ai_context.confidence_meter }}</div><span class="free-strength">Signal strength: {{ ai_context.strength_label }}</span><p style="margin-top:12px;">The score and meter are a research prompt. Premium explains how to interpret them, what risk to check and what evidence matters next.</p></div><div class="ai-card risk"><small>{% if has_premium_access %}Premium Active{% else %}Premium Preview{% endif %}</small><h2>Decision context</h2>{% if has_premium_access %}<p>The Premium report below puts the simple answer first, followed by practical checks and optional supporting detail.</p><span class="signal-badge">Premium unlocked</span>{% else %}<p>Premium explains the decision layer behind {{ stock_display_label(symbol) }}: risk level, portfolio role, concentration warning and the next trigger to watch.</p><a class="signal-badge" href="/upgrade">Explore Premium</a>{% endif %}</div></div>
 
@@ -12767,7 +13087,7 @@ stock_detail_html = """
 
 	    <div class="stock-premium-summary">
 	        <span class="stock-premium-label">Premium decision summary</span>
-	        <h2 id="stock-premium-summary-heading">{{ stock_display_label(symbol) }}</h2>
+	        <h2 id="stock-premium-summary-heading">{{ stock_identity(symbol, stock_display_label(symbol), 'detail', false) }}</h2>
 	        <p class="premium-identity">Each Premium report is designed to help you understand the decision process, not simply copy a signal.</p>
 	        <div class="stock-premium-badges" aria-label="Current signal and confidence">
 	            <span class="stock-premium-badge {{ ai_context.signal|lower }}">Signal: {{ ai_context.signal }}</span>
@@ -12904,7 +13224,7 @@ stock_detail_html = """
 	            <div class="stock-business-basis">
 	                <span>{{ business_education.basis_label }}</span>
 	                <span>{{ business_education.education_type }}</span>
-	                <span>{{ business_education.company_name }}</span>
+	                <span>{{ stock_identity(symbol, business_education.company_name, 'compact') }}</span>
 	            </div>
 	            <div class="stock-business-grid">
 	                <article class="stock-business-item">
@@ -12980,15 +13300,20 @@ stock_detail_html = """
 
 <div class="range-row">{% for key, settings in chart_ranges.items() %}<a class="range-button {% if key == active_range %}active{% endif %}" href="/stock/{{ symbol }}?range={{ key }}">{{ settings.label }}</a>{% endfor %}</div>
 <div class="metric-grid"><div class="metric"><small>Range start</small><h2>{{ chart_data.start_price }}</h2></div><div class="metric"><small>Range latest</small><h2>{{ chart_data.end_price }}</h2></div><div class="metric"><small>Range move</small><h2 class="{{ chart_data.direction }}">{{ chart_data.change_amount }}</h2></div><div class="metric"><small>Range % move</small><h2 class="{{ chart_data.direction }}">{{ chart_data.change_percent }}</h2></div></div>
-<div class="card chart-card">{% if chart_data.ok %}<div class="chart-card-header"><div><h2>Price chart</h2><span>{{ stock_display_label(symbol) }} close price over {{ range_label }}</span></div><div class="chart-range-pill">{{ range_label }}</div></div><div class="chart-shell"><canvas id="stockChart"></canvas></div>{% else %}<h2>Chart unavailable</h2><p style="color:#fca5a5;">{{ chart_data.error }}</p>{% endif %}</div>
+<div class="card chart-card">{% if chart_data.ok %}<div class="chart-card-header"><div><h2>Price chart</h2><span>{{ stock_display_label(symbol) }} close price over {{ range_label }}</span></div><div class="chart-range-pill">{{ range_label }}</div></div><p class="visually-hidden" id="stock-chart-summary">{{ chart_accessible_summary }}</p><div class="chart-shell" id="stock-chart-shell"><canvas id="stockChart" role="img" tabindex="0" aria-describedby="stock-chart-summary" data-latest-index="{{ chart_data.points|length - 1 }}"></canvas><div class="chart-tooltip" id="stock-chart-tooltip" role="status" aria-live="polite"></div></div>{% else %}<h2>Chart unavailable</h2><p style="color:#fca5a5;">{{ chart_data.error }}</p>{% endif %}</div>
 <div class="card"><h2>Since market data began</h2><div class="metric-grid"><div class="metric"><small>Earliest available price</small><h2>{{ lifetime.start_price }}</h2></div><div class="metric"><small>Latest available price</small><h2>{{ lifetime.end_price }}</h2></div><div class="metric"><small>Total growth / decrease</small><h2 class="{{ lifetime.direction }}">{{ lifetime.change_amount }}</h2></div><div class="metric"><small>Total % growth / decrease</small><h2 class="{{ lifetime.direction }}">{{ lifetime.change_percent }}</h2></div></div></div>
 {{ disclaimer_footer() | safe }}
 <script>
-const labels={{ chart_data.labels | tojson }};
-const prices={{ chart_data.prices | tojson }};
-if(labels.length>0){
-    const ctx=document.getElementById('stockChart');
-    new Chart(ctx,{type:'line',data:{labels:labels,datasets:[{label:'{{ stock_display_label(symbol) }} close price',data:prices,borderWidth:2,tension:0.25}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'white',boxWidth:12,padding:14}}},layout:{padding:{top:4,right:8,bottom:4,left:4}},scales:{x:{ticks:{color:'#94a3b8',maxTicksLimit:6,autoSkip:true},grid:{color:'rgba(255,255,255,0.08)'}},y:{ticks:{color:'#94a3b8',maxTicksLimit:6},grid:{color:'rgba(255,255,255,0.08)'}}}}});
+const stockChartPoints={{ chart_data.points | tojson }};
+if(stockChartPoints.length>0 && window.StockRadarPriceChart){
+    window.StockRadarPriceChart.create(document.getElementById('stockChart'), {
+        points:stockChartPoints,
+        rangeKey:{{ active_range | tojson }},
+        direction:{{ chart_data.direction | tojson }},
+        currency:{{ chart_currency | tojson }},
+        datasetLabel:{{ (stock_display_label(symbol) ~ ' close price') | tojson }},
+        tooltipElement:document.getElementById('stock-chart-tooltip')
+    });
 }
 </script>
 {{ newsletter_side_tab() | safe }}
@@ -13653,11 +13978,18 @@ def stock_detail(symbol):
     if cleaned_symbol != requested_symbol:
         return redirect(url_for("stock_detail", symbol=cleaned_symbol, range=active_range))
 
-    chart_data = stock_history(cleaned_symbol, active_range)
+    chart_data = dict(stock_history(cleaned_symbol, active_range) or {})
+    chart_data["points"] = stock_chart_points(chart_data, active_range)
     lifetime = stock_lifetime_growth(cleaned_symbol)
     ai_context = get_stock_ai_context(cleaned_symbol)
     example_report = get_premium_report(cleaned_symbol, ai_context)
-    dividend_context = get_dividend_context(cleaned_symbol)
+    dividend_context = get_dividend_context(cleaned_symbol) or {}
+    chart_currency = chart_currency_metadata(dividend_context.get("currency"))
+    chart_accessible_summary = stock_chart_accessible_summary(
+        chart_data,
+        CHART_RANGES[active_range]["label"],
+        dividend_context.get("currency"),
+    )
     has_premium_access = premium_has_access()
     today_context = None
     business_education = None
@@ -13696,6 +14028,8 @@ def stock_detail(symbol):
         range_label=CHART_RANGES[active_range]["label"],
         chart_ranges=CHART_RANGES,
         chart_data=chart_data,
+        chart_currency=chart_currency,
+        chart_accessible_summary=chart_accessible_summary,
         lifetime=lifetime,
         ai_context=ai_context,
         example_report=example_report,

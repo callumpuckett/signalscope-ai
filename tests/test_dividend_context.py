@@ -49,6 +49,7 @@ def test_equity_dividend_context_formats_available_fields():
     assert context["income_status"] == app.INCOME_STATUS_AVAILABLE
     assert context["dividend_yield"] == "3.4%"
     assert context["annual_dividend"] == "$2.84 per share annually"
+    assert context["currency"] == "USD"
     assert context["payout_ratio"] == "62%"
     assert context["has_dividend_data"] is True
 
