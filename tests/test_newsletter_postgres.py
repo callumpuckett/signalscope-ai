@@ -263,16 +263,43 @@ def issue_for(marker="first"):
             "issue_date": "2026-07-24",
             "iso_year": 2026,
             "iso_week": 30,
+            "published_at": "2026-07-24T08:01:00+00:00",
             "generated_at": "2026-07-24T08:01:00+00:00",
+            "generated_at_label": "24 July 2026 at 09:01 BST",
             "finalized_at": "2026-07-24T08:01:00+00:00",
+            "window_start_utc": "2026-07-17T08:00:00+00:00",
             "window_end_utc": "2026-07-24T08:00:00+00:00",
             "status": "final",
             "is_final": True,
             "title": "StockRadar Weekly",
             "marker": marker,
         },
-        "draft": {"plain_text": marker},
+        "draft": {
+            "plain_text": marker,
+            "market_mood": "Mixed",
+            "market_pulse": "Test market pulse.",
+            "market_week_summary": "Test weekly summary.",
+            "investor_lesson": "Test investor lesson.",
+            "disclaimer": "Educational only.",
+            "premium_note": "Premium research preview.",
+            "what_looked_strong": [],
+            "what_looked_weak": [],
+            "market_tracker": [],
+            "risk_check": [],
+            "signal_watch": {"changes": [], "current_signals": []},
+            "trending_vs_forecasting": {
+                "trending": [{
+                    "headline": "Verified coverage unavailable.",
+                    "source": "StockRadar weekly verification",
+                    "url": "",
+                }],
+                "forecasting": [],
+            },
+        },
         "articles": [],
+        "summary": "Test market pulse.",
+        "subject": "StockRadar Weekly",
+        "preview_text": "Test preview.",
     }
 
 
@@ -481,6 +508,8 @@ def test_issue_and_story_finalization_roll_back_together(monkeypatch):
     issue["articles"] = [{
         "story_fingerprint": "story-rollback",
         "title": "Story must roll back with issue",
+        "source": "Reuters",
+        "canonical_url": "https://www.reuters.com/example-rollback",
         "fetched_at": "2026-07-24T08:01:00+00:00",
         "published_at": "2026-07-24T07:30:00+00:00",
     }]
@@ -603,50 +632,47 @@ def test_latest_route_simplifies_persisted_issue_without_mutation(monkeypatch):
         }],
         "what_looked_weak": [],
         "market_tracker": [],
-        "signal_watch": {"changes": []},
-        "trending_vs_forecasting": {"trending": [], "forecasting": []},
-        "investor_lesson": "Lesson",
-        "risk_check": [],
-        "disclaimer": "Educational only.",
-        "premium_note": "",
-    })
-    app.persist_finalized_newsletter_issue(issue)
-    persisted_issue = copy.deepcopy(
-        database.tables["issues"]["stockradar-weekly-2026-W30"]
-    )
-    with (
-        patch.object(
-            app,
-            "load_or_generate_latest_newsletter_issue",
-            side_effect=lambda: backend.load_issue_by_id(
-                "stockradar-weekly-2026-W30"
-            ),
-        ) as generate,
-        patch.object(
-            app,
-            "get_recommendations",
-            return_value=[
+        "signal_watch": {
+            "changes": [],
+            "current_signals": [
                 {
-                    "ticker": "BUY2",
+                    "name": "BUY2",
                     "signal": "BUY",
                     "confidence": "91%",
                     "reason": "Highest current BUY context.",
                 },
                 {
-                    "ticker": "HOLD1",
+                    "name": "HOLD1",
                     "signal": "HOLD",
                     "confidence": "82%",
                     "reason": "Highest current HOLD context.",
                 },
                 {
-                    "ticker": "SELL2",
+                    "name": "SELL2",
                     "signal": "SELL",
                     "confidence": "79%",
                     "reason": "Highest current SELL context.",
                 },
             ],
-        ),
-    ):
+        },
+        "trending_vs_forecasting": {
+            "trending": [{
+                "headline": "Example weekly headline.",
+                "source": "Reuters",
+                "url": "https://www.reuters.com/example",
+            }],
+            "forecasting": [],
+        },
+        "investor_lesson": "Lesson",
+        "risk_check": [],
+        "disclaimer": "Educational only.",
+        "premium_note": "Premium research preview.",
+    })
+    app.persist_finalized_newsletter_issue(issue)
+    persisted_issue = copy.deepcopy(
+        database.tables["issues"]["stockradar-weekly-2026-W30"]
+    )
+    with patch.object(app, "build_weekly_newsletter_issue") as generate:
         response = app.app.test_client().get("/newsletter/latest")
     assert response.status_code == 200
     rendered = response.get_data(as_text=True)
@@ -697,7 +723,7 @@ def test_latest_route_simplifies_persisted_issue_without_mutation(monkeypatch):
         database.tables["issues"]["stockradar-weekly-2026-W30"]
         == persisted_issue
     )
-    generate.assert_called_once_with()
+    generate.assert_not_called()
 
 
 def test_database_generation_lock_serializes_scheduler_and_route(

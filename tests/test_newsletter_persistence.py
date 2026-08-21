@@ -53,20 +53,51 @@ def configure_persistence(monkeypatch, tmp_path):
     return data_dir
 
 
-def finalized_issue(issue_id="stockradar-weekly-2026-W30-2026-07-24", marker="first"):
+def finalized_issue(issue_id="stockradar-weekly-2026-W30", marker="first"):
     return {
         "metadata": {
             "issue_id": issue_id,
             "guid": issue_id,
             "issue_key": "newsletter:2026-07-24",
+            "issue_date": "2026-07-24",
+            "iso_year": 2026,
+            "iso_week": 30,
             "status": "final",
             "is_final": True,
+            "published_at": "2026-07-24T08:01:00+00:00",
+            "generated_at": "2026-07-24T08:01:00+00:00",
+            "generated_at_label": "24 July 2026 at 09:01 BST",
+            "window_start_utc": "2026-07-17T08:00:00+00:00",
             "window_end_utc": "2026-07-24T08:00:00+00:00",
             "title": "StockRadar Weekly",
             "marker": marker,
         },
-        "draft": {"plain_text": marker},
+        "draft": {
+            "plain_text": marker,
+            "market_mood": "Mixed",
+            "market_pulse": "Test market pulse.",
+            "market_week_summary": "Test weekly summary.",
+            "investor_lesson": "Test investor lesson.",
+            "disclaimer": "Educational only.",
+            "premium_note": "Premium research preview.",
+            "what_looked_strong": [],
+            "what_looked_weak": [],
+            "market_tracker": [],
+            "risk_check": [],
+            "signal_watch": {"changes": [], "current_signals": []},
+            "trending_vs_forecasting": {
+                "trending": [{
+                    "headline": "Verified coverage unavailable.",
+                    "source": "StockRadar weekly verification",
+                    "url": "",
+                }],
+                "forecasting": [],
+            },
+        },
         "articles": [],
+        "summary": "Test market pulse.",
+        "subject": "StockRadar Weekly",
+        "preview_text": "Test preview.",
     }
 
 

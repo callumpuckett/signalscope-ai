@@ -8813,17 +8813,7 @@ def newsletter_issue_for_website_display(issue):
         not signal_watch.get("changes")
         and not signal_watch.get("current_signals")
     ):
-        try:
-            signal_watch["current_signals"] = (
-                build_newsletter_current_signal_watchlist(
-                    get_recommendations()
-                )
-            )
-        except Exception:
-            app.logger.exception(
-                "Current StockRadar recommendations were unavailable for display."
-            )
-            signal_watch["current_signals"] = []
+        signal_watch["current_signals"] = []
     return display_issue
 
 
@@ -8950,6 +8940,196 @@ def render_newsletter_issue_body(draft):
         draft=draft,
         production_base_url=PRODUCTION_BASE_URL,
     )
+
+
+class NewsletterIssueValidationError(ValueError):
+    def __init__(self, issue_id, errors):
+        self.issue_id = str(issue_id or "unknown")
+        self.errors = tuple(errors)
+        super().__init__(
+            "newsletter_issue_validation_failed:"
+            + ",".join(self.errors)
+        )
+
+
+class NewsletterIssueUnavailableError(RuntimeError):
+    pass
+
+
+def newsletter_http_url_is_valid(value):
+    try:
+        parsed = urlsplit(str(value or "").strip())
+    except ValueError:
+        return False
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def validate_newsletter_issue(issue, verify_render=False):
+    errors = []
+    if not isinstance(issue, dict):
+        return {
+            "valid": False,
+            "errors": ["issue_not_object"],
+            "issue_id": "",
+            "iso_week": None,
+        }
+
+    metadata = issue.get("metadata")
+    draft = issue.get("draft")
+    if not isinstance(metadata, dict):
+        errors.append("metadata_not_object")
+        metadata = {}
+    if not isinstance(draft, dict):
+        errors.append("draft_not_object")
+        draft = {}
+
+    issue_id = str(metadata.get("issue_id") or "").strip()
+    required_metadata_strings = (
+        "issue_id", "issue_key", "issue_date", "title", "guid",
+        "published_at", "generated_at", "generated_at_label",
+        "window_start_utc", "window_end_utc",
+    )
+    for field in required_metadata_strings:
+        if not str(metadata.get(field) or "").strip():
+            errors.append(f"metadata_{field}_missing")
+    if metadata.get("is_final") is not True or metadata.get("status") != "final":
+        errors.append("metadata_not_final")
+
+    issue_date = None
+    issue_date_text = str(metadata.get("issue_date") or "").strip()
+    try:
+        issue_date = datetime.strptime(issue_date_text, "%Y-%m-%d").date()
+    except ValueError:
+        if issue_date_text:
+            errors.append("metadata_issue_date_invalid")
+
+    try:
+        iso_year = int(metadata.get("iso_year"))
+        iso_week = int(metadata.get("iso_week"))
+    except (TypeError, ValueError):
+        iso_year = None
+        iso_week = None
+        errors.append("metadata_iso_week_invalid")
+    if iso_week is not None and not 1 <= iso_week <= 53:
+        errors.append("metadata_iso_week_out_of_range")
+    if issue_date is not None and iso_year is not None and iso_week is not None:
+        expected_year, expected_week, expected_weekday = issue_date.isocalendar()
+        if expected_weekday != 5:
+            errors.append("metadata_issue_date_not_friday")
+        if (iso_year, iso_week) != (expected_year, expected_week):
+            errors.append("metadata_iso_week_mismatch")
+        expected_issue_id = f"stockradar-weekly-{iso_year}-W{iso_week:02d}"
+        if issue_id and issue_id != expected_issue_id:
+            errors.append("metadata_issue_id_mismatch")
+        expected_issue_key = f"newsletter:{issue_date_text}"
+        if metadata.get("issue_key") != expected_issue_key:
+            errors.append("metadata_issue_key_mismatch")
+
+    for field in ("published_at", "generated_at"):
+        if metadata.get(field) and parse_newsletter_timestamp(metadata.get(field)) is None:
+            errors.append(f"metadata_{field}_invalid")
+    window_start = parse_newsletter_timestamp(metadata.get("window_start_utc"))
+    window_end = parse_newsletter_timestamp(metadata.get("window_end_utc"))
+    if metadata.get("window_start_utc") and window_start is None:
+        errors.append("metadata_window_start_utc_invalid")
+    if metadata.get("window_end_utc") and window_end is None:
+        errors.append("metadata_window_end_utc_invalid")
+    if window_start and window_end and window_start >= window_end:
+        errors.append("metadata_window_invalid")
+
+    required_draft_strings = (
+        "market_mood", "market_pulse", "market_week_summary",
+        "investor_lesson", "disclaimer", "premium_note",
+    )
+    for field in required_draft_strings:
+        if not str(draft.get(field) or "").strip():
+            errors.append(f"draft_{field}_missing")
+    for field in ("what_looked_strong", "what_looked_weak", "market_tracker", "risk_check"):
+        if not isinstance(draft.get(field), list):
+            errors.append(f"draft_{field}_not_list")
+
+    signal_watch = draft.get("signal_watch")
+    if not isinstance(signal_watch, dict):
+        errors.append("draft_signal_watch_not_object")
+    else:
+        for field in ("changes", "current_signals"):
+            if not isinstance(signal_watch.get(field), list):
+                errors.append(f"draft_signal_watch_{field}_not_list")
+
+    news_sections = draft.get("trending_vs_forecasting")
+    trending = []
+    if not isinstance(news_sections, dict):
+        errors.append("draft_news_sections_not_object")
+    else:
+        trending = news_sections.get("trending")
+        forecasting = news_sections.get("forecasting")
+        if not isinstance(trending, list) or not trending:
+            errors.append("draft_trending_missing")
+            trending = []
+        if not isinstance(forecasting, list):
+            errors.append("draft_forecasting_not_list")
+    for index, item in enumerate(trending):
+        if not isinstance(item, dict):
+            errors.append(f"draft_trending_{index}_not_object")
+            continue
+        if not str(item.get("headline") or "").strip():
+            errors.append(f"draft_trending_{index}_headline_missing")
+        if not str(item.get("source") or "").strip():
+            errors.append(f"draft_trending_{index}_source_missing")
+        if item.get("url") and not newsletter_http_url_is_valid(item.get("url")):
+            errors.append(f"draft_trending_{index}_url_invalid")
+
+    articles = issue.get("articles")
+    if not isinstance(articles, list):
+        errors.append("articles_not_list")
+        articles = []
+    for index, article in enumerate(articles):
+        if not isinstance(article, dict):
+            errors.append(f"article_{index}_not_object")
+            continue
+        for field in ("title", "source", "published_at", "canonical_url"):
+            if not str(article.get(field) or "").strip():
+                errors.append(f"article_{index}_{field}_missing")
+        if article.get("published_at") and parse_newsletter_timestamp(article.get("published_at")) is None:
+            errors.append(f"article_{index}_published_at_invalid")
+        if article.get("canonical_url") and not newsletter_http_url_is_valid(article.get("canonical_url")):
+            errors.append(f"article_{index}_url_invalid")
+
+    for field in ("summary", "subject", "preview_text"):
+        if not str(issue.get(field) or "").strip():
+            errors.append(f"issue_{field}_missing")
+
+    if verify_render and not errors:
+        try:
+            with app.app_context():
+                render_newsletter_issue_body(draft)
+                render_template_string(
+                    newsletter_latest_html,
+                    draft=draft,
+                    issue=metadata,
+                )
+        except Exception as error:
+            errors.append(
+                "template_render_failed:"
+                f"{type(error).__name__}:{sanitise_newsletter_error(error)}"
+            )
+
+    return {
+        "valid": not errors,
+        "errors": errors,
+        "issue_id": issue_id,
+        "iso_week": iso_week,
+    }
+
+
+def require_valid_newsletter_issue(issue, verify_render=True):
+    validation = validate_newsletter_issue(issue, verify_render=verify_render)
+    if not validation["valid"]:
+        raise NewsletterIssueValidationError(
+            validation["issue_id"],
+            validation["errors"],
+        )
+    return issue
 
 
 def newsletter_storage_timestamp():
@@ -9214,11 +9394,125 @@ def latest_finalized_newsletter_issue():
     return None
 
 
+def newsletter_finalized_issue_candidates():
+    candidates = []
+    try:
+        stored = newsletter_storage_load("issues")
+    except RuntimeError as error:
+        app.logger.exception(
+            "event=newsletter_latest_storage_read_failed error=%s",
+            sanitise_newsletter_error(error),
+        )
+        stored = {"issues": {}}
+    for issue in stored.get("issues", {}).values():
+        if not isinstance(issue, dict):
+            continue
+        metadata = issue.get("metadata", {})
+        if (
+            isinstance(metadata, dict)
+            and metadata.get("is_final") is True
+            and metadata.get("status") == "final"
+        ):
+            candidates.append(issue)
+
+    cached = WEEKLY_NEWSLETTER_ISSUE_CACHE.get("issue")
+    if isinstance(cached, dict):
+        metadata = cached.get("metadata", {})
+        if (
+            isinstance(metadata, dict)
+            and metadata.get("is_final") is True
+            and metadata.get("status") == "final"
+        ):
+            candidates.append(cached)
+
+    return sorted(
+        candidates,
+        key=lambda issue: str(
+            issue.get("metadata", {}).get("window_end_utc")
+            or issue.get("metadata", {}).get("finalized_at")
+            or issue.get("metadata", {}).get("generated_at")
+            or ""
+        ),
+        reverse=True,
+    )
+
+
+def newsletter_latest_delivery_snapshot(log_invalid=True):
+    rejected = []
+    for issue in newsletter_finalized_issue_candidates():
+        validation = validate_newsletter_issue(issue, verify_render=True)
+        if validation["valid"]:
+            metadata = issue["metadata"]
+            WEEKLY_NEWSLETTER_ISSUE_CACHE.update({
+                "issue_date": metadata.get("issue_date"),
+                "issue_status": "final",
+                "generated_at": parse_newsletter_timestamp(
+                    metadata.get("generated_at")
+                ),
+                "issue": issue,
+            })
+            return {
+                "status": "ready",
+                "http_status": 200,
+                "issue": issue,
+                "issue_id": validation["issue_id"],
+                "iso_week": validation["iso_week"],
+                "rejected_issue_count": len(rejected),
+            }
+        rejected.append(validation)
+        if log_invalid:
+            app.logger.error(
+                "event=newsletter_latest_issue_rejected issue_id=%s "
+                "iso_week=%s validation_errors=%s",
+                validation["issue_id"] or "unknown",
+                validation["iso_week"],
+                validation["errors"],
+            )
+
+    persistence = newsletter_persistence_status()
+    if log_invalid:
+        app.logger.error(
+            "event=newsletter_latest_unavailable persistence_backend=%s "
+            "persistence_status=%s persistence_error=%s rejected_issue_count=%s",
+            persistence.get("persistence_backend", "unknown"),
+            persistence.get("persistence_status", "unknown"),
+            persistence.get("persistence_last_error", ""),
+            len(rejected),
+        )
+    return {
+        "status": "unavailable",
+        "http_status": 503,
+        "issue": None,
+        "issue_id": "",
+        "iso_week": None,
+        "rejected_issue_count": len(rejected),
+    }
+
+
+def load_latest_valid_newsletter_issue():
+    snapshot = newsletter_latest_delivery_snapshot()
+    if snapshot["issue"] is None:
+        raise NewsletterIssueUnavailableError("newsletter_latest_unavailable")
+    return snapshot["issue"]
+
+
 def persist_finalized_newsletter_issue(issue):
     metadata = issue.get("metadata", {})
     issue_id = str(metadata.get("issue_id") or "")
     if not issue_id or metadata.get("is_final") is not True:
         raise ValueError("finalized_issue_metadata_required")
+
+    try:
+        require_valid_newsletter_issue(issue, verify_render=True)
+    except NewsletterIssueValidationError as error:
+        app.logger.error(
+            "event=newsletter_publish_validation_failed issue_id=%s "
+            "iso_week=%s validation_errors=%s",
+            error.issue_id,
+            metadata.get("iso_week"),
+            list(error.errors),
+        )
+        raise
 
     result = NEWSLETTER_STORAGE.finalize_issue_once(issue)
     if not result["stored"]:
@@ -10072,7 +10366,17 @@ def newsletter_status_snapshot(now=None):
     london_now = newsletter_london_now(now)
     window = newsletter_weekly_window(london_now)
     completed_issue = get_finalized_newsletter_issue(window["issue_id"])
-    current_issue = completed_issue or latest_finalized_newsletter_issue()
+    latest_delivery = newsletter_latest_delivery_snapshot(log_invalid=False)
+    completed_metadata = (
+        completed_issue.get("metadata", {})
+        if isinstance(completed_issue, dict)
+        else {}
+    )
+    current_issue = (
+        completed_issue
+        if isinstance(completed_metadata, dict)
+        else latest_delivery["issue"]
+    ) or latest_delivery["issue"]
     metadata = (
         current_issue.get("metadata", {})
         if current_issue
@@ -10176,6 +10480,10 @@ def newsletter_status_snapshot(now=None):
         ),
         "last_news_provider_error": LAST_NEWSLETTER_NEWS_STATUS.get("last_error", ""),
         "last_market_data_error": LAST_NEWSLETTER_MARKET_STATUS.get("last_error", ""),
+        "latest_route_status": latest_delivery["status"],
+        "latest_route_http_status": latest_delivery["http_status"],
+        "latest_route_issue_id": latest_delivery["issue_id"],
+        "latest_route_rejected_issue_count": latest_delivery["rejected_issue_count"],
         "next_expected_friday_cutoff": next_newsletter_auto_send_at(london_now).isoformat(),
         "next_expected_friday_send_at": next_newsletter_auto_send_at(london_now).isoformat(),
     }
@@ -10761,6 +11069,27 @@ newsletter_latest_html = """
 <p><strong>Research prompts only.</strong> Premium tools are not financial advice or buy/sell instructions.</p>
 </section>
 </div>
+</body>
+</html>
+"""
+
+
+newsletter_latest_unavailable_html = """
+<!doctype html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StockRadar Weekly is temporarily unavailable</title>
+<style>
+body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif}.card{max-width:680px;padding:30px;border:1px solid rgba(148,163,184,.2);border-radius:24px;background:#121d2a}h1{color:#f2f5f8}p{line-height:1.7;color:#b9c5d2}a{color:#69c9f2;font-weight:900;text-decoration:none}
+</style>
+</head>
+<body>
+<main class="card">
+<h1>StockRadar Weekly is temporarily unavailable</h1>
+<p>We could not load a validated published issue just now. The error has been logged and the newsletter has not been regenerated from unverified data.</p>
+<p><a href="/newsletter">Return to newsletter signup</a> · <a href="/">Return to StockRadar</a></p>
+</main>
 </body>
 </html>
 """
@@ -12721,9 +13050,12 @@ def newsletter():
 
 @app.route("/newsletter/latest")
 def newsletter_latest():
-    weekly_issue = newsletter_issue_for_website_display(
-        load_or_generate_latest_newsletter_issue()
-    )
+    try:
+        weekly_issue = newsletter_issue_for_website_display(
+            load_latest_valid_newsletter_issue()
+        )
+    except NewsletterIssueUnavailableError:
+        return render_template_string(newsletter_latest_unavailable_html), 503
     return render_template_string(
         newsletter_latest_html,
         draft=weekly_issue["draft"],
