@@ -1,6 +1,10 @@
 # Development and security tooling (not installed in production).
 bandit==1.8.6
 detect-secrets==1.5.0
+greenlet==3.5.5
 pip-audit==2.9.0
 pip-tools==7.5.0
+playwright==1.62.0
+pyee==13.0.1
 pytest==9.1.0
+typing-extensions==4.15.0
