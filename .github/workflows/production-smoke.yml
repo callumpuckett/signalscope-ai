@@ -5,13 +5,13 @@ on:
     paths:
       - ".github/workflows/production-smoke.yml"
       - "scripts/production_smoke_test.py"
-       - "tests/test_production_smoke_test.py"
+      - "tests/test_production_smoke_test.py"
       - "requirements-dev.in"
       - "requirements-dev.txt"
   workflow_dispatch:
     inputs:
       base_url:
-        description: "Public StockRadar base URL "
+        description: "Public StockRadar base URL"
         required: true
         default: "https://www.stockradarhq.com"
         type: string
