@@ -90,6 +90,12 @@ from newsletter_storage import (
     PostgresNewsletterStorage,
     select_backend_identifier,
 )
+from newsletter_artifact_store import (
+    FilesystemPublishedArtifactStore,
+    PublishedArtifactStoreConfigurationError,
+    PublishedArtifactStoreError,
+    build_published_artifact_store,
+)
 
 try:
     import fcntl
@@ -823,6 +829,44 @@ NEWSLETTER_ISSUES_PATH = stockradar_data_path("newsletter_issues.json")
 NEWSLETTER_STORY_HISTORY_PATH = stockradar_data_path("newsletter_story_history.json")
 NEWSLETTER_MARKET_SNAPSHOTS_PATH = stockradar_data_path("newsletter_market_snapshots.json")
 NEWSLETTER_SEND_LOCK_DIR = stockradar_data_path(".newsletter_locks")
+NEWSLETTER_PUBLISHED_ARTIFACT_DIR = os.path.realpath(
+    os.environ.get("NEWSLETTER_PUBLISHED_ARTIFACT_DIR", "").strip()
+    or os.path.join(STOCKRADAR_DATA_DIR, "published-newsletters")
+)
+NEWSLETTER_PUBLISHED_ARTIFACT_BACKEND = os.environ.get(
+    "NEWSLETTER_ARTIFACT_BACKEND",
+    "",
+).strip().lower()
+NEWSLETTER_PUBLISHED_ARTIFACT_R2_ACCOUNT_ID = os.environ.get(
+    "CLOUDFLARE_R2_ACCOUNT_ID",
+    "",
+).strip()
+NEWSLETTER_PUBLISHED_ARTIFACT_R2_ACCESS_KEY_ID = os.environ.get(
+    "CLOUDFLARE_R2_ACCESS_KEY_ID",
+    "",
+).strip()
+NEWSLETTER_PUBLISHED_ARTIFACT_R2_SECRET_ACCESS_KEY = os.environ.get(
+    "CLOUDFLARE_R2_SECRET_ACCESS_KEY",
+    "",
+)
+NEWSLETTER_PUBLISHED_ARTIFACT_R2_BUCKET = os.environ.get(
+    "CLOUDFLARE_R2_BUCKET_NAME",
+    "",
+).strip()
+NEWSLETTER_PUBLISHED_ARTIFACT_R2_PREFIX = os.environ.get(
+    "CLOUDFLARE_R2_OBJECT_PREFIX",
+    "stockradar/newsletters",
+).strip()
+NEWSLETTER_PUBLISHED_ARTIFACT_R2_JURISDICTION = os.environ.get(
+    "CLOUDFLARE_R2_JURISDICTION",
+    "",
+).strip()
+NEWSLETTER_PUBLISHED_ARTIFACT_SCHEMA_VERSION = 1
+NEWSLETTER_PUBLISHED_ARTIFACT_MAX_BYTES = 8 * 1024 * 1024
+NEWSLETTER_PUBLISHED_ARTIFACT_LAST_ERROR = ""
+NEWSLETTER_PUBLISHED_ARTIFACT_STORE = None
+NEWSLETTER_PUBLISHED_ARTIFACT_LAST_KNOWN_GOOD = None
+NEWSLETTER_PUBLISHED_ARTIFACT_CACHE_LOCK = threading.Lock()
 NEWSLETTER_AUTO_SEND_ENABLED = (
     os.environ.get(
         "NEWSLETTER_AUTO_SEND_ENABLED",
@@ -8885,6 +8929,7 @@ def _build_weekly_newsletter_issue_without_generation_lock(
 
     persisted_issue = get_finalized_newsletter_issue(window["issue_id"])
     if persisted_issue:
+        publish_newsletter_artifact(persisted_issue)
         WEEKLY_NEWSLETTER_ISSUE_CACHE.update({
             "issue_date": issue_date,
             "issue_status": "final",
@@ -9019,6 +9064,7 @@ def build_weekly_newsletter_issue(now=None, force_refresh=False):
     window = newsletter_weekly_window(now)
     persisted = get_finalized_newsletter_issue(window["issue_id"])
     if persisted:
+        publish_newsletter_artifact(persisted)
         record_newsletter_story_usage(persisted)
         return persisted
 
@@ -9038,6 +9084,7 @@ def build_weekly_newsletter_issue(now=None, force_refresh=False):
         for _ in range(100):
             persisted = get_finalized_newsletter_issue(window["issue_id"])
             if persisted:
+                publish_newsletter_artifact(persisted)
                 record_newsletter_story_usage(persisted)
                 return persisted
             time.sleep(0.02)
@@ -9046,6 +9093,7 @@ def build_weekly_newsletter_issue(now=None, force_refresh=False):
     try:
         persisted = get_finalized_newsletter_issue(window["issue_id"])
         if persisted:
+            publish_newsletter_artifact(persisted)
             record_newsletter_story_usage(persisted)
             return persisted
         return _build_weekly_newsletter_issue_without_generation_lock(
@@ -9060,12 +9108,14 @@ def load_or_generate_latest_newsletter_issue(now=None):
     window = newsletter_weekly_window(now)
     finalized = get_finalized_newsletter_issue(window["issue_id"])
     if finalized:
+        publish_newsletter_artifact(finalized)
         return finalized
     try:
         return build_weekly_newsletter_issue(now=now)
     except Exception:
         latest = latest_finalized_newsletter_issue()
         if latest:
+            publish_newsletter_artifact(latest)
             app.logger.exception(
                 "Current newsletter generation failed; serving the latest finalized issue."
             )
@@ -9442,6 +9492,381 @@ def require_valid_newsletter_issue(issue, verify_render=True):
     return issue
 
 
+class NewsletterPublishedArtifactError(RuntimeError):
+    pass
+
+
+def set_newsletter_published_artifact_error(error_code):
+    global NEWSLETTER_PUBLISHED_ARTIFACT_LAST_ERROR
+    NEWSLETTER_PUBLISHED_ARTIFACT_LAST_ERROR = str(error_code or "").strip()[:120]
+
+
+def newsletter_published_artifact_issue_id_valid(issue_id):
+    return bool(
+        re.fullmatch(
+            r"stockradar-weekly-\d{4}-W(?:0[1-9]|[1-4]\d|5[0-3])",
+            str(issue_id or "").strip(),
+        )
+    )
+
+
+def newsletter_published_artifact_paths(issue_id=None):
+    root = os.path.realpath(NEWSLETTER_PUBLISHED_ARTIFACT_DIR)
+    paths = {
+        "root": root,
+        "issues": os.path.join(root, "issues"),
+        "latest": os.path.join(root, "latest.json"),
+    }
+    if issue_id is not None:
+        clean_issue_id = str(issue_id or "").strip()
+        if not newsletter_published_artifact_issue_id_valid(clean_issue_id):
+            raise NewsletterPublishedArtifactError("artifact_issue_id_invalid")
+        paths.update({
+            "html": os.path.join(paths["issues"], f"{clean_issue_id}.html"),
+            "json": os.path.join(paths["issues"], f"{clean_issue_id}.json"),
+            "html_relative": f"issues/{clean_issue_id}.html",
+            "json_relative": f"issues/{clean_issue_id}.json",
+        })
+    return paths
+
+
+def newsletter_artifact_sha256(payload):
+    return hashlib.sha256(payload).hexdigest()
+
+
+def build_newsletter_rss_xml(issue):
+    draft = issue["draft"]
+    metadata = issue["metadata"]
+    published_at = (
+        parse_newsletter_timestamp(metadata.get("published_at"))
+        or datetime.now(timezone.utc)
+    )
+    feed_url = f"{PRODUCTION_BASE_URL}/newsletter"
+    item_url = f"{PRODUCTION_BASE_URL}/newsletter/latest"
+    issue_body = render_newsletter_issue_body(draft).replace("]]>", "]]&gt;")
+    rss_status_label = str(
+        metadata.get("rss_status_label")
+        or metadata.get("issue_status")
+        or "Latest issue"
+    )
+    rss_description = f"{rss_status_label}: {issue['summary']}"
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+<channel>
+<title>StockRadar Weekly</title>
+<link>{xml_escape(feed_url)}</link>
+<description>The 5-minute market signal for investors who want clarity without noise.</description>
+<language>en-gb</language>
+<lastBuildDate>{format_datetime(published_at)}</lastBuildDate>
+<item>
+<title>{xml_escape(metadata["title"])}</title>
+<link>{xml_escape(item_url)}</link>
+<guid isPermaLink="false">{xml_escape(metadata["guid"])}</guid>
+<pubDate>{format_datetime(published_at)}</pubDate>
+<description>{xml_escape(rss_description)}</description>
+<content:encoded><![CDATA[{issue_body}]]></content:encoded>
+</item>
+</channel>
+</rss>
+"""
+
+
+def _decode_newsletter_artifact_json(payload, error_code):
+    try:
+        decoded = json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError, TypeError) as error:
+        raise NewsletterPublishedArtifactError(error_code) from error
+    if not isinstance(decoded, dict):
+        raise NewsletterPublishedArtifactError(error_code)
+    return decoded
+
+
+def initialize_newsletter_published_artifact_store(
+    production=None,
+    backend=None,
+    client=None,
+):
+    global NEWSLETTER_PUBLISHED_ARTIFACT_STORE
+    production = IS_PRODUCTION if production is None else bool(production)
+    selected_backend = (
+        NEWSLETTER_PUBLISHED_ARTIFACT_BACKEND
+        if backend is None
+        else str(backend or "").strip().lower()
+    )
+    try:
+        NEWSLETTER_PUBLISHED_ARTIFACT_STORE = build_published_artifact_store(
+            production=production,
+            backend=selected_backend,
+            filesystem_root=NEWSLETTER_PUBLISHED_ARTIFACT_DIR,
+            max_bytes=NEWSLETTER_PUBLISHED_ARTIFACT_MAX_BYTES,
+            account_id=NEWSLETTER_PUBLISHED_ARTIFACT_R2_ACCOUNT_ID,
+            access_key_id=NEWSLETTER_PUBLISHED_ARTIFACT_R2_ACCESS_KEY_ID,
+            secret_access_key=NEWSLETTER_PUBLISHED_ARTIFACT_R2_SECRET_ACCESS_KEY,
+            bucket=NEWSLETTER_PUBLISHED_ARTIFACT_R2_BUCKET,
+            prefix=NEWSLETTER_PUBLISHED_ARTIFACT_R2_PREFIX,
+            jurisdiction=NEWSLETTER_PUBLISHED_ARTIFACT_R2_JURISDICTION,
+            client=client,
+        )
+    except PublishedArtifactStoreConfigurationError as error:
+        set_newsletter_published_artifact_error(str(error))
+        raise RuntimeError(str(error)) from error
+    return NEWSLETTER_PUBLISHED_ARTIFACT_STORE
+
+
+def get_newsletter_published_artifact_store():
+    if NEWSLETTER_PUBLISHED_ARTIFACT_STORE is None:
+        raise NewsletterPublishedArtifactError(
+            "artifact_backend_unavailable"
+        )
+    return NEWSLETTER_PUBLISHED_ARTIFACT_STORE
+
+
+def newsletter_artifact_json_default(value):
+    if isinstance(value, datetime):
+        return value.isoformat()
+    raise TypeError(f"not JSON serializable: {type(value).__name__}")
+
+
+def publish_newsletter_artifact(issue):
+    if IS_PRODUCTION and not isinstance(
+        NEWSLETTER_STORAGE,
+        PostgresNewsletterStorage,
+    ):
+        raise NewsletterPublishedArtifactError(
+            "artifact_authority_not_postgresql"
+        )
+    if IS_PRODUCTION:
+        requested_issue_id = str(
+            (issue or {}).get("metadata", {}).get("issue_id") or ""
+        ).strip()
+        authoritative_issue = get_finalized_newsletter_issue(requested_issue_id)
+        if authoritative_issue is None:
+            raise NewsletterPublishedArtifactError(
+                "artifact_postgresql_authority_unavailable"
+            )
+        requested_fingerprint = str(
+            (issue or {}).get("content_fingerprint")
+            or (issue or {}).get("metadata", {}).get("content_fingerprint")
+            or newsletter_content_fingerprint(issue or {})
+        )
+        authoritative_fingerprint = str(
+            authoritative_issue.get("content_fingerprint")
+            or authoritative_issue.get("metadata", {}).get("content_fingerprint")
+            or newsletter_content_fingerprint(authoritative_issue)
+        )
+        if not hmac.compare_digest(
+            requested_fingerprint,
+            authoritative_fingerprint,
+        ):
+            raise NewsletterPublishedArtifactError(
+                "artifact_postgresql_authority_mismatch"
+            )
+        issue = authoritative_issue
+    require_valid_newsletter_issue(issue, verify_render=True)
+    public_issue = newsletter_issue_for_website_display(issue)
+    try:
+        public_issue = json.loads(json.dumps(
+            public_issue,
+            default=newsletter_artifact_json_default,
+        ))
+    except (TypeError, ValueError) as error:
+        raise NewsletterPublishedArtifactError(
+            "artifact_issue_not_serializable"
+        ) from error
+    require_valid_newsletter_issue(public_issue, verify_render=True)
+    metadata = public_issue["metadata"]
+    issue_id = str(metadata.get("issue_id") or "").strip()
+    paths = newsletter_published_artifact_paths(issue_id)
+
+    with app.app_context():
+        html = render_template_string(
+            newsletter_latest_html,
+            draft=public_issue["draft"],
+            issue=metadata,
+        )
+        rss_xml = build_newsletter_rss_xml(public_issue)
+
+    html_bytes = html.encode("utf-8")
+    rss_bytes = rss_xml.encode("utf-8")
+    public_issue_bytes = json.dumps(
+        public_issue,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    artifact = {
+        "schema_version": NEWSLETTER_PUBLISHED_ARTIFACT_SCHEMA_VERSION,
+        "artifact_type": "stockradar_published_newsletter",
+        "issue_id": issue_id,
+        "sort_key": str(
+            metadata.get("window_end_utc")
+            or metadata.get("finalized_at")
+            or metadata.get("published_at")
+            or ""
+        ),
+        "published_at": str(metadata.get("published_at") or ""),
+        "content_fingerprint": str(
+            public_issue.get("content_fingerprint")
+            or metadata.get("content_fingerprint")
+            or newsletter_artifact_sha256(public_issue_bytes)
+        ),
+        "issue": public_issue,
+        "html_sha256": newsletter_artifact_sha256(html_bytes),
+        "rss_sha256": newsletter_artifact_sha256(rss_bytes),
+        "rss_xml": rss_xml,
+    }
+    json_bytes = (
+        json.dumps(artifact, indent=2, sort_keys=True).encode("utf-8") + b"\n"
+    )
+    manifest = {
+        "schema_version": NEWSLETTER_PUBLISHED_ARTIFACT_SCHEMA_VERSION,
+        "artifact_type": "stockradar_published_newsletter_pointer",
+        "issue_id": issue_id,
+        "sort_key": artifact["sort_key"],
+        "published_at": artifact["published_at"],
+        "html_file": paths["html_relative"],
+        "json_file": paths["json_relative"],
+        "html_sha256": artifact["html_sha256"],
+        "json_sha256": newsletter_artifact_sha256(json_bytes),
+    }
+    manifest_bytes = (
+        json.dumps(manifest, indent=2, sort_keys=True).encode("utf-8") + b"\n"
+    )
+
+    try:
+        latest_updated = get_newsletter_published_artifact_store().publish(
+            issue_id,
+            html_bytes,
+            json_bytes,
+            manifest_bytes,
+        )
+        set_newsletter_published_artifact_error("")
+        app.logger.info(
+            "event=newsletter_artifact_published issue_id=%s latest_updated=%s",
+            issue_id,
+            latest_updated,
+        )
+        return dict(manifest, latest_updated=latest_updated)
+    except (NewsletterPublishedArtifactError, PublishedArtifactStoreError) as error:
+        set_newsletter_published_artifact_error(str(error))
+        app.logger.error(
+            "event=newsletter_artifact_publish_failed issue_id=%s error=%s",
+            issue_id,
+            sanitise_newsletter_error(error),
+        )
+        if isinstance(error, NewsletterPublishedArtifactError):
+            raise
+        raise NewsletterPublishedArtifactError(str(error)) from error
+    except Exception as error:
+        set_newsletter_published_artifact_error("artifact_publish_failed")
+        app.logger.error(
+            "event=newsletter_artifact_publish_failed issue_id=%s error=%s",
+            issue_id,
+            sanitise_newsletter_error(error),
+        )
+        raise NewsletterPublishedArtifactError("artifact_publish_failed") from error
+
+
+def load_latest_published_newsletter_artifact():
+    global NEWSLETTER_PUBLISHED_ARTIFACT_LAST_KNOWN_GOOD
+    try:
+        store = get_newsletter_published_artifact_store()
+        manifest_payload = store.read_latest_pointer()
+        manifest = _decode_newsletter_artifact_json(
+            manifest_payload,
+            "artifact_pointer_invalid",
+        )
+        if (
+            manifest.get("schema_version")
+            != NEWSLETTER_PUBLISHED_ARTIFACT_SCHEMA_VERSION
+            or manifest.get("artifact_type")
+            != "stockradar_published_newsletter_pointer"
+        ):
+            raise NewsletterPublishedArtifactError("artifact_pointer_invalid")
+
+        issue_id = str(manifest.get("issue_id") or "").strip()
+        issue_paths = newsletter_published_artifact_paths(issue_id)
+        if (
+            manifest.get("html_file") != issue_paths["html_relative"]
+            or manifest.get("json_file") != issue_paths["json_relative"]
+        ):
+            raise NewsletterPublishedArtifactError("artifact_pointer_path_invalid")
+
+        html_bytes = store.read_issue_html(issue_id)
+        json_bytes = store.read_issue_json(issue_id)
+        if not hmac.compare_digest(
+            newsletter_artifact_sha256(html_bytes),
+            str(manifest.get("html_sha256") or ""),
+        ) or not hmac.compare_digest(
+            newsletter_artifact_sha256(json_bytes),
+            str(manifest.get("json_sha256") or ""),
+        ):
+            raise NewsletterPublishedArtifactError("artifact_checksum_mismatch")
+
+        artifact = _decode_newsletter_artifact_json(
+            json_bytes,
+            "artifact_json_invalid",
+        )
+        rss_xml = artifact.get("rss_xml")
+        issue = artifact.get("issue")
+        if (
+            artifact.get("schema_version")
+            != NEWSLETTER_PUBLISHED_ARTIFACT_SCHEMA_VERSION
+            or artifact.get("artifact_type") != "stockradar_published_newsletter"
+            or artifact.get("issue_id") != issue_id
+            or not isinstance(issue, dict)
+            or not isinstance(rss_xml, str)
+            or not rss_xml.strip()
+        ):
+            raise NewsletterPublishedArtifactError("artifact_json_invalid")
+        if not hmac.compare_digest(
+            newsletter_artifact_sha256(html_bytes),
+            str(artifact.get("html_sha256") or ""),
+        ) or not hmac.compare_digest(
+            newsletter_artifact_sha256(rss_xml.encode("utf-8")),
+            str(artifact.get("rss_sha256") or ""),
+        ):
+            raise NewsletterPublishedArtifactError("artifact_checksum_mismatch")
+
+        published = {
+            "manifest": manifest,
+            "artifact": artifact,
+            "issue": issue,
+            "html": html_bytes.decode("utf-8"),
+            "rss_xml": rss_xml,
+            "source": store.identifier,
+        }
+        with NEWSLETTER_PUBLISHED_ARTIFACT_CACHE_LOCK:
+            NEWSLETTER_PUBLISHED_ARTIFACT_LAST_KNOWN_GOOD = copy.deepcopy(
+                published
+            )
+        set_newsletter_published_artifact_error("")
+        return published
+    except UnicodeDecodeError as error:
+        set_newsletter_published_artifact_error("artifact_html_invalid")
+        safe_error = NewsletterPublishedArtifactError("artifact_html_invalid")
+        safe_error.__cause__ = error
+    except (NewsletterPublishedArtifactError, PublishedArtifactStoreError) as error:
+        set_newsletter_published_artifact_error(str(error))
+        safe_error = (
+            error
+            if isinstance(error, NewsletterPublishedArtifactError)
+            else NewsletterPublishedArtifactError(str(error))
+        )
+
+    with NEWSLETTER_PUBLISHED_ARTIFACT_CACHE_LOCK:
+        cached = copy.deepcopy(NEWSLETTER_PUBLISHED_ARTIFACT_LAST_KNOWN_GOOD)
+    if cached is not None:
+        cached["source"] = "last_known_good"
+        cached["artifact_error"] = str(safe_error)
+        app.logger.warning(
+            "event=newsletter_artifact_last_known_good_served issue_id=%s error=%s",
+            cached.get("manifest", {}).get("issue_id", ""),
+            sanitise_newsletter_error(safe_error),
+        )
+        return cached
+    raise safe_error
+
+
 def newsletter_storage_timestamp():
     return datetime.now(timezone.utc).isoformat()
 
@@ -9704,98 +10129,32 @@ def latest_finalized_newsletter_issue():
     return None
 
 
-def newsletter_finalized_issue_candidates():
-    candidates = []
-    try:
-        stored = newsletter_storage_load("issues")
-    except RuntimeError as error:
-        app.logger.exception(
-            "event=newsletter_latest_storage_read_failed error=%s",
-            sanitise_newsletter_error(error),
-        )
-        stored = {"issues": {}}
-    for issue in stored.get("issues", {}).values():
-        if not isinstance(issue, dict):
-            continue
-        metadata = issue.get("metadata", {})
-        if (
-            isinstance(metadata, dict)
-            and metadata.get("is_final") is True
-            and metadata.get("status") == "final"
-        ):
-            candidates.append(issue)
-
-    cached = WEEKLY_NEWSLETTER_ISSUE_CACHE.get("issue")
-    if isinstance(cached, dict):
-        metadata = cached.get("metadata", {})
-        if (
-            isinstance(metadata, dict)
-            and metadata.get("is_final") is True
-            and metadata.get("status") == "final"
-        ):
-            candidates.append(cached)
-
-    return sorted(
-        candidates,
-        key=lambda issue: str(
-            issue.get("metadata", {}).get("window_end_utc")
-            or issue.get("metadata", {}).get("finalized_at")
-            or issue.get("metadata", {}).get("generated_at")
-            or ""
-        ),
-        reverse=True,
-    )
-
-
 def newsletter_latest_delivery_snapshot(log_invalid=True):
-    rejected = []
-    for issue in newsletter_finalized_issue_candidates():
-        validation = validate_newsletter_issue(issue, verify_render=True)
-        if validation["valid"]:
-            metadata = issue["metadata"]
-            WEEKLY_NEWSLETTER_ISSUE_CACHE.update({
-                "issue_date": metadata.get("issue_date"),
-                "issue_status": "final",
-                "generated_at": parse_newsletter_timestamp(
-                    metadata.get("generated_at")
-                ),
-                "issue": issue,
-            })
-            return {
-                "status": "ready",
-                "http_status": 200,
-                "issue": issue,
-                "issue_id": validation["issue_id"],
-                "iso_week": validation["iso_week"],
-                "rejected_issue_count": len(rejected),
-            }
-        rejected.append(validation)
+    try:
+        published = load_latest_published_newsletter_artifact()
+        issue = published["issue"]
+        metadata = issue.get("metadata", {})
+        return {
+            "status": "ready",
+            "http_status": 200,
+            "issue": issue,
+            "issue_id": str(metadata.get("issue_id") or ""),
+            "iso_week": metadata.get("iso_week"),
+            "rejected_issue_count": 0,
+        }
+    except NewsletterPublishedArtifactError as error:
         if log_invalid:
             app.logger.error(
-                "event=newsletter_latest_issue_rejected issue_id=%s "
-                "iso_week=%s validation_errors=%s",
-                validation["issue_id"] or "unknown",
-                validation["iso_week"],
-                validation["errors"],
+                "event=newsletter_latest_artifact_unavailable error=%s",
+                sanitise_newsletter_error(error),
             )
-
-    persistence = newsletter_persistence_status()
-    if log_invalid:
-        app.logger.error(
-            "event=newsletter_latest_unavailable persistence_backend=%s "
-            "persistence_status=%s persistence_error=%s rejected_issue_count=%s",
-            persistence.get("persistence_backend", "unknown"),
-            persistence.get("persistence_status", "unknown"),
-            persistence.get("persistence_last_error", ""),
-            len(rejected),
-        )
     return {
         "status": "unavailable",
         "http_status": 503,
         "issue": None,
         "issue_id": "",
         "iso_week": None,
-        "rejected_issue_count": len(rejected),
+        "rejected_issue_count": 0,
     }
 
 
@@ -9829,6 +10188,7 @@ def persist_finalized_newsletter_issue(issue):
         raise RuntimeError("newsletter_issue_persistence_failed")
     if result["conflict"]:
         raise RuntimeError("newsletter_issue_id_conflict")
+    publish_newsletter_artifact(result["issue"])
     return result["issue"]
 
 
@@ -10794,6 +11154,14 @@ def newsletter_status_snapshot(now=None):
         "latest_route_http_status": latest_delivery["http_status"],
         "latest_route_issue_id": latest_delivery["issue_id"],
         "latest_route_rejected_issue_count": latest_delivery["rejected_issue_count"],
+        "published_artifact_status": latest_delivery["status"],
+        "published_artifact_issue_id": latest_delivery["issue_id"],
+        "published_artifact_backend": getattr(
+            NEWSLETTER_PUBLISHED_ARTIFACT_STORE,
+            "identifier",
+            "unconfigured",
+        ),
+        "published_artifact_last_error": NEWSLETTER_PUBLISHED_ARTIFACT_LAST_ERROR,
         "next_expected_friday_cutoff": next_newsletter_auto_send_at(london_now).isoformat(),
         "next_expected_friday_send_at": next_newsletter_auto_send_at(london_now).isoformat(),
     }
@@ -11186,6 +11554,10 @@ def newsletter_startup_catch_up_once():
     try:
         if newsletter_auto_send_due():
             load_or_generate_latest_newsletter_issue()
+            return
+        latest = latest_finalized_newsletter_issue()
+        if latest:
+            publish_newsletter_artifact(latest)
     except Exception:
         app.logger.exception("Newsletter startup catch-up failed")
 
@@ -13376,54 +13748,40 @@ def newsletter():
 @app.route("/newsletter/latest")
 def newsletter_latest():
     try:
-        weekly_issue = newsletter_issue_for_website_display(
-            load_latest_valid_newsletter_issue()
+        published = load_latest_published_newsletter_artifact()
+    except NewsletterPublishedArtifactError as error:
+        app.logger.error(
+            "event=newsletter_latest_artifact_read_failed error=%s",
+            sanitise_newsletter_error(error),
         )
-    except NewsletterIssueUnavailableError:
         return render_template_string(newsletter_latest_unavailable_html), 503
-    return render_template_string(
-        newsletter_latest_html,
-        draft=weekly_issue["draft"],
-        issue=weekly_issue["metadata"],
+    return Response(
+        published["html"],
+        content_type="text/html; charset=utf-8",
     )
 
 
 @app.route("/newsletter/rss")
 def newsletter_rss():
-    weekly_issue = load_or_generate_latest_newsletter_issue()
-    draft = weekly_issue["draft"]
-    issue = weekly_issue["metadata"]
-    published_at = (
-        parse_newsletter_timestamp(issue.get("published_at"))
-        or datetime.now(timezone.utc)
-    )
-    feed_url = f"{PRODUCTION_BASE_URL}/newsletter"
-    item_url = f"{PRODUCTION_BASE_URL}/newsletter/latest"
-    issue_body = render_newsletter_issue_body(draft).replace("]]>", "]]&gt;")
-    rss_description = (
-        f"{issue['rss_status_label']}: "
-        f"{weekly_issue['summary']}"
-    )
-    rss_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:dc="http://purl.org/dc/elements/1.1/">
-<channel>
-<title>StockRadar Weekly</title>
-<link>{xml_escape(feed_url)}</link>
-<description>The 5-minute market signal for investors who want clarity without noise.</description>
-<language>en-gb</language>
-<lastBuildDate>{format_datetime(published_at)}</lastBuildDate>
-<item>
-<title>{xml_escape(issue["title"])}</title>
-<link>{xml_escape(item_url)}</link>
-<guid isPermaLink="false">{xml_escape(issue["guid"])}</guid>
-<pubDate>{format_datetime(published_at)}</pubDate>
-<description>{xml_escape(rss_description)}</description>
-<content:encoded><![CDATA[{issue_body}]]></content:encoded>
-</item>
-</channel>
-</rss>
+    try:
+        published = load_latest_published_newsletter_artifact()
+    except NewsletterPublishedArtifactError as error:
+        app.logger.error(
+            "event=newsletter_rss_artifact_read_failed error=%s",
+            sanitise_newsletter_error(error),
+        )
+        unavailable_rss = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>StockRadar Weekly</title><description>Newsletter temporarily unavailable.</description></channel></rss>
 """
-    return Response(rss_xml, content_type="application/rss+xml; charset=utf-8")
+        return Response(
+            unavailable_rss,
+            status=503,
+            content_type="application/rss+xml; charset=utf-8",
+        )
+    return Response(
+        published["rss_xml"],
+        content_type="application/rss+xml; charset=utf-8",
+    )
 
 
 @app.route("/admin/newsletter-preview")
@@ -14448,6 +14806,7 @@ def logout():
     return redirect(url_for("dashboard"))
 
 
+initialize_newsletter_published_artifact_store()
 initialize_newsletter_storage_backend()
 NEWSLETTER_STORAGE_MIGRATION_RESULT = migrate_selected_newsletter_storage()
 start_newsletter_startup_catch_up()

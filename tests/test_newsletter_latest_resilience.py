@@ -48,6 +48,17 @@ def issue_state(*issues):
     }
 
 
+def persist_published_issue(monkeypatch, issue):
+    storage = Mock()
+    storage.finalize_issue_once.return_value = {
+        "stored": True,
+        "conflict": False,
+        "issue": issue,
+    }
+    monkeypatch.setattr(app, "NEWSLETTER_STORAGE", storage)
+    return app.persist_finalized_newsletter_issue(issue)
+
+
 def test_friday_21_august_window_is_week_34():
     window = app.newsletter_weekly_window(
         datetime(2026, 8, 21, 10, 0, tzinfo=LONDON)
@@ -64,12 +75,13 @@ def test_latest_route_does_not_generate_at_request_time_when_current_issue_missi
     previous = published_issue(
         datetime(2026, 8, 14, 9, 5, tzinfo=LONDON)
     )
+    app.publish_newsletter_artifact(previous)
     monkeypatch.setitem(app.WEEKLY_NEWSLETTER_ISSUE_CACHE, "issue", None)
     with (
         patch.object(
             app,
             "newsletter_storage_load",
-            return_value=issue_state(previous),
+            side_effect=AssertionError("public route must not query persistence"),
         ),
         patch.object(
             app,
@@ -101,23 +113,19 @@ def test_latest_route_skips_malformed_newest_issue_and_logs_exact_rejection(
     )
     malformed = copy.deepcopy(current)
     malformed["draft"] = None
+    app.publish_newsletter_artifact(previous)
     monkeypatch.setitem(app.WEEKLY_NEWSLETTER_ISSUE_CACHE, "issue", None)
 
-    with (
-        caplog.at_level(logging.ERROR),
-        patch.object(
-            app,
-            "newsletter_storage_load",
-            return_value=issue_state(malformed, previous),
-        ),
-    ):
+    with caplog.at_level(logging.ERROR):
+        with pytest.raises(app.NewsletterIssueValidationError):
+            persist_published_issue(monkeypatch, malformed)
         response = app.app.test_client().get("/newsletter/latest")
 
     assert response.status_code == 200
     page = response.get_data(as_text=True)
     assert "Week 33" in page
     assert "Week 34" not in page
-    assert "event=newsletter_latest_issue_rejected" in caplog.text
+    assert "event=newsletter_publish_validation_failed" in caplog.text
     assert "stockradar-weekly-2026-W34" in caplog.text
     assert "draft_not_object" in caplog.text
 
@@ -132,14 +140,9 @@ def test_latest_route_returns_observable_503_when_no_valid_issue_exists(
     malformed["metadata"]["iso_week"] = 33
     monkeypatch.setitem(app.WEEKLY_NEWSLETTER_ISSUE_CACHE, "issue", None)
 
-    with (
-        caplog.at_level(logging.ERROR),
-        patch.object(
-            app,
-            "newsletter_storage_load",
-            return_value=issue_state(malformed),
-        ),
-    ):
+    with caplog.at_level(logging.ERROR):
+        with pytest.raises(app.NewsletterIssueValidationError):
+            persist_published_issue(monkeypatch, malformed)
         response = app.app.test_client().get("/newsletter/latest")
 
     assert response.status_code == 503
@@ -171,6 +174,7 @@ def test_health_reports_latest_route_readiness(monkeypatch):
     issue = published_issue(
         datetime(2026, 8, 21, 9, 5, tzinfo=LONDON)
     )
+    app.publish_newsletter_artifact(issue)
     monkeypatch.setitem(app.WEEKLY_NEWSLETTER_ISSUE_CACHE, "issue", None)
     monkeypatch.setattr(app, "INTERNAL_DIAGNOSTICS_SECRET", "internal-secret")
     with patch.object(
@@ -186,3 +190,6 @@ def test_health_reports_latest_route_readiness(monkeypatch):
     assert newsletter["latest_route_status"] == "ready"
     assert newsletter["latest_route_http_status"] == 200
     assert newsletter["latest_route_issue_id"] == "stockradar-weekly-2026-W34"
+    assert newsletter["published_artifact_status"] == "ready"
+    assert newsletter["published_artifact_issue_id"] == "stockradar-weekly-2026-W34"
+    assert newsletter["published_artifact_last_error"] == ""

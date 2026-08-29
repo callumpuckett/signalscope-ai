@@ -158,19 +158,21 @@ def test_transactional_smtp_function_is_unchanged(monkeypatch):
 
 
 def test_newsletter_public_routes_remain_available(monkeypatch):
-    issue = issue_for() | {"summary": "Brief"}
-    issue["metadata"].update({
-        "published_at": datetime(2026, 7, 10, 9, 0, tzinfo=LONDON),
-        "rss_status_label": "Final issue",
-    })
     with (
-        patch.object(app, "load_or_generate_latest_newsletter_issue", return_value=issue),
-        patch.object(app, "render_template_string", return_value="ok"),
-        patch.object(app, "render_newsletter_issue_body", return_value="<p>Brief</p>"),
+        patch.object(
+            app,
+            "load_latest_published_newsletter_artifact",
+            return_value={
+                "html": "<h1>Published newsletter</h1>",
+                "rss_xml": "<?xml version=\"1.0\"?><rss></rss>",
+            },
+        ),
+        patch.object(app, "load_or_generate_latest_newsletter_issue") as generate,
     ):
         client = app.app.test_client()
         assert client.get("/newsletter/latest").status_code == 200
         assert client.get("/newsletter/rss").status_code == 200
+    generate.assert_not_called()
 
 
 def test_newsletter_subscribe_uses_beehiiv_not_local_storage(monkeypatch):

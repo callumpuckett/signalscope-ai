@@ -1,6 +1,7 @@
 # Reviewed direct production dependencies. Major upgrades require explicit review.
 Flask==3.1.3
 Flask-WTF==1.2.2
+boto3==1.43.77
 certifi==2026.5.20
 gunicorn==23.0.0
 pandas==3.0.3
