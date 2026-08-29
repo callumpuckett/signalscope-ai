@@ -119,6 +119,34 @@ def _is_critical_url(url: str, base_origin: str) -> bool:
     return origin == base_origin or parsed.netloc == "challenges.cloudflare.com"
 
 
+def _company_logo_render_mode(details: dict, base_origin: str) -> str:
+    """Validate company identity while tolerating unavailable third-party art."""
+    if not isinstance(details, dict):
+        raise SmokeFailure("Microsoft company identity details were unavailable")
+    if details.get("alt") != "Microsoft Corporation logo":
+        raise SmokeFailure("Microsoft company logo fallback/alt assertion failed")
+    if not str(details.get("fallback_text") or "").strip():
+        raise SmokeFailure("Microsoft company logo fallback is missing")
+    if float(details.get("frame_width") or 0) < 20 or float(details.get("frame_height") or 0) < 20:
+        raise SmokeFailure("Microsoft company logo frame is collapsed")
+    if details.get("complete") and int(details.get("natural_width") or 0) > 0:
+        return "image"
+
+    image_urls = [
+        str(details.get(key) or "").strip()
+        for key in ("current_src", "declared_src", "fallback_src")
+    ]
+    image_urls = [value for value in image_urls if value]
+    resolved_origins = [_origin(urljoin(f"{base_origin}/", value)) for value in image_urls]
+    if any(origin == base_origin for origin in resolved_origins):
+        raise SmokeFailure("Microsoft app-owned company logo did not load")
+    if details.get("fallback_active"):
+        return "fallback"
+    if image_urls and all(origin != base_origin for origin in resolved_origins):
+        return "external-fallback"
+    raise SmokeFailure("Microsoft company logo did not load and no usable fallback was active")
+
+
 def _url(base_url: str, path: str) -> str:
     return urljoin(f"{base_url}/", path.lstrip("/"))
 
@@ -250,14 +278,47 @@ def _desktop_smoke(browser: Browser, base_url: str, timeout_ms: int, report: Smo
         page.get_by_role("button", name="View free report").click(timeout=timeout_ms)
         page.wait_for_url("**/stock/MSFT", wait_until="domcontentloaded", timeout=timeout_ms)
         _assert_visible(page.get_by_role("heading", name="Microsoft Corporation (MSFT) Stock Detail"), "Microsoft report")
-        logo = page.locator('img[alt="Microsoft Corporation logo"]').first
-        _assert_visible(logo, "Microsoft company logo")
-        if not logo.evaluate("img => img.complete && img.naturalWidth > 0"):
-            raise SmokeFailure("Microsoft company logo did not load")
+        identity = page.locator('[data-company-identity="MSFT"]').first
+        _assert_visible(identity, "Microsoft company identity")
+        _assert_visible(identity.locator(".company-identity-name"), "Microsoft company identity name")
+        if identity.locator(".company-identity-name").inner_text().strip() != "Microsoft Corporation":
+            raise SmokeFailure("Microsoft company identity name is incorrect")
+        _assert_visible(identity.locator(".company-logo-frame"), "Microsoft company logo frame")
+        logo = identity.locator(".company-logo-image")
+        if logo.count() != 1:
+            raise SmokeFailure("Microsoft company logo element is missing or duplicated")
+        logo_details = identity.evaluate(
+            """root => {
+                const image = root.querySelector('.company-logo-image');
+                const fallback = root.querySelector('.company-logo-fallback');
+                const frame = root.querySelector('.company-logo-frame');
+                const imageStyle = image ? getComputedStyle(image) : null;
+                const frameRect = frame ? frame.getBoundingClientRect() : {width: 0, height: 0};
+                return {
+                    alt: image ? image.getAttribute('alt') : '',
+                    current_src: image ? image.currentSrc : '',
+                    declared_src: image ? image.getAttribute('src') : '',
+                    fallback_src: image ? image.dataset.logoFallbackSrc : '',
+                    complete: Boolean(image && image.complete),
+                    natural_width: image ? image.naturalWidth : 0,
+                    fallback_text: fallback ? fallback.textContent : '',
+                    fallback_active: Boolean(
+                        !image || image.dataset.logoState === 'initials' ||
+                        !imageStyle || imageStyle.display === 'none' ||
+                        imageStyle.visibility === 'hidden'
+                    ),
+                    frame_width: frameRect.width,
+                    frame_height: frameRect.height,
+                };
+            }"""
+        )
+        logo_mode = _company_logo_render_mode(logo_details, _origin(base_url))
+        if logo_mode != "image":
+            print(f"WARN Microsoft company logo used {logo_mode} after an external image was unavailable")
         _assert_visible(page.locator("#stock-chart-shell"), "Microsoft stock chart")
         if page.locator("#stockChart").count() != 1:
             raise SmokeFailure("Microsoft stock chart canvas did not initialize")
-        report.passed("Microsoft identity, logo, report, and chart")
+        report.passed(f"Microsoft identity, logo ({logo_mode}), report, and chart")
 
         _goto(page, base_url, "/newsletter", timeout_ms)
         _assert_visible(page.locator('input[type="email"]'), "newsletter signup input")
