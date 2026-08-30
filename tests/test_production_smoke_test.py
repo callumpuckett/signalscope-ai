@@ -39,3 +39,66 @@ def test_normalise_base_url_rejects_credentials_and_unsafe_shapes(value):
 
 def test_safe_path_drops_query_values():
     assert smoke._safe_path("https://example.com/private?token=secret") == "/private"
+
+
+def logo_details(**overrides):
+    details = {
+        "alt": "Microsoft Corporation logo",
+        "current_src": "https://images.example.test/MSFT.png",
+        "declared_src": "https://images.example.test/MSFT.png",
+        "fallback_src": "https://fallback.example.test/microsoft.com",
+        "complete": False,
+        "natural_width": 0,
+        "fallback_text": "MI",
+        "fallback_active": False,
+        "frame_width": 48,
+        "frame_height": 48,
+    }
+    details.update(overrides)
+    return details
+
+
+def test_company_logo_accepts_loaded_image():
+    details = logo_details(complete=True, natural_width=96)
+    assert smoke._company_logo_render_mode(details, "https://www.stockradarhq.com") == "image"
+
+
+def test_company_logo_accepts_external_image_failure_with_available_fallback():
+    assert (
+        smoke._company_logo_render_mode(logo_details(), "https://www.stockradarhq.com")
+        == "external-fallback"
+    )
+
+
+def test_company_logo_accepts_active_initials_fallback():
+    details = logo_details(current_src="", declared_src="", fallback_active=True)
+    assert smoke._company_logo_render_mode(details, "https://www.stockradarhq.com") == "fallback"
+
+
+def test_company_logo_rejects_failed_app_owned_image():
+    details = logo_details(
+        current_src="https://www.stockradarhq.com/static/logos/MSFT.png",
+        declared_src="/static/logos/MSFT.png",
+        fallback_active=True,
+    )
+    with pytest.raises(smoke.SmokeFailure, match="app-owned"):
+        smoke._company_logo_render_mode(details, "https://www.stockradarhq.com")
+
+
+def test_company_logo_rejects_relative_app_owned_image():
+    details = logo_details(current_src="", declared_src="/static/logos/MSFT.png", fallback_src="")
+    with pytest.raises(smoke.SmokeFailure, match="app-owned"):
+        smoke._company_logo_render_mode(details, "https://www.stockradarhq.com")
+
+
+@pytest.mark.parametrize(
+    "overrides, message",
+    [
+        ({"fallback_text": ""}, "fallback is missing"),
+        ({"frame_width": 0}, "frame is collapsed"),
+        ({"alt": ""}, "fallback/alt assertion failed"),
+    ],
+)
+def test_company_logo_rejects_broken_identity_fallback(overrides, message):
+    with pytest.raises(smoke.SmokeFailure, match=message):
+        smoke._company_logo_render_mode(logo_details(**overrides), "https://www.stockradarhq.com")
