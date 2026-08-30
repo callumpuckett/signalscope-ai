@@ -63,6 +63,27 @@ def test_company_logo_accepts_loaded_image():
     assert smoke._company_logo_render_mode(details, "https://www.stockradarhq.com") == "image"
 
 
+@pytest.mark.parametrize(
+    "identity_text",
+    ["Microsoft", "Microsoft Corporation", "  Microsoft Corporation (MSFT)  "],
+)
+def test_msft_company_identity_accepts_production_name_variants(identity_text):
+    assert smoke._is_msft_company_identity(identity_text, "MSFT")
+
+
+@pytest.mark.parametrize(
+    "identity_text, ticker",
+    [
+        ("Apple Inc. (AAPL)", "AAPL"),
+        ("Amazon.com, Inc. (AMZN)", "AMZN"),
+        ("Microsoft Corporation (MSFT)", "AAPL"),
+        ("", "MSFT"),
+    ],
+)
+def test_msft_company_identity_rejects_wrong_or_empty_identity(identity_text, ticker):
+    assert not smoke._is_msft_company_identity(identity_text, ticker)
+
+
 def test_company_logo_accepts_external_image_failure_with_available_fallback():
     assert (
         smoke._company_logo_render_mode(logo_details(), "https://www.stockradarhq.com")
