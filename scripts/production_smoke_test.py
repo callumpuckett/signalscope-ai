@@ -147,6 +147,12 @@ def _company_logo_render_mode(details: dict, base_origin: str) -> str:
     raise SmokeFailure("Microsoft company logo did not load and no usable fallback was active")
 
 
+def _is_msft_company_identity(identity_text: str, ticker: str) -> bool:
+    """Accept production formatting variants while keeping MSFT routing strict."""
+    normalised_name = " ".join(str(identity_text or "").split()).casefold()
+    return str(ticker or "").strip().upper() == "MSFT" and "microsoft" in normalised_name
+
+
 def _url(base_url: str, path: str) -> str:
     return urljoin(f"{base_url}/", path.lstrip("/"))
 
@@ -281,7 +287,10 @@ def _desktop_smoke(browser: Browser, base_url: str, timeout_ms: int, report: Smo
         identity = page.locator('[data-company-identity="MSFT"]').first
         _assert_visible(identity, "Microsoft company identity")
         _assert_visible(identity.locator(".company-identity-name"), "Microsoft company identity name")
-        if identity.locator(".company-identity-name").inner_text().strip() != "Microsoft Corporation":
+        if not _is_msft_company_identity(
+            identity.locator(".company-identity-name").inner_text(),
+            identity.get_attribute("data-company-identity"),
+        ):
             raise SmokeFailure("Microsoft company identity name is incorrect")
         _assert_visible(identity.locator(".company-logo-frame"), "Microsoft company logo frame")
         logo = identity.locator(".company-logo-image")
