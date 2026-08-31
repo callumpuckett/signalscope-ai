@@ -41,6 +41,32 @@ def test_safe_path_drops_query_values():
     assert smoke._safe_path("https://example.com/private?token=secret") == "/private"
 
 
+class ConsoleMessage:
+    type = "error"
+
+    def __init__(self, text):
+        self.text = text
+
+
+def test_browser_signals_ignore_report_only_upgrade_warning():
+    signals = smoke.BrowserSignals("https://www.stockradarhq.com")
+    signals._console(
+        ConsoleMessage(
+            "The Content Security Policy directive 'upgrade-insecure-requests' "
+            "is ignored when delivered in a report-only policy."
+        )
+    )
+
+    assert signals.console_errors == []
+
+
+def test_browser_signals_keep_genuine_console_errors_blocking():
+    signals = smoke.BrowserSignals("https://www.stockradarhq.com")
+    signals._console(ConsoleMessage("Uncaught TypeError: application failed"))
+
+    assert signals.console_errors == ["Uncaught TypeError: application failed"]
+
+
 def logo_details(**overrides):
     details = {
         "alt": "Microsoft Corporation logo",

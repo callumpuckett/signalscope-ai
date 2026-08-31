@@ -26,6 +26,7 @@ MOBILE_VIEWPORT = {"width": 390, "height": 844}
 DEFAULT_TIMEOUT_MS = 20_000
 IGNORED_CONSOLE_ERRORS = (
     "a listener indicated an asynchronous response",
+    "the content security policy directive 'upgrade-insecure-requests' is ignored when delivered in a report-only policy",
 )
 
 
