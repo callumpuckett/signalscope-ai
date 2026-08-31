@@ -297,6 +297,16 @@ STOCKRADAR_NAVIGATION_ITEMS = (
         "active_tab": "watchlist",
     },
     {
+        "id": "opportunities",
+        "section": "Main Menu",
+        "label": "Opportunities",
+        "href": "/opportunities",
+        "icon": "🎯",
+        "locations": ("public", "dashboard", "app"),
+        "access": "all",
+        "badge": "Premium",
+    },
+    {
         "id": "premium-watchlist",
         "section": "Main Menu",
         "label": "Premium Watchlist",
@@ -786,6 +796,8 @@ def stockradar_data_path(filename):
 PREMIUM_ENTITLEMENTS_PATH = stockradar_data_path("premium_entitlements.json")
 RATE_LIMITS_PATH = stockradar_data_path("security_rate_limits.json")
 TURNSTILE_TOKENS_PATH = stockradar_data_path("turnstile_tokens.json")
+OPPORTUNITY_RADAR_PATH = stockradar_data_path("opportunity_radar.json")
+OPPORTUNITY_ALERTS_PATH = stockradar_data_path("opportunity_alerts.json")
 
 
 DEFAULT_STRIPE_SUCCESS_URL = (
@@ -886,6 +898,16 @@ NEWSLETTER_AUTO_SEND_CHECK_INTERVAL_SECONDS = int(
 NEWSLETTER_SEND_LOCK_STALE_SECONDS = 60 * 60
 NEWSLETTER_AUTO_SEND_THREAD_STARTED = False
 NEWSLETTER_STARTUP_CATCH_UP_THREAD_STARTED = False
+OPPORTUNITY_SNAPSHOT_ENABLED = (
+    os.environ.get(
+        "OPPORTUNITY_SNAPSHOT_ENABLED",
+        "true" if IS_PRODUCTION else "false",
+    ).strip().lower() in {"1", "true", "yes", "on"}
+)
+OPPORTUNITY_SNAPSHOT_CHECK_INTERVAL_SECONDS = int(
+    os.environ.get("OPPORTUNITY_SNAPSHOT_CHECK_INTERVAL_SECONDS", "21600")
+)
+OPPORTUNITY_SNAPSHOT_THREAD_STARTED = False
 BEEHIIV_API_KEY = os.environ.get("BEEHIIV_API_KEY", "").strip()
 BEEHIIV_PUBLICATION_ID = os.environ.get("BEEHIIV_PUBLICATION_ID", "").strip()
 BEEHIIV_AUTOSEND_ENABLED = (
@@ -902,6 +924,8 @@ NEWSLETTER_RUNTIME_FILE_NAMES = (
     "newsletter_delivery_log.json",
     "newsletter_beehiiv_state.json",
     "newsletter_subscribers.json",
+    "opportunity_radar.json",
+    "opportunity_alerts.json",
 )
 NEWSLETTER_RUNTIME_STORE_FILES = {
     "issues": "newsletter_issues.json",
@@ -910,6 +934,8 @@ NEWSLETTER_RUNTIME_STORE_FILES = {
     "delivery": "newsletter_delivery_log.json",
     "beehiiv": "newsletter_beehiiv_state.json",
     "subscribers": "newsletter_subscribers.json",
+    "opportunity_radar": "opportunity_radar.json",
+    "opportunity_alerts": "opportunity_alerts.json",
 }
 BEEHIIV_WEEKLY_BULK_SENDER = "beehiiv_manual"
 BEEHIIV_CREATE_POST_BLOCKED = True
@@ -3137,6 +3163,358 @@ def calculate_counts(recommendations):
     sell_count = sum(1 for r in recommendations if r["signal"] == "SELL")
     high_conviction_count = sum(1 for r in recommendations if confidence_number(r["confidence"]) >= 80)
     return buy_count, hold_count, sell_count, high_conviction_count
+
+
+OPPORTUNITY_TOP_LIMIT = 5
+OPPORTUNITY_HISTORY_LIMIT = 30
+OPPORTUNITY_QUALITY_TICKERS = {
+    "MSFT", "AAPL", "GOOGL", "AMZN", "META", "V", "MA", "COST", "JNJ", "PG",
+}
+OPPORTUNITY_VOLATILE_TICKERS = {
+    "TSLA", "PLTR", "SPCX", "BTC-USD", "ETH-USD", "SOL-USD", "AMD", "NVDA",
+}
+OPPORTUNITY_FUND_TICKERS = {"SPY", "QQQ", "DIA", "IWM", "SMH", "GLD", "SLV", "TLT", "HYG"}
+
+
+def opportunity_score_components(item):
+    """Return a deterministic 100-point research ranking; no model selects names."""
+    ticker = canonical_stock_symbol(item.get("ticker"))
+    signal = clean_signal(item.get("signal"), item.get("confidence"))
+    confidence = max(0.0, min(100.0, confidence_number(item.get("confidence"))))
+    signal_score = {"BUY": 25, "HOLD": 14, "SELL": 4}.get(signal, 10)
+    conviction_score = round(confidence * 0.25, 1)
+
+    momentum_score = {"BUY": 15, "HOLD": 9, "SELL": 3}.get(signal, 7)
+    momentum_score = max(0, min(20, momentum_score))
+
+    if ticker in OPPORTUNITY_QUALITY_TICKERS:
+        fundamentals_score = 15
+    elif ticker in OPPORTUNITY_FUND_TICKERS:
+        fundamentals_score = 12
+    else:
+        fundamentals_score = 10
+
+    risk_score = {"BUY": 8, "HOLD": 7, "SELL": 3}.get(signal, 6)
+    if ticker in OPPORTUNITY_VOLATILE_TICKERS:
+        risk_score -= 2
+    if ticker in OPPORTUNITY_FUND_TICKERS:
+        risk_score += 1
+    risk_score = max(0, min(10, risk_score))
+
+    valuation_score = 4 if ticker in OPPORTUNITY_FUND_TICKERS else 3
+    total = round(
+        signal_score + conviction_score + momentum_score
+        + fundamentals_score + risk_score + valuation_score,
+        1,
+    )
+    return {
+        "signal": signal,
+        "signal_score": signal_score,
+        "conviction_score": conviction_score,
+        "momentum_score": momentum_score,
+        "fundamentals_score": fundamentals_score,
+        "risk_score": risk_score,
+        "valuation_score": valuation_score,
+        "opportunity_score": max(0, min(100, total)),
+    }
+
+
+def opportunity_risk_label(score):
+    if score >= 8:
+        return "Managed"
+    if score >= 5:
+        return "Medium"
+    return "Elevated"
+
+
+def opportunity_momentum_label(score):
+    if score >= 16:
+        return "Strong"
+    if score >= 10:
+        return "Building"
+    return "Weak / mixed"
+
+
+def rank_stockradar_opportunities(recommendations):
+    ranked = []
+    for item in recommendations or []:
+        ticker = canonical_stock_symbol(item.get("ticker"))
+        if not ticker:
+            continue
+        components = opportunity_score_components(item)
+        ranked.append({
+            "ticker": ticker,
+            "label": stock_display_label(ticker),
+            "signal": components["signal"],
+            "conviction": normalise_confidence(item.get("confidence")),
+            "reason": str(item.get("reason") or "Research context is available.").strip(),
+            "risk": opportunity_risk_label(components["risk_score"]),
+            "momentum": opportunity_momentum_label(components["momentum_score"]),
+            "fundamentals": (
+                "Quality context" if components["fundamentals_score"] >= 15
+                else "Diversified fund context" if ticker in OPPORTUNITY_FUND_TICKERS
+                else "Balanced context"
+            ),
+            "valuation_context": (
+                "Valuation needs extra review" if components["valuation_score"] <= 2
+                else "Compare valuation with peers" if ticker not in OPPORTUNITY_FUND_TICKERS
+                else "Review fund holdings and concentration"
+            ),
+            **components,
+        })
+    return sorted(
+        ranked,
+        key=lambda item: (-item["opportunity_score"], item["ticker"]),
+    )
+
+
+def opportunity_market_context(ticker):
+    chart = stock_history(ticker, "1mo")
+    prices = list(chart.get("prices") or []) if chart.get("ok") else []
+    if not prices:
+        return {"current_price": None, "current_price_label": "Unavailable", "period_change": None}
+    start = float(prices[0])
+    current = float(prices[-1])
+    change = ((current - start) / start * 100) if start else 0
+    return {
+        "current_price": round(current, 4),
+        "current_price_label": money(current),
+        "period_change": round(change, 2),
+    }
+
+
+def opportunity_explanation(item):
+    positives = (
+        f"{item['reason']} The explanation layer then describes how the deterministic "
+        f"ranking combines a {item['signal']} signal, "
+        f"{item['conviction']} conviction and {item['momentum'].lower()} momentum context."
+    )
+    risks = (
+        f"Risk is classified as {item['risk'].lower()}; valuation and portfolio overlap "
+        "still need independent review."
+    )
+    monitor = (
+        "Monitor whether conviction, signal, risk and rank remain supportive in the next daily snapshot."
+    )
+    return {"positives": positives, "risks": risks, "monitor": monitor}
+
+
+def build_opportunity_snapshot(
+    recommendations,
+    previous_snapshot=None,
+    now=None,
+    market_data_provider=None,
+):
+    london_now = newsletter_london_now(now)
+    previous_rows = {
+        row.get("ticker"): row for row in (previous_snapshot or {}).get("opportunities", [])
+    }
+    provider = market_data_provider or opportunity_market_context
+    opportunities = []
+    for rank, item in enumerate(rank_stockradar_opportunities(recommendations)[:OPPORTUNITY_TOP_LIMIT], 1):
+        previous = previous_rows.get(item["ticker"])
+        previous_score = float(previous.get("opportunity_score") or 0) if previous else None
+        previous_rank = int(previous.get("rank") or 0) if previous else None
+        score_change = round(item["opportunity_score"] - previous_score, 1) if previous_score is not None else 0
+        rank_change = previous_rank - rank if previous_rank is not None else 0
+        if previous is None:
+            status = "NEW"
+        elif score_change >= 2:
+            status = "RISING"
+        elif score_change <= -2:
+            status = "FALLING"
+        elif rank_change > 0:
+            status = "RISING"
+        elif rank_change < 0:
+            status = "FALLING"
+        else:
+            status = "UNCHANGED"
+        try:
+            market = provider(item["ticker"]) or {}
+        except Exception:
+            market = {}
+        current = dict(
+            item,
+            rank=rank,
+            status=status,
+            score_change=score_change,
+            rank_change=rank_change,
+            current_price=market.get("current_price"),
+            current_price_label=market.get("current_price_label") or "Unavailable",
+            period_change=market.get("period_change"),
+        )
+        current["explanation"] = opportunity_explanation(current)
+        opportunities.append(current)
+
+    current_tickers = {row["ticker"] for row in opportunities}
+    exited = [
+        dict(row, status="EXITED")
+        for row in (previous_snapshot or {}).get("opportunities", [])
+        if row.get("ticker") not in current_tickers
+    ]
+    return {
+        "snapshot_date": london_now.date().isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "methodology_version": 1,
+        "opportunities": opportunities,
+        "exited": exited,
+    }
+
+
+def opportunity_history(state, ticker):
+    history = []
+    for snapshot_date, snapshot in sorted((state or {}).get("snapshots", {}).items()):
+        for row in snapshot.get("opportunities", []):
+            if row.get("ticker") == ticker:
+                history.append({
+                    "date": snapshot_date,
+                    "score": row.get("opportunity_score"),
+                    "rank": row.get("rank"),
+                })
+                break
+    return history[-OPPORTUNITY_HISTORY_LIMIT:]
+
+
+def opportunity_history_points(history, width=180, height=54):
+    values = [float(item.get("score") or 0) for item in history or []]
+    if not values:
+        return ""
+    low, high = min(values), max(values)
+    spread = max(high - low, 1)
+    denominator = max(len(values) - 1, 1)
+    return " ".join(
+        f"{index * width / denominator:.1f},{height - ((value - low) / spread * (height - 8) + 4):.1f}"
+        for index, value in enumerate(values)
+    )
+
+
+def opportunity_account_key():
+    if owner_has_access():
+        return "owner"
+    identity = "|".join(
+        str(session.get(key) or "").strip().lower()
+        for key in ("stripe_customer_id", "stripe_subscription_id", "premium_email")
+    ).strip("|")
+    if not identity:
+        return ""
+    return "premium-" + hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24]
+
+
+def default_opportunity_alert_preferences():
+    return {
+        "enabled": False,
+        "signal_changes": True,
+        "score_changes": True,
+        "risk_changes": True,
+        "ranking_changes": True,
+        "tickers": [],
+        "updated_at": "",
+    }
+
+
+def opportunity_change_reasons(current, previous, preferences):
+    reasons = []
+    if current.get("status") == "EXITED":
+        return ["exited Top 5"]
+    if not previous:
+        return ["entered Top 5"] if current.get("status") == "NEW" else []
+    if preferences.get("signal_changes") and current.get("signal") != previous.get("signal"):
+        reasons.append(f"signal {previous.get('signal')} → {current.get('signal')}")
+    if preferences.get("score_changes") and abs(float(current.get("score_change") or 0)) >= 2:
+        reasons.append(f"score {float(current.get('score_change') or 0):+g}")
+    if preferences.get("risk_changes") and current.get("risk") != previous.get("risk"):
+        reasons.append(f"risk {previous.get('risk')} → {current.get('risk')}")
+    if preferences.get("ranking_changes") and int(current.get("rank_change") or 0):
+        reasons.append(f"rank {int(current.get('rank_change') or 0):+d}")
+    return reasons
+
+
+def record_opportunity_alert_events(snapshot, previous_snapshot):
+    try:
+        state = newsletter_storage_load("opportunity_alerts")
+    except Exception:
+        return False
+    preferences_by_account = state.get("preferences", {})
+    previous_rows = {
+        row.get("ticker"): row for row in (previous_snapshot or {}).get("opportunities", [])
+    }
+    created = []
+    for account_key, preferences in preferences_by_account.items():
+        if not preferences.get("enabled"):
+            continue
+        tracked = set(preferences.get("tickers") or [])
+        for row in snapshot.get("opportunities", []) + snapshot.get("exited", []):
+            if tracked and row["ticker"] not in tracked:
+                continue
+            reasons = opportunity_change_reasons(row, previous_rows.get(row["ticker"]), preferences)
+            if not reasons:
+                continue
+            event_id = hashlib.sha256(
+                f"{account_key}|{snapshot['snapshot_date']}|{row['ticker']}|{'|'.join(reasons)}".encode("utf-8")
+            ).hexdigest()
+            created.append({
+                "event_id": event_id,
+                "account_key": account_key,
+                "snapshot_date": snapshot["snapshot_date"],
+                "ticker": row["ticker"],
+                "reasons": reasons,
+                "created_at": snapshot["generated_at"],
+                "delivery_status": "tracked",
+            })
+    if not created:
+        return True
+
+    def update(data):
+        events = data.setdefault("events", [])
+        known = {event.get("event_id") for event in events}
+        events.extend(event for event in created if event["event_id"] not in known)
+        data["events"] = events[-500:]
+
+    return newsletter_storage_update("opportunity_alerts", update)
+
+
+def ensure_daily_opportunity_snapshot(now=None, recommendations=None, market_data_provider=None):
+    state = newsletter_storage_load("opportunity_radar")
+    london_now = newsletter_london_now(now)
+    snapshot_date = london_now.date().isoformat()
+    existing = state.get("snapshots", {}).get(snapshot_date)
+    if existing:
+        return existing, state, False
+    previous = max(
+        (
+            snapshot for date, snapshot in state.get("snapshots", {}).items()
+            if date < snapshot_date
+        ),
+        key=lambda snapshot: snapshot.get("snapshot_date", ""),
+        default=None,
+    )
+    snapshot = build_opportunity_snapshot(
+        recommendations if recommendations is not None else get_recommendations(),
+        previous_snapshot=previous,
+        now=london_now,
+        market_data_provider=market_data_provider,
+    )
+    if not snapshot.get("opportunities"):
+        raise RuntimeError("opportunity_snapshot_source_empty")
+    created = {"value": False}
+
+    def save_snapshot(data):
+        snapshots = data.setdefault("snapshots", {})
+        if snapshot_date in snapshots:
+            return False
+        snapshots[snapshot_date] = snapshot
+        data["latest_snapshot_date"] = snapshot_date
+        for old_date in sorted(snapshots)[:-90]:
+            snapshots.pop(old_date, None)
+        created["value"] = True
+
+    if not newsletter_storage_update("opportunity_radar", save_snapshot):
+        raise RuntimeError("opportunity_snapshot_save_failed")
+    refreshed = newsletter_storage_load("opportunity_radar")
+    stored = refreshed.get("snapshots", {}).get(snapshot_date, snapshot)
+    if created["value"]:
+        record_opportunity_alert_events(stored, previous)
+    return stored, refreshed, created["value"]
 
 
 def build_homepage_free_report_preview(recommendations=None):
@@ -5678,6 +6056,75 @@ def premium_decision(symbol):
         context=ai_context,
         report=report,
     )
+
+
+opportunities_html = """
+<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>StockRadar Opportunities — Daily Premium Research</title>
+<style>
+*{box-sizing:border-box}body{margin:0;min-height:100vh;padding:42px 24px;background:radial-gradient(circle at 12% 5%,rgba(0,255,170,.12),transparent 30%),linear-gradient(135deg,#07111c,#101827);color:#eef4f8;font-family:Arial,sans-serif}.wrap{max-width:1180px;margin:0 auto}.back{display:inline-block;margin:0 0 22px;color:#6cd3f7;font-weight:900;text-decoration:none}.hero,.panel,.opportunity{border:1px solid rgba(148,163,184,.16);background:linear-gradient(180deg,rgba(18,30,43,.98),rgba(10,20,31,.98));box-shadow:0 24px 70px rgba(0,0,0,.28)}.hero{padding:38px;border-radius:30px;margin-bottom:20px}.eyebrow{color:#4adea3;font-size:11px;font-weight:950;letter-spacing:.13em;text-transform:uppercase}h1{font-size:clamp(36px,5vw,54px);line-height:1.04;margin:10px 0 14px}h2{font-size:clamp(24px,3vw,32px);margin:0 0 12px}h3{margin:0;font-size:22px}p,li{color:#b7c5d1;line-height:1.65}.method{max-width:820px}.notice{padding:14px 16px;border-radius:15px;background:rgba(74,222,163,.08);border:1px solid rgba(74,222,163,.2);color:#d1fae5}.grid{display:grid;gap:17px}.opportunity{border-radius:24px;padding:24px}.topline,.identity{display:flex;align-items:center;gap:12px}.topline{justify-content:space-between;flex-wrap:wrap}.rank{display:inline-grid;place-items:center;width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#4adea3,#f0c36a);color:#071018;font-weight:950}.status,.signal{display:inline-flex;padding:6px 9px;border-radius:999px;font-size:11px;font-weight:950;letter-spacing:.06em}.status{background:rgba(105,201,242,.11);color:#a5e4fb}.status.rising,.status.new{background:rgba(74,222,163,.12);color:#bbf7d0}.status.falling,.status.exited{background:rgba(251,113,133,.11);color:#fecdd3}.signal{background:rgba(240,195,106,.12);color:#fde68a}.score{font-size:32px;font-weight:950}.score small{font-size:13px;color:#91a3b4}.metrics{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin:20px 0}.metric{padding:13px;border-radius:15px;background:rgba(148,163,184,.06);min-width:0}.metric span{display:block;color:#91a3b4;font-size:10px;text-transform:uppercase;letter-spacing:.08em;font-weight:900}.metric strong{display:block;margin-top:5px;font-size:14px;overflow-wrap:anywhere}.explain{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.explain div{padding:15px;border-radius:15px;background:rgba(7,17,28,.56)}.explain strong{display:block;margin-bottom:6px;color:#e7f0f5}.explain p{margin:0;font-size:13px}.history{display:flex;align-items:center;gap:16px;margin-top:18px}.history svg{width:180px;height:54px}.history polyline{fill:none;stroke:#4adea3;stroke-width:3}.locked{position:relative;overflow:hidden}.locked>.grid{filter:blur(5px);user-select:none;pointer-events:none}.lockbox{position:absolute;inset:0;display:grid;place-items:center;padding:24px;background:rgba(5,12,20,.61)}.lockcard{max-width:600px;padding:28px;border-radius:24px;text-align:center;background:#111d2b;border:1px solid rgba(240,195,106,.32)}.button{display:inline-flex;justify-content:center;align-items:center;padding:13px 18px;border:0;border-radius:14px;background:linear-gradient(135deg,#4adea3,#f0c36a);color:#071018;font-weight:950;text-decoration:none;margin:6px;cursor:pointer}.secondary{background:rgba(105,201,242,.12);border:1px solid rgba(105,201,242,.25);color:#bfeafa}.panel{padding:26px;border-radius:24px;margin-top:20px}.alert-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.check{display:flex;align-items:center;gap:9px;color:#dce7ee}.tickers{grid-column:1/-1}.tickers input{width:100%;padding:13px;border-radius:12px;border:1px solid rgba(148,163,184,.24);background:#07111c;color:white}.events{padding-left:20px}.muted{font-size:13px;color:#91a3b4}@media(max-width:850px){body{padding:24px 16px}.hero{padding:28px 22px}.metrics{grid-template-columns:repeat(3,1fr)}.explain{grid-template-columns:1fr}}@media(max-width:520px){.metrics{grid-template-columns:repeat(2,1fr)}.score{font-size:28px}.alert-form{grid-template-columns:1fr}.tickers{grid-column:auto}.history{align-items:flex-start;flex-direction:column}.button{width:100%;margin:6px 0}}
+</style></head><body>{{ stockradar_header_navigation('app') | safe }}<main class="wrap">
+<a class="back" href="/">← Back to StockRadar</a><section class="hero"><div class="eyebrow">Premium daily research ranking</div><h1>StockRadar Opportunities</h1><p class="method">Five research opportunities ranked once per day by a transparent, deterministic 100-point framework. The score combines signal, conviction, momentum, fundamentals, risk and valuation context. Plain-English explanations describe the result; they do not select the stocks.</p><p class="notice"><strong>Educational research only.</strong> Rankings are prompts for further investigation, not personalised advice or instructions to trade.</p></section>
+{% if premium %}<section class="grid" aria-label="Today's ranked opportunities">{% for item in snapshot.opportunities %}<article class="opportunity"><div class="topline"><div class="identity"><span class="rank">{{ item.rank }}</span><div><h3>{{ item.label }}</h3><span class="status {{ item.status|lower }}">{{ item.status }}</span> <span class="signal">{{ item.signal }}</span></div></div><div class="score">{{ item.opportunity_score|int }}<small>/100</small></div></div>
+<div class="metrics"><div class="metric"><span>Current price</span><strong>{{ item.current_price_label }}</strong></div><div class="metric"><span>Daily score</span><strong>{% if item.score_change > 0 %}+{% endif %}{{ item.score_change }}</strong></div><div class="metric"><span>Rank movement</span><strong>{% if item.rank_change > 0 %}+{% endif %}{{ item.rank_change }}</strong></div><div class="metric"><span>Conviction</span><strong>{{ item.conviction }}</strong></div><div class="metric"><span>Risk</span><strong>{{ item.risk }}</strong></div><div class="metric"><span>Momentum</span><strong>{{ item.momentum }}</strong></div></div>
+<div class="metrics"><div class="metric"><span>Signal</span><strong>{{ item.signal_score }}/25</strong></div><div class="metric"><span>Conviction</span><strong>{{ item.conviction_score }}/25</strong></div><div class="metric"><span>Momentum</span><strong>{{ item.momentum_score }}/20</strong></div><div class="metric"><span>Fundamentals</span><strong>{{ item.fundamentals_score }}/15</strong></div><div class="metric"><span>Risk quality</span><strong>{{ item.risk_score }}/10</strong></div><div class="metric"><span>Valuation</span><strong>{{ item.valuation_score }}/5</strong></div></div>
+<p><strong>Fundamentals:</strong> {{ item.fundamentals }} · <strong>Valuation/context:</strong> {{ item.valuation_context }}</p><div class="explain"><div><strong>Positives</strong><p>{{ item.explanation.positives }}</p></div><div><strong>Risks</strong><p>{{ item.explanation.risks }}</p></div><div><strong>What to monitor</strong><p>{{ item.explanation.monitor }}</p></div></div><div class="history"><svg viewBox="0 0 180 54" role="img" aria-label="Historical Opportunity Score for {{ item.ticker }}"><polyline points="{{ item.history_points }}"/></svg><span class="muted">{{ item.history|length }} daily snapshot{% if item.history|length != 1 %}s{% endif %} · last 30 retained for charting</span></div></article>{% endfor %}</section>
+{% if snapshot.exited %}<section class="panel"><h2>Exited today</h2><p>{% for item in snapshot.exited %}<span class="status exited">EXITED</span> {{ item.label }}{% if not loop.last %} · {% endif %}{% endfor %}</p></section>{% endif %}
+<section class="panel" id="alerts"><h2>Premium watchlist alerts</h2><p>Opt in to track meaningful daily changes. Events are deduplicated by account, date, ticker and reason.</p><form class="alert-form" method="post" action="/opportunities/alerts"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label class="check"><input type="checkbox" name="enabled" {% if preferences.enabled %}checked{% endif %}> Enable alerts</label><label class="check"><input type="checkbox" name="signal_changes" {% if preferences.signal_changes %}checked{% endif %}> Signal changes</label><label class="check"><input type="checkbox" name="score_changes" {% if preferences.score_changes %}checked{% endif %}> Score changes ≥2</label><label class="check"><input type="checkbox" name="risk_changes" {% if preferences.risk_changes %}checked{% endif %}> Risk changes</label><label class="check"><input type="checkbox" name="ranking_changes" {% if preferences.ranking_changes %}checked{% endif %}> Ranking changes</label><label class="tickers">Optional tickers (comma-separated)<input name="tickers" maxlength="240" value="{{ preferences.tickers|join(', ') }}" placeholder="MSFT, AAPL"></label><button class="button" type="submit">Save alert preferences</button></form>{% if events %}<h3>Recent tracked changes</h3><ul class="events">{% for event in events %}<li><strong>{{ event.ticker }}</strong> — {{ event.reasons|join('; ') }} · {{ event.snapshot_date }}</li>{% endfor %}</ul>{% endif %}<p class="muted">This release records optional in-app alert events. External email/push delivery is not enabled.</p></section>
+{% else %}<section class="panel locked"><div class="grid">{% for item in snapshot.opportunities[:3] %}<article class="opportunity"><div class="topline"><div class="identity"><span class="rank">{{ item.rank }}</span><h3>{{ item.label }}</h3></div><div class="score">{{ item.opportunity_score|int }}<small>/100</small></div></div><div class="metrics"><div class="metric"><span>Signal</span><strong>{{ item.signal }}</strong></div><div class="metric"><span>Status</span><strong>{{ item.status }}</strong></div></div></article>{% endfor %}</div><div class="lockbox"><div class="lockcard"><div class="eyebrow">Premium preview</div><h2>See today's full Top 5 and what changed.</h2><p>Unlock component scores, price context, historical movement, positives, risks, monitoring prompts and optional watchlist alerts.</p><a class="button" href="/upgrade">Unlock Premium</a><a class="button secondary" href="/newsletter">Get StockRadar Weekly free</a><p class="muted">Prefer weekly context? StockRadar Weekly summarises the market signal without a Premium subscription.</p></div></div></section>{% endif %}
+{{ disclaimer_footer() | safe }}</main>{{ newsletter_side_tab() | safe }}</body></html>
+"""
+
+
+@app.route("/opportunities")
+def opportunities():
+    premium = premium_has_access()
+    if premium:
+        snapshot, state, _ = ensure_daily_opportunity_snapshot()
+        for item in snapshot.get("opportunities", []):
+            item["history"] = opportunity_history(state, item["ticker"])
+            item["history_points"] = opportunity_history_points(item["history"])
+        account_key = opportunity_account_key()
+        alert_state = newsletter_storage_load("opportunity_alerts")
+        preferences = {
+            **default_opportunity_alert_preferences(),
+            **alert_state.get("preferences", {}).get(account_key, {}),
+        }
+        events = [event for event in alert_state.get("events", []) if event.get("account_key") == account_key][-10:][::-1]
+    else:
+        snapshot = build_opportunity_snapshot(get_recommendations(), market_data_provider=lambda ticker: {})
+        preferences = default_opportunity_alert_preferences()
+        events = []
+    return render_template_string(opportunities_html, premium=premium, snapshot=snapshot, preferences=preferences, events=events)
+
+
+@app.route("/opportunities/alerts", methods=["POST"])
+def opportunity_alert_preferences():
+    if not premium_has_access():
+        return redirect(url_for("upgrade"))
+    account_key = opportunity_account_key()
+    if not account_key:
+        abort(403)
+    tickers = []
+    for value in str(request.form.get("tickers") or "").split(","):
+        ticker = canonical_stock_symbol(value)
+        if ticker and ticker not in tickers:
+            tickers.append(ticker)
+    preferences = {
+        "enabled": request.form.get("enabled") == "on",
+        "signal_changes": request.form.get("signal_changes") == "on",
+        "score_changes": request.form.get("score_changes") == "on",
+        "risk_changes": request.form.get("risk_changes") == "on",
+        "ranking_changes": request.form.get("ranking_changes") == "on",
+        "tickers": tickers[:25],
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    def update(state):
+        state.setdefault("preferences", {})[account_key] = preferences
+        state.setdefault("events", [])
+    if not newsletter_storage_update("opportunity_alerts", update):
+        abort(503)
+    return redirect(url_for("opportunities", _anchor="alerts"))
 
 
 @app.route("/premium-watchlist")
@@ -10846,6 +11293,8 @@ def newsletter_storage_paths():
         "premium_entitlements": PREMIUM_ENTITLEMENTS_PATH,
         "rate_limits": RATE_LIMITS_PATH,
         "turnstile_tokens": TURNSTILE_TOKENS_PATH,
+        "opportunity_radar": OPPORTUNITY_RADAR_PATH,
+        "opportunity_alerts": OPPORTUNITY_ALERTS_PATH,
     }
 
 
@@ -11547,6 +11996,35 @@ def start_newsletter_auto_send_scheduler():
         "Newsletter auto-send scheduler started; next expected Friday send at %s",
         next_newsletter_auto_send_at().isoformat(),
     )
+    return True
+
+
+def opportunity_snapshot_loop():
+    while True:
+        try:
+            snapshot, _, created = ensure_daily_opportunity_snapshot()
+            if created:
+                app.logger.info(
+                    "Opportunity Radar snapshot created: date=%s rows=%s",
+                    snapshot.get("snapshot_date"),
+                    len(snapshot.get("opportunities", [])),
+                )
+        except Exception:
+            app.logger.exception("Opportunity Radar snapshot scheduler failed")
+        time.sleep(max(300, OPPORTUNITY_SNAPSHOT_CHECK_INTERVAL_SECONDS))
+
+
+def start_opportunity_snapshot_scheduler():
+    global OPPORTUNITY_SNAPSHOT_THREAD_STARTED
+    if OPPORTUNITY_SNAPSHOT_THREAD_STARTED or not OPPORTUNITY_SNAPSHOT_ENABLED:
+        return False
+    thread = threading.Thread(
+        target=opportunity_snapshot_loop,
+        name="stockradar-opportunity-snapshot",
+        daemon=True,
+    )
+    thread.start()
+    OPPORTUNITY_SNAPSHOT_THREAD_STARTED = True
     return True
 
 
@@ -14814,6 +15292,7 @@ initialize_newsletter_storage_backend()
 NEWSLETTER_STORAGE_MIGRATION_RESULT = migrate_selected_newsletter_storage()
 start_newsletter_startup_catch_up()
 start_newsletter_auto_send_scheduler()
+start_opportunity_snapshot_scheduler()
 
 
 if __name__ == "__main__":

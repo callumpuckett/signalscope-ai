@@ -24,6 +24,8 @@ STORE_DEFAULTS = {
     "premium_entitlements": {"records": []},
     "rate_limits": {"buckets": {}},
     "turnstile_tokens": {"tokens": {}},
+    "opportunity_radar": {"snapshots": {}, "latest_snapshot_date": ""},
+    "opportunity_alerts": {"preferences": {}, "events": []},
 }
 
 
@@ -31,6 +33,8 @@ APPLICATION_STATE_STORES = {
     "premium_entitlements",
     "rate_limits",
     "turnstile_tokens",
+    "opportunity_radar",
+    "opportunity_alerts",
 }
 
 
