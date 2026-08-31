@@ -28,6 +28,7 @@ IGNORED_CONSOLE_ERRORS = (
     "a listener indicated an asynchronous response",
     "the content security policy directive 'upgrade-insecure-requests' is ignored when delivered in a report-only policy",
     "%c%d font-size:0;color:transparent nan",
+    "failed to load resource: the server responded with a status of 404",
 )
 
 

@@ -56,6 +56,7 @@ class ConsoleMessage:
             "is ignored when delivered in a report-only policy."
         ),
         "%c%d font-size:0;color:transparent NaN",
+        "Failed to load resource: the server responded with a status of 404 ()",
     ],
 )
 def test_browser_signals_ignore_known_non_application_console_noise(message):
@@ -70,6 +71,21 @@ def test_browser_signals_keep_genuine_console_errors_blocking():
     signals._console(ConsoleMessage("Uncaught TypeError: application failed"))
 
     assert signals.console_errors == ["Uncaught TypeError: application failed"]
+
+
+def test_browser_signals_still_block_app_owned_script_404():
+    class Request:
+        resource_type = "script"
+
+    class Response:
+        url = "https://www.stockradarhq.com/static/app.js"
+        status = 404
+        request = Request()
+
+    signals = smoke.BrowserSignals("https://www.stockradarhq.com")
+    signals._response(Response())
+
+    assert signals.bad_responses == ["HTTP 404 /static/app.js"]
 
 
 def logo_details(**overrides):
