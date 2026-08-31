@@ -73,7 +73,7 @@ def test_logout_navigation_records_cannot_render_as_get_links():
 @pytest.mark.parametrize(
     ("route", "location"),
     (
-        ("/", "dashboard-sidebar"),
+        ("/", "app-header"),
         ("/upgrade", "app-header"),
     ),
 )
@@ -140,7 +140,7 @@ def test_valid_logout_clears_owner_premium_and_other_session_values():
     app.app.config["WTF_CSRF_ENABLED"] = True
     client = owner_client()
     response = dashboard_response(client)
-    page, form = logout_form(response, "dashboard-sidebar")
+    page, form = logout_form(response, "app-header")
     token = assert_valid_logout_form(page, form)
 
     with client.session_transaction() as current_session:

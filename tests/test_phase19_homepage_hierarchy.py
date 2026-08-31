@@ -187,13 +187,13 @@ def test_explicit_dashboard_tabs_keep_advanced_navigation_and_relocated_sections
     assert 'id="radar-section"' in page
 
 
-def test_premium_and_owner_root_sessions_keep_application_navigation():
+def test_premium_and_owner_root_sessions_keep_modern_homepage_navigation():
     for response in (render_home(premium=True), render_home(owner=True)):
         page = response.get_data(as_text=True)
         assert response.status_code == 200
-        assert '<body class="dashboard-view" data-public-home="false">' in page
-        assert '<div class="sidebar">' in page
-        assert '<header class="public-header">' not in page
+        assert '<body class="public-home" data-public-home="true">' in page
+        assert '<div class="sidebar">' not in page
+        assert '<header class="public-header">' in page
         assert "Premium Active" in page
 
 

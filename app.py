@@ -368,7 +368,7 @@ STOCKRADAR_NAVIGATION_ITEMS = (
         "label": "Premium Active",
         "href": "/owner",
         "icon": "✅",
-        "locations": ("dashboard", "app"),
+        "locations": ("public", "dashboard", "app"),
         "access": "owner",
         "dashboard_class": "pro-button",
     },
@@ -378,7 +378,7 @@ STOCKRADAR_NAVIGATION_ITEMS = (
         "label": "Premium Active",
         "href": "/manage-subscription",
         "icon": "✅",
-        "locations": ("dashboard", "app"),
+        "locations": ("public", "dashboard", "app"),
         "access": "premium",
         "dashboard_class": "pro-button",
     },
@@ -388,7 +388,7 @@ STOCKRADAR_NAVIGATION_ITEMS = (
         "label": "Manage Subscription",
         "href": "/manage-subscription",
         "icon": "",
-        "locations": ("dashboard", "app"),
+        "locations": ("public", "dashboard", "app"),
         "access": "entitled",
         "dashboard_class": "account-manage-subscription",
         "manage_subscription": True,
@@ -398,7 +398,7 @@ STOCKRADAR_NAVIGATION_ITEMS = (
         "section": "Account",
         "label": "Logout",
         "icon": "🚪",
-        "locations": ("dashboard", "app"),
+        "locations": ("public", "dashboard", "app"),
         "access": "owner",
         "logout": True,
     },
@@ -407,7 +407,7 @@ STOCKRADAR_NAVIGATION_ITEMS = (
         "section": "Account",
         "label": "End Premium Session",
         "icon": "🚪",
-        "locations": ("dashboard", "app"),
+        "locations": ("public", "dashboard", "app"),
         "access": "premium",
         "logout": True,
     },
@@ -567,8 +567,8 @@ STOCKRADAR_HEADER_NAVIGATION_TEMPLATE = """
 <style id="stockradar-primary-navigation-styles">
 .public-header{position:relative;z-index:11000;width:100%;padding:16px max(28px,env(safe-area-inset-right)) 16px max(28px,env(safe-area-inset-left));background:rgba(7,17,24,.96);border-bottom:1px solid rgba(148,163,184,.12);backdrop-filter:blur(18px);}
 .public-header-inner{position:relative;display:flex;align-items:center;justify-content:space-between;gap:22px;width:min(1180px,100%);margin:0 auto;}
-.public-header .logo{display:block;width:190px;margin:0;flex:0 0 auto;text-decoration:none;}
-.public-header .logo-img{display:block;width:100%;max-width:190px;max-height:52px;height:auto;object-fit:contain;}
+.public-header .logo{display:block;width:216px;margin:0;flex:0 0 auto;text-decoration:none;}
+.public-header .logo-img{display:block;width:100%;max-width:216px;max-height:56px;height:auto;object-fit:contain;image-rendering:auto;}
 .public-header .logo-fallback{display:none;font-size:25px;font-weight:950;background:linear-gradient(135deg,#fff,#00ffaa,#ffb86b);-webkit-background-clip:text;color:transparent;}
 .public-nav-links{box-sizing:border-box;display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
 .public-nav-link{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 12px;border-radius:13px;color:#d6e0e9;text-decoration:none;font:900 13px/1.2 Arial,sans-serif;white-space:nowrap;}
@@ -12045,8 +12045,8 @@ a:hover{text-decoration:underline;}
 .top-intel-layout{display:grid;grid-template-columns:1fr;gap:14px;align-items:start;margin-bottom:22px;}
 .public-header{position:relative;z-index:60;width:100%;padding:16px 28px;background:rgba(7,17,24,0.94);border-bottom:1px solid rgba(148,163,184,0.12);backdrop-filter:blur(18px);}
 .public-header-inner{display:flex;align-items:center;justify-content:space-between;gap:24px;width:min(1180px,100%);margin:0 auto;}
-.public-header .logo{width:190px;margin:0;flex:0 0 auto;}
-.public-header .logo-img{max-width:190px;max-height:52px;}
+.public-header .logo{width:216px;margin:0;flex:0 0 auto;}
+.public-header .logo-img{max-width:216px;max-height:56px;image-rendering:auto;}
 .public-nav-links{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
 .public-nav-link{display:inline-flex;align-items:center;justify-content:center;padding:10px 12px;border-radius:13px;color:#d6e0e9;text-decoration:none;font-size:13px;font-weight:900;white-space:nowrap;}
 .public-nav-link:hover{background:rgba(148,163,184,0.09);text-decoration:none;}
@@ -12068,7 +12068,7 @@ a:hover{text-decoration:underline;}
 .smart-search button{background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border:none;border-radius:14px;padding:10px 15px;font-weight:950;cursor:pointer;}
 .search-hint{color:#94a3b8;font-size:12px;margin-top:8px;line-height:1.45;}
 .search-message{display:none;margin-top:8px;color:#ffce4a;font-size:13px;font-weight:800;}
-.hero-search-panel{max-width:820px;margin-top:28px;padding-top:24px;border-top:1px solid rgba(148,163,184,0.15);scroll-margin-top:18px;}
+.hero-search-panel{max-width:820px;margin:24px auto 0;padding-top:22px;border-top:1px solid rgba(148,163,184,0.15);scroll-margin-top:18px;text-align:center;}
 .hero-search-panel h2{margin:0 0 6px;color:#eef2f6;font-size:22px;line-height:1.2;}
 .hero-search-panel>p{margin:0 0 14px;color:#aebdca;line-height:1.5;}
 .hero-search-panel .smart-search{width:100%;max-width:none;}
@@ -12086,7 +12086,7 @@ a:hover{text-decoration:underline;}
 .product-steps-header p{margin:0;color:#9fb0bf;line-height:1.55;}
 .product-step-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}
 .product-step{padding:15px 16px;border-radius:17px;background:rgba(2,6,23,0.28);border:1px solid rgba(148,163,184,0.12);}
-.product-step-number{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-bottom:9px;border-radius:999px;background:rgba(74,222,163,0.13);color:#86efac;font-weight:950;}
+.product-step-number{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;line-height:1;flex:0 0 30px;margin-bottom:9px;border-radius:50%;background:rgba(74,222,163,0.13);color:#86efac;font-weight:950;}
 .product-step strong{display:block;color:#e8eef4;font-size:16px;margin-bottom:5px;}
 .product-step span{display:block;color:#9fb0bf;font-size:13px;line-height:1.45;}
 .free-report-preview{padding:24px 28px;}
@@ -12148,6 +12148,10 @@ a:hover{text-decoration:underline;}
 .hero-card h1{color:#f2f5f8;max-width:980px;margin:0 0 18px;font-size:var(--font-hero);line-height:1.04;letter-spacing:0;}
 .hero-card .hero-subtitle{color:#bdc9d5;line-height:1.68;max-width:900px;font-size:16px;margin:0;}
 .public-hero .hero-subtitle{max-width:720px;font-size:18px;line-height:1.55;}
+.public-hero{text-align:center;padding:clamp(28px,3.5vw,42px);}
+.public-hero h1{max-width:820px;margin:0 auto 14px;font-weight:950;}
+.public-hero .hero-subtitle{margin:0 auto;}
+.public-hero .public-home-actions{justify-content:center;}
 .hero-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:24px;}
 .public-home-actions{overflow:visible;}
 .public-portfolio-cta{display:inline-flex;align-items:center;justify-content:center;visibility:visible;opacity:1;}
@@ -14271,11 +14275,10 @@ def dashboard():
     data["market_news_ticker_limit"] = MARKET_NEWS_TICKER_LIMIT
     data["owner_logged_in"] = owner_has_access()
     data["has_premium_access"] = premium_has_access()
-    data["is_public_home"] = (
-        not request.args.get("tab")
-        and not data["owner_logged_in"]
-        and not data["has_premium_access"]
-    )
+    # Entitlements change capabilities, not the design system. The canonical
+    # homepage remains the modern public shell for every authentication state;
+    # explicit dashboard tabs remain available for advanced/owner workflows.
+    data["is_public_home"] = not request.args.get("tab")
     data["free_report_preview"] = build_homepage_free_report_preview(
         data.get("recommendations", [])
     )
@@ -14775,7 +14778,7 @@ def login():
             reset_login_failures(email)
             session.clear()
             session["owner_logged_in"] = True
-            return redirect(url_for("owner"))
+            return redirect(url_for("dashboard"))
         else:
             record_login_failure(email)
             retry_after = login_rate_limit_status(email)

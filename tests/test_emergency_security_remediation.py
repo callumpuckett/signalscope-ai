@@ -105,7 +105,7 @@ def test_login_accepts_password_hash_and_rotates_session():
     )
 
     assert response.status_code == 302
-    assert response.headers["Location"].endswith("/owner")
+    assert response.headers["Location"].endswith("/")
     with client.session_transaction() as current_session:
         assert dict(current_session) == {"owner_logged_in": True}
 
@@ -123,7 +123,7 @@ def test_login_plaintext_migration_fallback_preserves_owner_access(monkeypatch):
     )
 
     assert response.status_code == 302
-    assert response.headers["Location"].endswith("/owner")
+    assert response.headers["Location"].endswith("/")
 
 
 def test_login_failure_is_generic_for_known_unknown_and_unconfigured(monkeypatch):

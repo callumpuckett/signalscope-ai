@@ -306,12 +306,8 @@ def test_account_manage_subscription_is_not_rendered_for_anonymous_users():
 
 def test_account_manage_subscription_follows_owner_account_control():
     page = render_dashboard(owner=True).get_data(as_text=True)
-    account_control = '<a class="nav-link pro-button" href="/owner">✅ Premium Active</a>'
-    manage_link = (
-        '<a class="nav-link account-manage-subscription" '
-        'data-account-manage-subscription="true" '
-        'href="/manage-subscription">Manage Subscription</a>'
-    )
+    account_control = 'href="/owner">Premium Active</a>'
+    manage_link = 'href="/manage-subscription">Manage Subscription</a>'
 
     assert manage_link in page
     assert page.index(account_control) < page.index(manage_link) < page.index('action="/logout"')
@@ -320,15 +316,8 @@ def test_account_manage_subscription_follows_owner_account_control():
 
 def test_account_manage_subscription_follows_premium_session_control():
     page = render_dashboard(premium=True).get_data(as_text=True)
-    account_control = (
-        '<a class="nav-link pro-button" '
-        'href="/manage-subscription">✅ Premium Active</a>'
-    )
-    manage_link = (
-        '<a class="nav-link account-manage-subscription" '
-        'data-account-manage-subscription="true" '
-        'href="/manage-subscription">Manage Subscription</a>'
-    )
+    account_control = 'href="/manage-subscription">Premium Active</a>'
+    manage_link = 'href="/manage-subscription">Manage Subscription</a>'
 
     assert manage_link in page
     assert page.index(account_control) < page.index(manage_link) < page.index('action="/logout"')
