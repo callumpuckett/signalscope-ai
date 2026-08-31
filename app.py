@@ -12086,7 +12086,7 @@ a:hover{text-decoration:underline;}
 .product-steps-header p{margin:0;color:#9fb0bf;line-height:1.55;}
 .product-step-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}
 .product-step{padding:15px 16px;border-radius:17px;background:rgba(2,6,23,0.28);border:1px solid rgba(148,163,184,0.12);}
-.product-step-number{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;line-height:1;flex:0 0 30px;margin-bottom:9px;border-radius:50%;background:rgba(74,222,163,0.13);color:#86efac;font-weight:950;}
+.product-step .product-step-number{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;line-height:1;flex:0 0 30px;margin-bottom:9px;border-radius:50%;background:rgba(74,222,163,0.13);color:#86efac;font-weight:950;}
 .product-step strong{display:block;color:#e8eef4;font-size:16px;margin-bottom:5px;}
 .product-step span{display:block;color:#9fb0bf;font-size:13px;line-height:1.45;}
 .free-report-preview{padding:24px 28px;}

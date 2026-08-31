@@ -75,6 +75,7 @@ def test_logged_out_homepage_has_compact_public_navigation_and_stock_search():
     assert "Choose a company or fund you recognise." in page
     assert "See the current signal in plain English." in page
     assert "Learn what evidence and risks may matter next." in page
+    assert ".product-step .product-step-number{display:inline-flex;align-items:center;justify-content:center;" in page
 
     assert "📊 AI Signals" not in page
     assert "🧠 Premium Watchlist" not in page
