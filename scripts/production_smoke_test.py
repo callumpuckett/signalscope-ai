@@ -27,6 +27,7 @@ DEFAULT_TIMEOUT_MS = 20_000
 IGNORED_CONSOLE_ERRORS = (
     "a listener indicated an asynchronous response",
     "the content security policy directive 'upgrade-insecure-requests' is ignored when delivered in a report-only policy",
+    "%c%d font-size:0;color:transparent nan",
 )
 
 

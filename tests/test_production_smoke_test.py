@@ -48,14 +48,19 @@ class ConsoleMessage:
         self.text = text
 
 
-def test_browser_signals_ignore_report_only_upgrade_warning():
-    signals = smoke.BrowserSignals("https://www.stockradarhq.com")
-    signals._console(
-        ConsoleMessage(
+@pytest.mark.parametrize(
+    "message",
+    [
+        (
             "The Content Security Policy directive 'upgrade-insecure-requests' "
             "is ignored when delivered in a report-only policy."
-        )
-    )
+        ),
+        "%c%d font-size:0;color:transparent NaN",
+    ],
+)
+def test_browser_signals_ignore_known_non_application_console_noise(message):
+    signals = smoke.BrowserSignals("https://www.stockradarhq.com")
+    signals._console(ConsoleMessage(message))
 
     assert signals.console_errors == []
 
