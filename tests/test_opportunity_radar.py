@@ -230,3 +230,64 @@ def test_opportunity_storage_defaults_are_postgresql_application_state_stores():
     assert {"opportunity_radar", "opportunity_alerts"}.issubset(
         newsletter_storage.APPLICATION_STATE_STORES
     )
+
+
+def test_shared_header_uses_stronger_desktop_brand_without_changing_mobile_scale():
+    with app.app.test_request_context("/opportunities"):
+        header = app.stockradar_header_navigation("app")
+
+    assert ".public-header .logo{display:block;width:250px;max-width:250px" in header
+    assert "max-width:250px;max-height:65px" in header
+    assert "padding:10px max(24px" in header
+    assert "flex-wrap:nowrap" in header
+    assert ".public-header .logo{width:154px;}" in header
+    assert "max-width:154px;max-height:42px" in header
+
+
+def test_homepage_promotes_daily_opportunity_research_without_extra_marketing_section():
+    dashboard_data = {
+        "market_status": {
+            "uk_status": "CLOSED", "uk_time": "00:00",
+            "us_status": "CLOSED", "us_time": "00:00",
+        }
+    }
+    with (
+        patch.object(app, "get_cached_dashboard_data", return_value=dashboard_data),
+        patch.object(app, "get_stock_universe", return_value=[]),
+    ):
+        free_page = app.app.test_client().get("/").get_data(as_text=True)
+
+    assert "Opportunity Radar" in free_page
+    assert "StockRadar scans daily to highlight the strongest research opportunities" in free_page
+    assert 'href="/upgrade"><span>Upgrade to Premium' in free_page
+    assert 'href="/opportunities"><span>See today’s strongest' not in free_page
+
+
+def test_premium_homepage_and_upgrade_page_link_directly_to_opportunities():
+    dashboard_data = {
+        "market_status": {
+            "uk_status": "CLOSED", "uk_time": "00:00",
+            "us_status": "CLOSED", "us_time": "00:00",
+        }
+    }
+    client = app.app.test_client()
+    with client.session_transaction() as current_session:
+        current_session["owner_logged_in"] = True
+    with (
+        patch.object(app, "get_cached_dashboard_data", return_value=dashboard_data),
+        patch.object(app, "get_stock_universe", return_value=[]),
+    ):
+        premium_home = client.get("/").get_data(as_text=True)
+        premium_upgrade = client.get("/upgrade").get_data(as_text=True)
+
+    assert 'href="/opportunities"><span>See today’s strongest StockRadar research opportunities</span>' in premium_home
+    assert 'href="/opportunities">Open StockRadar Opportunities</a>' in premium_upgrade
+
+
+def test_free_upgrade_page_explains_and_links_to_opportunity_preview():
+    with patch.object(app, "premium_has_access", return_value=False):
+        page = app.app.test_client().get("/upgrade").get_data(as_text=True)
+
+    assert "Daily Opportunity Radar" in page
+    assert "See today’s strongest StockRadar research opportunities" in page
+    assert 'href="/opportunities">Preview Opportunities</a>' in page

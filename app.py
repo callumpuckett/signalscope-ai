@@ -575,13 +575,13 @@ def stockradar_logout_control(item, location="app-header"):
 
 STOCKRADAR_HEADER_NAVIGATION_TEMPLATE = """
 <style id="stockradar-primary-navigation-styles">
-.public-header{position:relative;z-index:11000;width:100%;padding:16px max(28px,env(safe-area-inset-right)) 16px max(28px,env(safe-area-inset-left));background:rgba(7,17,24,.96);border-bottom:1px solid rgba(148,163,184,.12);backdrop-filter:blur(18px);}
-.public-header-inner{position:relative;display:flex;align-items:center;justify-content:space-between;gap:22px;width:min(1180px,100%);margin:0 auto;}
-.public-header .logo{display:block;width:216px;margin:0;flex:0 0 auto;text-decoration:none;}
-.public-header .logo-img{display:block;width:100%;max-width:216px;max-height:56px;height:auto;object-fit:contain;image-rendering:auto;}
+.public-header{position:relative;z-index:11000;width:100%;padding:10px max(24px,env(safe-area-inset-right)) 10px max(24px,env(safe-area-inset-left));background:rgba(7,17,24,.96);border-bottom:1px solid rgba(148,163,184,.12);backdrop-filter:blur(18px);}
+.public-header-inner{position:relative;display:flex;align-items:center;justify-content:space-between;gap:18px;width:min(1180px,100%);margin:0 auto;}
+.public-header .logo{display:block;width:250px;max-width:250px;margin:0;flex:0 0 auto;text-decoration:none;}
+.public-header .logo-img{display:block;width:100%;max-width:250px;max-height:65px;height:auto;object-fit:contain;image-rendering:auto;}
 .public-header .logo-fallback{display:none;font-size:25px;font-weight:950;background:linear-gradient(135deg,#fff,#00ffaa,#ffb86b);-webkit-background-clip:text;color:transparent;}
-.public-nav-links{box-sizing:border-box;display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
-.public-nav-link{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 12px;border-radius:13px;color:#d6e0e9;text-decoration:none;font:900 13px/1.2 Arial,sans-serif;white-space:nowrap;}
+.public-nav-links{box-sizing:border-box;display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:nowrap;min-width:0;}
+.public-nav-link{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 10px;border-radius:13px;color:#d6e0e9;text-decoration:none;font:900 13px/1.2 Arial,sans-serif;white-space:nowrap;}
 .public-nav-link:hover{background:rgba(148,163,184,.09);text-decoration:none;}
 .public-nav-logout-form{display:inline-flex;margin:0;}
 .public-nav-logout-form .public-nav-link{border:0;background:transparent;cursor:pointer;}
@@ -12521,12 +12521,12 @@ a:hover{text-decoration:underline;}
 .main{flex:1;padding:44px;overflow-y:auto;max-width:1500px;margin:0 auto;display:flex;flex-direction:column;}
 .public-main{max-width:1180px;overflow:visible;}
 .top-intel-layout{display:grid;grid-template-columns:1fr;gap:14px;align-items:start;margin-bottom:22px;}
-.public-header{position:relative;z-index:60;width:100%;padding:16px 28px;background:rgba(7,17,24,0.94);border-bottom:1px solid rgba(148,163,184,0.12);backdrop-filter:blur(18px);}
-.public-header-inner{display:flex;align-items:center;justify-content:space-between;gap:24px;width:min(1180px,100%);margin:0 auto;}
-.public-header .logo{width:216px;margin:0;flex:0 0 auto;}
-.public-header .logo-img{max-width:216px;max-height:56px;image-rendering:auto;}
-.public-nav-links{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
-.public-nav-link{display:inline-flex;align-items:center;justify-content:center;padding:10px 12px;border-radius:13px;color:#d6e0e9;text-decoration:none;font-size:13px;font-weight:900;white-space:nowrap;}
+.public-header{position:relative;z-index:60;width:100%;padding:10px 24px;background:rgba(7,17,24,0.94);border-bottom:1px solid rgba(148,163,184,0.12);backdrop-filter:blur(18px);}
+.public-header-inner{display:flex;align-items:center;justify-content:space-between;gap:18px;width:min(1180px,100%);margin:0 auto;}
+.public-header .logo{width:250px;max-width:250px;margin:0;flex:0 0 auto;}
+.public-header .logo-img{max-width:250px;max-height:65px;image-rendering:auto;}
+.public-nav-links{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:nowrap;min-width:0;}
+.public-nav-link{display:inline-flex;align-items:center;justify-content:center;padding:10px 10px;border-radius:13px;color:#d6e0e9;text-decoration:none;font-size:13px;font-weight:900;white-space:nowrap;}
 .public-nav-link:hover{background:rgba(148,163,184,0.09);text-decoration:none;}
 .public-nav-login{display:inline-flex;visibility:visible;opacity:1;border:1px solid rgba(148,163,184,0.24);background:rgba(148,163,184,0.08);}
 .public-nav-primary{background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;}
@@ -12968,16 +12968,16 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
             <div class="premium-home-feature"><strong>Risk Read</strong><span>Spot caution points and what could weaken the case.</span></div>
             <div class="premium-home-feature"><strong>Portfolio Fit</strong><span>Check role, concentration and duplicate exposure.</span></div>
             <div class="premium-home-feature"><strong>Compare Stocks</strong><span>Review two tickers side by side before choosing.</span></div>
-            <div class="premium-home-feature"><strong>Premium Watchlist</strong><span>Turn signals into strongest, caution and theme views.</span></div>
+            <div class="premium-home-feature"><strong>Opportunity Radar</strong><span>StockRadar scans daily to highlight the strongest research opportunities.</span></div>
             <div class="premium-home-feature"><strong>Before You Act</strong><span>Use a checklist before treating a signal as actionable research.</span></div>
             <div class="premium-home-feature premium-home-tier"><strong>Free</strong><span>Signal preview, market news, basic research prompts and StockRadar Weekly.</span></div>
             <div class="premium-home-feature premium-home-tier"><strong>Premium</strong><span>Full reasoning, risk read, portfolio fit, comparisons and before-you-act checks.</span></div>
         </div>
         <div class="premium-home-actions">
             {% if has_premium_access %}
-            <a class="premium-home-cta-banner" href="/premium-watchlist"><span>Open Premium Watchlist</span><small>Free shows the signal. Premium explains the decision.</small></a>
+            <a class="premium-home-cta-banner" href="/opportunities"><span>See today’s strongest StockRadar research opportunities</span><small>Open the daily Premium Opportunity Radar.</small></a>
             {% else %}
-            <a class="premium-home-cta-banner" href="/upgrade"><span>Upgrade to Premium — £5/month</span><small>Free shows the signal. Premium explains the decision.</small></a>
+            <a class="premium-home-cta-banner" href="/upgrade"><span>Upgrade to Premium — £5/month</span><small>Unlock daily opportunity research, signal reasoning and risk context.</small></a>
             {% endif %}
         </div>
     </div>
@@ -13542,16 +13542,16 @@ upgrade_html = """
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>StockRadar Premium — Research Tools</title>
-<meta name="description" content="Preview StockRadar Premium research tools for deeper signal context, watchlist intelligence and portfolio-fit checks.">
+<meta name="description" content="Preview StockRadar Premium daily opportunity research, deeper signal context, watchlist intelligence and portfolio-fit checks.">
 <link rel="canonical" href="https://www.stockradarhq.com/upgrade">
 <meta property="og:title" content="StockRadar Premium — Research Tools">
-<meta property="og:description" content="Preview deeper StockRadar signal context, watchlist intelligence and portfolio-fit research tools.">
+<meta property="og:description" content="Preview daily StockRadar opportunities, deeper signal context, watchlist intelligence and portfolio-fit research tools.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://www.stockradarhq.com/upgrade">
 <meta property="og:site_name" content="StockRadar">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="StockRadar Premium — Research Tools">
-<meta name="twitter:description" content="Preview deeper StockRadar signal context, watchlist intelligence and portfolio-fit research tools.">
+<meta name="twitter:description" content="Preview daily StockRadar opportunities, deeper signal context, watchlist intelligence and portfolio-fit research tools.">
 <style>
 *{box-sizing:border-box;}
 :root{--font-hero:clamp(40px,5vw,52px);--font-section:clamp(26px,2.4vw,34px);--font-card-title:18px;--font-body:16px;--font-small:13px;--font-kicker:11px;--font-cta:14px;}
@@ -13602,7 +13602,8 @@ p{color:#cbd5e1;line-height:1.68;font-size:var(--font-body);}
     <div class="card active-card">
         <span class="badge">Premium active</span>
 <h1><span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:999px;background:#45e6a8;color:#071018;font-weight:950;font-size:13px;margin-right:7px;vertical-align:middle;" aria-hidden="true">✓</span> Premium is already active.</h1>
-        <p>Premium access is active for this session. You do not need to purchase again. Premium decision panels, watchlist intelligence and portfolio-fit checks are unlocked.</p>
+        <p>Premium access is active for this session. You do not need to purchase again. Daily Opportunity Radar, decision panels, watchlist intelligence and portfolio-fit checks are unlocked.</p>
+        <a class="button" href="/opportunities">Open StockRadar Opportunities</a>
         <a class="button" href="/stock/AAPL">Open Premium Stock Page</a>
         <a class="button secondary" href="/">Return to Dashboard</a>
     </div>
@@ -13615,7 +13616,7 @@ p{color:#cbd5e1;line-height:1.68;font-size:var(--font-body);}
             <p>Free tells you the signal. Premium explains why it matters, what risk to check, where the stock may fit and what to research next.</p>
             <div class="feature"><span class="tick">✓</span><span><strong>Why this signal?</strong> Read the reasoning behind the headline BUY, HOLD or SELL research prompt.</span></div>
             <div class="feature"><span class="tick">✓</span><span><strong>What could go wrong?</strong> Check risk level, concentration warning and caution notes before adding exposure.</span></div>
-            <div class="feature"><span class="tick">✓</span><span><strong>What deserves attention?</strong> Use Premium Watchlist to sort strongest setups, caution names and portfolio buckets.</span></div>
+            <div class="feature"><span class="tick">✓</span><span><strong>What deserves attention?</strong> Opportunity Radar scans daily to rank the strongest StockRadar research opportunities.</span></div>
         </div>
         <div class="card">
             <span class="badge">{% if premium_payments_enabled %}Premium plan{% else %}Premium preview{% endif %}</span>
@@ -13662,6 +13663,7 @@ p{color:#cbd5e1;line-height:1.68;font-size:var(--font-body);}
         <h2 style="margin-top:16px;">A decision-support and education layer — not another broker screen.</h2>
         <p class="difference-lead">Standard trading apps help you view prices and place trades. StockRadar Premium helps you slow down, understand the signal and decide what deserves further research without information overload.</p>
         <div class="grid">
+            <div class="mini"><strong>Daily Opportunity Radar</strong>See today’s strongest StockRadar research opportunities, score movement and ranking context. <a href="/opportunities">Preview Opportunities</a>.</div>
             <div class="mini"><strong>Plain-English signal reasoning</strong>Understand why the current prompt is showing.</div>
             <div class="mini"><strong>Risk read before you act</strong>See what could weaken the research case.</div>
             <div class="mini"><strong>Portfolio-fit context</strong>Check role and possible duplicate exposure.</div>
