@@ -195,7 +195,12 @@ def test_premium_and_owner_root_sessions_keep_modern_homepage_navigation():
         assert '<body class="public-home" data-public-home="true">' in page
         assert '<div class="sidebar">' not in page
         assert '<header class="public-header">' in page
-        assert "Premium Active" in page
+        assert 'href="/upgrade">Premium</a>' not in page
+        assert 'href="/owner">Premium Active</a>' not in page
+        assert 'href="/manage-subscription">Premium Active</a>' not in page
+        assert 'href="/manage-subscription">Manage Subscription</a>' in page
+        assert 'href="/opportunities">Opportunities</a>' in page
+        assert 'action="/logout"' in page
 
 
 def test_non_entitled_session_can_still_open_the_public_homepage():
@@ -215,6 +220,8 @@ def test_non_entitled_session_can_still_open_the_public_homepage():
     assert response.status_code == 200
     assert '<body class="public-home" data-public-home="true">' in page
     assert '<header class="public-header">' in page
+    assert 'href="/upgrade">Premium</a>' in page
+    assert 'href="/manage-subscription">Manage Subscription</a>' not in page
 
 
 def test_public_search_keeps_company_ticker_etf_and_index_resolution():

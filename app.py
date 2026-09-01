@@ -468,6 +468,10 @@ def stockradar_navigation_sections(location, active_tab=""):
                 continue
             if location not in navigation_item["locations"]:
                 continue
+            if has_premium_access and navigation_item["id"] in {
+                "premium", "owner-account", "premium-account"
+            }:
+                continue
             if not navigation_access_matches(
                 navigation_item["access"],
                 owner_logged_in,

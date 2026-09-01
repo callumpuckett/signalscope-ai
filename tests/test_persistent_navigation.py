@@ -302,23 +302,30 @@ def test_account_manage_subscription_is_not_rendered_for_anonymous_users():
 
     assert 'data-account-manage-subscription="true"' not in page
     assert 'href="/manage-subscription"' not in page
+    assert 'href="/upgrade">Premium</a>' in page
 
 
-def test_account_manage_subscription_follows_owner_account_control():
+def test_owner_navigation_removes_redundant_premium_links_only():
     page = render_dashboard(owner=True).get_data(as_text=True)
-    account_control = 'href="/owner">Premium Active</a>'
     manage_link = 'href="/manage-subscription">Manage Subscription</a>'
 
     assert manage_link in page
-    assert page.index(account_control) < page.index(manage_link) < page.index('action="/logout"')
+    assert 'href="/upgrade">Premium</a>' not in page
+    assert 'href="/owner">Premium Active</a>' not in page
+    assert 'href="/manage-subscription">Premium Active</a>' not in page
+    assert page.index(manage_link) < page.index('action="/logout"')
+    assert 'href="/opportunities">Opportunities</a>' in page
     assert manage_link not in app.disclaimer_footer()
 
 
-def test_account_manage_subscription_follows_premium_session_control():
+def test_active_premium_navigation_removes_redundant_premium_links_only():
     page = render_dashboard(premium=True).get_data(as_text=True)
-    account_control = 'href="/manage-subscription">Premium Active</a>'
     manage_link = 'href="/manage-subscription">Manage Subscription</a>'
 
     assert manage_link in page
-    assert page.index(account_control) < page.index(manage_link) < page.index('action="/logout"')
+    assert 'href="/upgrade">Premium</a>' not in page
+    assert 'href="/owner">Premium Active</a>' not in page
+    assert 'href="/manage-subscription">Premium Active</a>' not in page
+    assert page.index(manage_link) < page.index('action="/logout"')
+    assert 'href="/opportunities">Opportunities</a>' in page
     assert manage_link not in app.disclaimer_footer()
