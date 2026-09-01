@@ -575,10 +575,10 @@ def stockradar_logout_control(item, location="app-header"):
 
 STOCKRADAR_HEADER_NAVIGATION_TEMPLATE = """
 <style id="stockradar-primary-navigation-styles">
-.public-header{box-sizing:border-box;position:relative;z-index:11000;width:100%;padding:10px max(24px,env(safe-area-inset-right)) 10px max(24px,env(safe-area-inset-left));background:rgba(7,17,24,.96);border-bottom:1px solid rgba(148,163,184,.12);backdrop-filter:blur(18px);}
-.public-header-inner{position:relative;display:grid;grid-template-columns:250px minmax(0,1fr) auto;align-items:center;gap:18px;width:min(1180px,100%);margin:0 auto;}
-.public-header .logo{display:block;width:250px;max-width:250px;margin:0;flex:0 0 auto;text-decoration:none;}
-.public-header .logo-img{display:block;width:100%;max-width:250px;max-height:65px;height:auto;object-fit:contain;image-rendering:auto;}
+.public-header{box-sizing:border-box;position:relative;z-index:11000;width:100%;padding:3px max(24px,env(safe-area-inset-right));background:rgba(7,17,24,.96);border-bottom:1px solid rgba(148,163,184,.12);backdrop-filter:blur(18px);}
+.public-header-inner{position:relative;display:grid;grid-template-columns:310px minmax(0,1fr) auto;align-items:center;gap:18px;width:min(1180px,100%);margin:0 auto;}
+.public-header .logo{display:block;width:310px;max-width:310px;margin:0;flex:0 0 auto;text-decoration:none;}
+.public-header .logo-img{display:block;width:100%;max-width:310px;max-height:none;height:auto;object-fit:contain;image-rendering:auto;}
 .public-header .logo-fallback{display:none;font-size:25px;font-weight:950;background:linear-gradient(135deg,#fff,#00ffaa,#ffb86b);-webkit-background-clip:text;color:transparent;}
 .public-nav-links{box-sizing:border-box;grid-column:2/4;display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:nowrap;min-width:0;}
 .public-nav-link{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 10px;border-radius:13px;color:#d6e0e9;text-decoration:none;font:900 13px/1.2 Arial,sans-serif;white-space:nowrap;}
@@ -595,7 +595,7 @@ STOCKRADAR_HEADER_NAVIGATION_TEMPLATE = """
 .public-header-inner.nav-density-high .public-nav-link,.public-header-inner.nav-density-high .public-nav-logout-form{width:100%;}
 .public-header-inner.nav-density-high .public-nav-link{justify-content:flex-start;padding:12px 14px;white-space:normal;text-align:left;}
 @media(max-width:1100px){
-    .public-header-inner{grid-template-columns:250px minmax(0,1fr) auto;}
+    .public-header-inner{grid-template-columns:310px minmax(0,1fr) auto;}
     .stockradar-menu-toggle{display:inline-flex;grid-column:3;}
     .public-nav-links{display:none;position:absolute;top:calc(100% + 10px);right:0;left:auto;z-index:11001;width:min(420px,calc(100vw - 48px));max-height:calc(100dvh - 112px);grid-template-columns:1fr;gap:6px;padding:10px;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;border:1px solid rgba(148,163,184,.22);border-radius:18px;background:#0b1521;box-shadow:0 24px 70px rgba(0,0,0,.58);}
     .public-header-inner.nav-menu-open .public-nav-links{display:grid;}
@@ -603,10 +603,10 @@ STOCKRADAR_HEADER_NAVIGATION_TEMPLATE = """
     .public-nav-link{justify-content:flex-start;padding:12px 14px;white-space:normal;text-align:left;}
 }
 @media(max-width:700px){
-    .public-header{padding:calc(12px + env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) 12px max(14px,env(safe-area-inset-left));}
+    .public-header{padding:calc(4px + env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) 4px max(14px,env(safe-area-inset-left));}
     .public-header-inner{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;}
-    .public-header .logo{width:154px;}
-    .public-header .logo-img{max-width:154px;max-height:42px;}
+    .public-header .logo{width:190px;}
+    .public-header .logo-img{max-width:190px;max-height:none;}
     .stockradar-menu-toggle,.public-header-inner.nav-density-high .stockradar-menu-toggle{display:inline-flex;grid-column:2;}
     .public-nav-links{display:none;position:absolute;top:calc(100% + 10px);right:0;left:0;z-index:11001;grid-template-columns:1fr;gap:6px;max-height:calc(100dvh - 92px - env(safe-area-inset-top) - env(safe-area-inset-bottom));padding:10px 10px max(10px,env(safe-area-inset-bottom));overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;border:1px solid rgba(148,163,184,.22);border-radius:18px;background:#0b1521;box-shadow:0 24px 70px rgba(0,0,0,.58);}
     .public-nav-links,.public-header-inner.nav-density-high .public-nav-links{grid-column:1/-1;right:0;left:0;width:auto;max-height:calc(100dvh - 92px - env(safe-area-inset-top) - env(safe-area-inset-bottom));}

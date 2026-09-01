@@ -232,16 +232,16 @@ def test_opportunity_storage_defaults_are_postgresql_application_state_stores():
     )
 
 
-def test_shared_header_uses_stronger_desktop_brand_without_changing_mobile_scale():
+def test_shared_header_uses_flagship_desktop_brand_with_proportionate_mobile_scale():
     with app.app.test_request_context("/opportunities"):
         header = app.stockradar_header_navigation("app")
 
-    assert ".public-header .logo{display:block;width:250px;max-width:250px" in header
-    assert "max-width:250px;max-height:65px" in header
-    assert "padding:10px max(24px" in header
+    assert ".public-header .logo{display:block;width:310px;max-width:310px" in header
+    assert "width:100%;max-width:310px;max-height:none;height:auto" in header
+    assert "padding:3px max(24px" in header
     assert "flex-wrap:nowrap" in header
-    assert ".public-header .logo{width:154px;}" in header
-    assert "max-width:154px;max-height:42px" in header
+    assert ".public-header .logo{width:190px;}" in header
+    assert "max-width:190px;max-height:none" in header
 
 
 def test_dense_authenticated_header_uses_accessible_overflow_menu():
@@ -266,7 +266,7 @@ def test_header_reserves_logo_column_and_mobile_overrides_dense_layout():
     with app.app.test_request_context("/"):
         header = app.stockradar_header_navigation("public")
 
-    assert "grid-template-columns:250px minmax(0,1fr) auto" in header
+    assert "grid-template-columns:310px minmax(0,1fr) auto" in header
     assert ".public-header{box-sizing:border-box;" in header
     assert "@media(max-width:1100px)" in header
     assert ".stockradar-menu-toggle,.public-header-inner.nav-density-high .stockradar-menu-toggle{display:inline-flex;grid-column:2;}" in header
