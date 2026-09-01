@@ -575,12 +575,12 @@ def stockradar_logout_control(item, location="app-header"):
 
 STOCKRADAR_HEADER_NAVIGATION_TEMPLATE = """
 <style id="stockradar-primary-navigation-styles">
-.public-header{position:relative;z-index:11000;width:100%;padding:10px max(24px,env(safe-area-inset-right)) 10px max(24px,env(safe-area-inset-left));background:rgba(7,17,24,.96);border-bottom:1px solid rgba(148,163,184,.12);backdrop-filter:blur(18px);}
-.public-header-inner{position:relative;display:flex;align-items:center;justify-content:space-between;gap:18px;width:min(1180px,100%);margin:0 auto;}
+.public-header{box-sizing:border-box;position:relative;z-index:11000;width:100%;padding:10px max(24px,env(safe-area-inset-right)) 10px max(24px,env(safe-area-inset-left));background:rgba(7,17,24,.96);border-bottom:1px solid rgba(148,163,184,.12);backdrop-filter:blur(18px);}
+.public-header-inner{position:relative;display:grid;grid-template-columns:250px minmax(0,1fr) auto;align-items:center;gap:18px;width:min(1180px,100%);margin:0 auto;}
 .public-header .logo{display:block;width:250px;max-width:250px;margin:0;flex:0 0 auto;text-decoration:none;}
 .public-header .logo-img{display:block;width:100%;max-width:250px;max-height:65px;height:auto;object-fit:contain;image-rendering:auto;}
 .public-header .logo-fallback{display:none;font-size:25px;font-weight:950;background:linear-gradient(135deg,#fff,#00ffaa,#ffb86b);-webkit-background-clip:text;color:transparent;}
-.public-nav-links{box-sizing:border-box;display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:nowrap;min-width:0;}
+.public-nav-links{box-sizing:border-box;grid-column:2/4;display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:nowrap;min-width:0;}
 .public-nav-link{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 10px;border-radius:13px;color:#d6e0e9;text-decoration:none;font:900 13px/1.2 Arial,sans-serif;white-space:nowrap;}
 .public-nav-link:hover{background:rgba(148,163,184,.09);text-decoration:none;}
 .public-nav-logout-form{display:inline-flex;margin:0;}
@@ -589,13 +589,27 @@ STOCKRADAR_HEADER_NAVIGATION_TEMPLATE = """
 .public-nav-primary{background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;}
 .stockradar-menu-toggle{display:none;align-items:center;justify-content:center;min-width:48px;min-height:44px;margin:0;padding:10px 14px;border:1px solid rgba(148,163,184,.28);border-radius:13px;background:rgba(148,163,184,.10);color:#f8fafc;font:900 14px/1 Arial,sans-serif;cursor:pointer;}
 .stockradar-menu-toggle:focus-visible,.public-nav-link:focus-visible{outline:3px solid #fbbf24;outline-offset:3px;}
+.public-header-inner.nav-density-high .stockradar-menu-toggle{display:inline-flex;grid-column:3;}
+.public-header-inner.nav-density-high .public-nav-links{display:none;position:absolute;top:calc(100% + 10px);right:0;left:auto;z-index:11001;width:min(420px,calc(100vw - 48px));max-height:calc(100dvh - 112px);grid-template-columns:1fr;gap:6px;padding:10px;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;border:1px solid rgba(148,163,184,.22);border-radius:18px;background:#0b1521;box-shadow:0 24px 70px rgba(0,0,0,.58);}
+.public-header-inner.nav-density-high.nav-menu-open .public-nav-links{display:grid;}
+.public-header-inner.nav-density-high .public-nav-link,.public-header-inner.nav-density-high .public-nav-logout-form{width:100%;}
+.public-header-inner.nav-density-high .public-nav-link{justify-content:flex-start;padding:12px 14px;white-space:normal;text-align:left;}
+@media(max-width:1100px){
+    .public-header-inner{grid-template-columns:250px minmax(0,1fr) auto;}
+    .stockradar-menu-toggle{display:inline-flex;grid-column:3;}
+    .public-nav-links{display:none;position:absolute;top:calc(100% + 10px);right:0;left:auto;z-index:11001;width:min(420px,calc(100vw - 48px));max-height:calc(100dvh - 112px);grid-template-columns:1fr;gap:6px;padding:10px;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;border:1px solid rgba(148,163,184,.22);border-radius:18px;background:#0b1521;box-shadow:0 24px 70px rgba(0,0,0,.58);}
+    .public-header-inner.nav-menu-open .public-nav-links{display:grid;}
+    .public-nav-link,.public-nav-logout-form{width:100%;}
+    .public-nav-link{justify-content:flex-start;padding:12px 14px;white-space:normal;text-align:left;}
+}
 @media(max-width:700px){
     .public-header{padding:calc(12px + env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) 12px max(14px,env(safe-area-inset-left));}
     .public-header-inner{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;}
     .public-header .logo{width:154px;}
     .public-header .logo-img{max-width:154px;max-height:42px;}
-    .stockradar-menu-toggle{display:inline-flex;}
+    .stockradar-menu-toggle,.public-header-inner.nav-density-high .stockradar-menu-toggle{display:inline-flex;grid-column:2;}
     .public-nav-links{display:none;position:absolute;top:calc(100% + 10px);right:0;left:0;z-index:11001;grid-template-columns:1fr;gap:6px;max-height:calc(100dvh - 92px - env(safe-area-inset-top) - env(safe-area-inset-bottom));padding:10px 10px max(10px,env(safe-area-inset-bottom));overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;border:1px solid rgba(148,163,184,.22);border-radius:18px;background:#0b1521;box-shadow:0 24px 70px rgba(0,0,0,.58);}
+    .public-nav-links,.public-header-inner.nav-density-high .public-nav-links{grid-column:1/-1;right:0;left:0;width:auto;max-height:calc(100dvh - 92px - env(safe-area-inset-top) - env(safe-area-inset-bottom));}
     .public-header-inner.nav-menu-open .public-nav-links{display:grid;}
     .public-nav-link{width:100%;justify-content:flex-start;padding:12px 14px;white-space:normal;text-align:left;}
 }
@@ -603,10 +617,10 @@ STOCKRADAR_HEADER_NAVIGATION_TEMPLATE = """
     .public-header{padding-top:max(12px,env(safe-area-inset-top));}
     .public-nav-links{padding-bottom:max(10px,env(safe-area-inset-bottom));}
 }
-@media(min-width:701px){.public-nav-links{display:flex!important;}.public-nav-links[aria-hidden="true"]{display:flex!important;}}
+@media(min-width:1101px){.public-header-inner:not(.nav-density-high) .public-nav-links{display:flex!important;}.public-header-inner:not(.nav-density-high) .public-nav-links[aria-hidden="true"]{display:flex!important;}}
 </style>
 <header class="public-header">
-    <div class="public-header-inner" data-stockradar-navigation="true">
+    <div class="public-header-inner{% if navigation_density_high %} nav-density-high{% endif %}" data-stockradar-navigation="true">
         <a class="logo" href="/" aria-label="StockRadar home"><img class="logo-img" src="/static/stockradar-main-logo.png" alt="StockRadar" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-block';"><span class="logo-fallback">StockRadar</span></a>
         <button class="stockradar-menu-toggle" type="button" aria-expanded="false" aria-controls="stockradar-primary-menu" data-stockradar-menu-toggle>Menu</button>
         <nav class="public-nav-links" id="stockradar-primary-menu" data-stockradar-primary-nav="true" data-stockradar-menu aria-label="Primary navigation">
@@ -627,9 +641,12 @@ STOCKRADAR_HEADER_NAVIGATION_TEMPLATE = """
 
 
 def stockradar_header_navigation(location="public"):
+    navigation_sections = stockradar_navigation_sections(location)
+    navigation_item_count = sum(len(items) for _, items in navigation_sections)
     return render_template_string(
         STOCKRADAR_HEADER_NAVIGATION_TEMPLATE,
-        navigation_sections=stockradar_navigation_sections(location),
+        navigation_sections=navigation_sections,
+        navigation_density_high=navigation_item_count > 7,
         navigation_script=stockradar_navigation_script(),
     )
 

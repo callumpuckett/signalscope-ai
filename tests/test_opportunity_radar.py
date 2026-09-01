@@ -244,6 +244,35 @@ def test_shared_header_uses_stronger_desktop_brand_without_changing_mobile_scale
     assert "max-width:154px;max-height:42px" in header
 
 
+def test_dense_authenticated_header_uses_accessible_overflow_menu():
+    with (
+        app.app.test_request_context("/opportunities"),
+        patch.object(app, "premium_has_access", return_value=True),
+        patch.object(app, "owner_has_access", return_value=True),
+    ):
+        header = app.stockradar_header_navigation("app")
+
+    assert 'class="public-header-inner nav-density-high"' in header
+    assert 'data-stockradar-menu-toggle' in header
+    assert '.public-header-inner.nav-density-high.nav-menu-open .public-nav-links{display:grid;}' in header
+    assert 'href="/opportunities"' in header
+    assert 'href="/premium-watchlist"' in header
+    assert 'href="/compare"' in header
+    assert 'href="/beginner"' in header
+    assert 'action="/logout"' in header
+
+
+def test_header_reserves_logo_column_and_mobile_overrides_dense_layout():
+    with app.app.test_request_context("/"):
+        header = app.stockradar_header_navigation("public")
+
+    assert "grid-template-columns:250px minmax(0,1fr) auto" in header
+    assert ".public-header{box-sizing:border-box;" in header
+    assert "@media(max-width:1100px)" in header
+    assert ".stockradar-menu-toggle,.public-header-inner.nav-density-high .stockradar-menu-toggle{display:inline-flex;grid-column:2;}" in header
+    assert ".public-nav-links,.public-header-inner.nav-density-high .public-nav-links{grid-column:1/-1;right:0;left:0;width:auto;" in header
+
+
 def test_homepage_promotes_daily_opportunity_research_without_extra_marketing_section():
     dashboard_data = {
         "market_status": {
