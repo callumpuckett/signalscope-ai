@@ -171,15 +171,16 @@ def test_login_and_portfolio_routes_preserve_existing_access_behaviour():
     assert "<strong>Locked:</strong>" not in unlocked_page
 
 
-def test_explicit_dashboard_tabs_keep_advanced_navigation_and_relocated_sections():
+def test_explicit_dashboard_tabs_use_shared_header_and_keep_relocated_sections():
     page = render_home("/?tab=overview").get_data(as_text=True)
 
     assert '<body class="dashboard-view" data-public-home="false">' in page
-    assert '<div class="sidebar">' in page
-    assert "📊 AI Signals" in page
-    assert "🌍 Impact Radar" in page
-    assert "🧠 Premium Watchlist" in page
-    assert "⚖️ Compare Stocks" in page
+    assert '<div class="sidebar">' not in page
+    assert '<header class="public-header">' in page
+    assert 'href="/?tab=signals">AI Signals</a>' in page
+    assert 'href="/?tab=radar">Impact Radar</a>' in page
+    assert 'href="/premium-watchlist">Premium Watchlist' in page
+    assert 'href="/compare">Compare Stocks' in page
     assert "Market News" in page
     assert 'aria-label="Current signal overview"' in page
     assert 'id="overview-section"' in page

@@ -78,22 +78,22 @@ def test_signed_out_desktop_and_mobile_navigation_share_one_compass_link():
 
 def test_entitled_dashboard_navigation_contains_compass_once_and_all_tools():
     for response in (
-        render_dashboard(owner=True),
-        render_dashboard(premium=True),
+        render_dashboard("/?tab=overview", owner=True),
+        render_dashboard("/?tab=overview", premium=True),
     ):
         page = response.get_data(as_text=True)
 
         assert compass_navigation_count(page) == 1
-        assert 'href="/beginner">🌱 Investment Compass</a>' in page
-        assert 'href="/?tab=overview">🏠 Overview</a>' in page
-        assert 'href="/?tab=signals">📊 AI Signals</a>' in page
-        assert 'href="/?tab=watchlist">📋 AI Watchlist</a>' in page
-        assert 'href="/premium-watchlist">🧠 Premium Watchlist' in page
-        assert 'href="/compare">⚖️ Compare Stocks' in page
-        assert 'href="/portfolio-fit">🧩 Portfolio Builder' in page
-        assert 'href="/universe">🌍 Stock Universe</a>' in page
+        assert 'href="/beginner">Investment Compass</a>' in page
+        assert 'href="/?tab=signals">AI Signals</a>' in page
+        assert 'href="/?tab=watchlist">AI Watchlist</a>' in page
+        assert 'href="/premium-watchlist">Premium Watchlist' in page
+        assert 'href="/compare">Compare Stocks' in page
+        assert 'href="/portfolio-fit">Portfolio Builder' in page
+        assert 'href="/universe">Stock Universe</a>' in page
         assert 'href="/manage-subscription">Manage Subscription</a>' in page
-        assert 'aria-controls="dashboard-primary-menu"' in page
+        assert 'aria-controls="stockradar-primary-menu"' in page
+        assert '<div class="sidebar">' not in page
 
 
 def test_signed_out_free_and_premium_compass_access_remains_public():

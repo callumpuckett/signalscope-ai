@@ -169,4 +169,4 @@ def test_logout_control_keeps_responsive_navigation_styling():
     assert "@media(max-width:700px)" in app.STOCKRADAR_HEADER_NAVIGATION_TEMPLATE
     assert "@media(max-width:900px)" in app.html
     assert "data-stockradar-menu" in app.STOCKRADAR_HEADER_NAVIGATION_TEMPLATE
-    assert "data-stockradar-menu" in app.html
+    assert "{{ stockradar_header_navigation('app') | safe }}" in app.html

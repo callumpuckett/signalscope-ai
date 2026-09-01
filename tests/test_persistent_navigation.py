@@ -100,6 +100,15 @@ def assert_newsletter_tab(response, expected=True):
         )
 
 
+def assert_shared_stockradar_shell(response):
+    page = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert page.count('<header class="public-header">') == 1
+    assert 'src="/static/stockradar-header-logo.png"' in page
+    assert 'aria-controls="stockradar-primary-menu"' in page
+    assert '<div class="sidebar">' not in page
+
+
 def test_shared_component_contains_accessible_desktop_and_mobile_styles():
     component = app.newsletter_side_tab()
 
@@ -154,6 +163,7 @@ def test_normal_public_templates_render_side_tab_once():
         response = client.get(route)
         assert response.status_code == 200
         assert_newsletter_tab(response)
+        assert_shared_stockradar_shell(response)
 
 
 def test_equivalent_public_research_templates_render_side_tab_once():
@@ -170,6 +180,35 @@ def test_equivalent_public_research_templates_render_side_tab_once():
         response = client.get(route)
         assert response.status_code == 200
         assert_newsletter_tab(response)
+        assert_shared_stockradar_shell(response)
+
+
+def test_dashboard_feature_tabs_reuse_shared_shell_without_changing_sections():
+    section_markers = {
+        "overview": 'id="overview-section"',
+        "signals": 'id="signals-section"',
+        "radar": 'id="radar-section"',
+        "watchlist": 'id="recommendations-section"',
+    }
+
+    for tab, section_marker in section_markers.items():
+        with (
+            patch.object(app, "get_cached_dashboard_data", return_value=DASHBOARD_DATA),
+            patch.object(app, "get_stock_universe", return_value=[]),
+            patch.object(app, "premium_entitlement_record", return_value=None),
+        ):
+            response = app.app.test_client().get(f"/?tab={tab}")
+        assert_shared_stockradar_shell(response)
+        assert section_marker in response.get_data(as_text=True)
+
+
+def test_newsletter_and_login_shells_reuse_shared_header():
+    client = app.app.test_client()
+
+    assert_shared_stockradar_shell(client.get("/newsletter"))
+    assert_shared_stockradar_shell(client.get("/login"))
+    assert "{{ stockradar_header_navigation('app') | safe }}" in app.newsletter_latest_html
+    assert "{{ stockradar_header_navigation('app') | safe }}" in app.newsletter_latest_unavailable_html
 
 
 def test_newsletter_templates_do_not_render_side_tab():

@@ -1,4 +1,4 @@
-from flask import Flask, Response, render_template_string, redirect, url_for, request, session, jsonify
+from flask import Flask, Response, render_template_string, redirect, url_for, request, session, jsonify, has_request_context
 from datetime import datetime, time as dt_time, timedelta, timezone
 from difflib import SequenceMatcher
 from email.utils import format_datetime
@@ -645,6 +645,9 @@ STOCKRADAR_HEADER_NAVIGATION_TEMPLATE = """
 
 
 def stockradar_header_navigation(location="public"):
+    if not has_request_context():
+        with app.test_request_context("/newsletter/latest"):
+            return stockradar_header_navigation(location)
     navigation_sections = stockradar_navigation_sections(location)
     navigation_item_count = sum(len(items) for _, items in navigation_sections)
     return render_template_string(
@@ -2337,8 +2340,8 @@ legal_page_html = """
 <meta name="twitter:description" content="{{ meta_description }}">
 <style>
 :root{--font-hero:clamp(36px,5vw,44px);--font-section:24px;--font-card-title:18px;--font-body:15px;--font-small:13px;--font-kicker:11px;--font-cta:14px;}
-body{margin:0;background:radial-gradient(circle at 15% 0%,rgba(0,255,170,0.10),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
-.wrap{max-width:900px;margin:0 auto;}
+body{margin:0;background:radial-gradient(circle at 15% 0%,rgba(0,255,170,0.10),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;min-height:100vh;}
+.wrap{box-sizing:border-box;max-width:992px;margin:0 auto;padding:46px;}
 .card{background:rgba(17,27,39,0.94);border:1px solid rgba(148,163,184,0.16);border-radius:26px;padding:32px;box-shadow:0 24px 70px rgba(0,0,0,0.28);}
 h1{font-size:var(--font-hero);line-height:1.08;margin:0 0 18px;}
 h2{font-size:var(--font-section);line-height:1.18;margin:26px 0 8px;}
@@ -2363,10 +2366,11 @@ a{color:#38bdf8;}
 .weekly-cta{display:flex;justify-content:space-between;align-items:center;gap:18px;margin-top:22px;padding:20px;border-radius:18px;background:linear-gradient(135deg,rgba(74,222,163,0.12),rgba(245,185,79,0.10));border:1px solid rgba(74,222,163,0.20);}
 .weekly-cta h2,.weekly-cta p{margin:0;}.weekly-cta p{margin-top:5px;}
 .weekly-cta a{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;flex:0 0 auto;padding:12px 16px;border-radius:14px;background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;text-decoration:none;font-weight:950;font-size:var(--font-cta);line-height:1.1;}
-@media(max-width:700px){:root{--font-hero:clamp(32px,9vw,38px);--font-section:22px;}body{padding:24px;}h1{font-size:var(--font-hero);}.section-grid,.signal-guide{grid-template-columns:1fr;}.weekly-cta{align-items:flex-start;flex-direction:column;}}
+@media(max-width:700px){:root{--font-hero:clamp(32px,9vw,38px);--font-section:22px;}.wrap{padding:24px;}h1{font-size:var(--font-hero);}.section-grid,.signal-guide{grid-template-columns:1fr;}.weekly-cta{align-items:flex-start;flex-direction:column;}}
 </style>
 </head>
 <body>
+{{ stockradar_header_navigation('app') | safe }}
 <div class="wrap">
     <a class="back" href="/">← Back to StockRadar</a>
     <main class="card">
@@ -5778,8 +5782,8 @@ def stock_universe_page():
     <meta name="twitter:description" content="Search supported stocks, funds and market names in the StockRadar research universe.">
     {{ company_identity_assets() }}
     <style>
-    body{margin:0;background:radial-gradient(circle at 12% 0%,rgba(0,255,170,0.10),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;min-height:100vh;padding:42px;}
-    .wrap{max-width:1180px;margin:0 auto;}
+    body{margin:0;background:radial-gradient(circle at 12% 0%,rgba(0,255,170,0.10),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;min-height:100vh;}
+    .wrap{box-sizing:border-box;max-width:1264px;margin:0 auto;padding:42px;}
     .card{background:linear-gradient(180deg,rgba(18,29,42,0.97),rgba(12,22,33,0.97));border:1px solid rgba(148,163,184,0.16);border-radius:28px;padding:30px;box-shadow:0 24px 70px rgba(0,0,0,0.30);margin-bottom:22px;}
     .kicker{color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;}
     h1{font-size:44px;line-height:1.04;margin:0 0 14px 0;letter-spacing:-0.04em;}
@@ -5793,10 +5797,11 @@ def stock_universe_page():
     th,td{text-align:left;padding:13px;border-bottom:1px solid rgba(255,255,255,0.08);vertical-align:top;}
     th{color:#94a3b8;text-transform:uppercase;letter-spacing:0.08em;font-size:12px;}
     .muted{color:#94a3b8;}
-    @media(max-width:760px){body{padding:24px;}h1{font-size:34px;}table{font-size:14px;}}
+    @media(max-width:760px){.wrap{padding:24px;}.card{overflow-x:auto;}h1{font-size:34px;}table{font-size:14px;}}
     </style>
     </head>
     <body>
+    {{ stockradar_header_navigation('app') | safe }}
     <div class="wrap">
         <a href="/">← Back to dashboard</a>
         <div class="card">
@@ -5862,8 +5867,8 @@ def premium_decision(symbol):
         {{ company_identity_assets() }}
         <style>
         *{box-sizing:border-box;}
-        body{margin:0;background:linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
-        .wrap{max-width:920px;margin:0 auto;}
+        body{margin:0;background:linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;}
+        .wrap{max-width:1012px;margin:0 auto;padding:46px;}
         .card{background:linear-gradient(180deg,rgba(23,23,23,0.96),rgba(14,14,14,0.96));border:1px solid rgba(255,255,255,0.11);border-radius:30px;padding:34px;box-shadow:0 30px 85px rgba(0,0,0,0.42);margin-bottom:22px;}
         .kicker{color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 10px 0;}
         h1{font-size:42px;line-height:1.08;margin:0 0 16px 0;letter-spacing:0;}
@@ -5874,10 +5879,11 @@ def premium_decision(symbol):
         .preview-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:18px 0;}
         .preview{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:18px;padding:16px;line-height:1.6;color:#cbd5e1;}
         .preview strong{display:block;color:white;margin-bottom:5px;}
-        @media(max-width:760px){body{padding:24px 16px;}.card{padding:24px 20px;border-radius:24px;}.preview-grid{grid-template-columns:1fr;}h1{font-size:32px;}.button{display:block;text-align:center;}}
+        @media(max-width:760px){.wrap{padding:24px 16px;}.card{padding:24px 20px;border-radius:24px;}.preview-grid{grid-template-columns:1fr;}h1{font-size:32px;}.button{display:block;text-align:center;}}
         </style>
         </head>
         <body>
+        {{ stockradar_header_navigation('app') | safe }}
         <div class="wrap">
             <a href="/stock/{{ symbol }}">← Back to {{ stock_identity(symbol, stock_display_label(symbol), 'compact') }}</a>
             <div class="card">
@@ -5913,8 +5919,8 @@ def premium_decision(symbol):
     <style>
     *{box-sizing:border-box;}
     :root{--navy:#08111c;--panel:#111d2b;--panel-deep:#0b1623;--text:#f1f5f9;--muted:#aebdca;--green:#4adea3;--amber:#f0c36a;}
-    body{margin:0;background:radial-gradient(circle at 12% 6%,rgba(0,255,170,0.10),transparent 30%),linear-gradient(135deg,var(--navy),#101827);color:var(--text);font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
-    .wrap{max-width:1120px;margin:0 auto;}
+    body{margin:0;background:radial-gradient(circle at 12% 6%,rgba(0,255,170,0.10),transparent 30%),linear-gradient(135deg,var(--navy),#101827);color:var(--text);font-family:Arial,sans-serif;min-height:100vh;}
+    .wrap{max-width:1212px;margin:0 auto;padding:46px;}
     .back{display:inline-block;margin-bottom:22px;color:#69c9f2;font-weight:900;text-decoration:none;}
     .card{background:linear-gradient(180deg,rgba(18,29,42,0.98),rgba(12,22,33,0.98));border:1px solid rgba(148,163,184,0.16);border-radius:28px;padding:30px;box-shadow:0 24px 70px rgba(0,0,0,0.32);margin-bottom:20px;}
     .summary-card{padding:36px;background:linear-gradient(135deg,rgba(12,47,48,0.94),rgba(28,38,49,0.98) 62%,rgba(72,52,27,0.74));border-color:rgba(74,222,163,0.28);}
@@ -5960,11 +5966,12 @@ def premium_decision(symbol):
     .breakdown-item strong{display:block;color:#e9f1f7;margin-bottom:4px;}
     .button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;border-radius:15px;padding:12px 18px;font-weight:950;text-decoration:none;margin-top:14px;}
     .identity-note{margin:18px 0 0;color:#aebdca;font-size:13px;line-height:1.55;}
-    @media(max-width:900px){body{padding:24px 16px;}.card,.summary-card{padding:24px 20px;border-radius:24px;}.decision-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.decision-card:last-child{grid-column:1/-1;}.breakdown,.learning-grid{grid-template-columns:1fr;}}
+    @media(max-width:900px){.wrap{padding:24px 16px;}.card,.summary-card{padding:24px 20px;border-radius:24px;}.decision-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.decision-card:last-child{grid-column:1/-1;}.breakdown,.learning-grid{grid-template-columns:1fr;}}
     @media(max-width:640px){.decision-grid{grid-template-columns:1fr;}.decision-card:last-child{grid-column:auto;}.action-frame{font-size:16px;}.badges{gap:7px;}.badge{font-size:11px;}.button{width:100%;text-align:center;}.summary-card{padding:24px 18px;}}
     </style>
     </head>
     <body>
+    {{ stockradar_header_navigation('app') | safe }}
     <main class="wrap">
         <a class="back" href="/stock/{{ symbol }}">← Back to {{ stock_identity(symbol, stock_display_label(symbol), 'compact') }}</a>
 
@@ -12095,12 +12102,13 @@ newsletter_landing_html = """
 <link rel="alternate" type="application/rss+xml" title="StockRadar Weekly RSS" href="/newsletter/rss">
 {% if turnstile_site_key %}<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>{% endif %}
 <style>
-*{box-sizing:border-box;}:root{--font-hero:clamp(40px,5vw,52px);--font-section:clamp(26px,2.4vw,34px);--font-body:16px;--font-small:13px;--font-kicker:11px;--font-cta:14px;}body{margin:0;min-height:100vh;padding:42px 22px;background:radial-gradient(circle at 18% 8%,rgba(0,255,170,.11),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;font-size:var(--font-body);}
-.wrap{max-width:900px;margin:0 auto;}.back{color:#69c9f2;text-decoration:none;font-weight:900;}.hero{margin-top:24px;padding:46px;border-radius:30px;background:linear-gradient(180deg,rgba(18,29,42,.97),rgba(12,22,33,.97));border:1px solid rgba(148,163,184,.16);box-shadow:0 24px 70px rgba(0,0,0,.30);}
-.eyebrow{color:#4adea3;font-size:var(--font-kicker);font-weight:950;letter-spacing:.13em;text-transform:uppercase;}h1{color:#f2f5f8;font-size:var(--font-hero);line-height:1.04;margin:14px 0 18px;letter-spacing:0;}p{color:#b9c5d2;line-height:1.7;font-size:var(--font-body);}.signup{margin-top:28px;padding:24px;border-radius:22px;background:#0d1826;border:1px solid rgba(74,222,163,.22);}form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:start;}input{min-width:240px;border:1px solid rgba(148,163,184,.24);background:#07111d;color:#e5edf5;border-radius:14px;padding:14px 15px;font-size:16px;}.turnstile-field,.turnstile-unavailable{grid-column:1/-1;max-width:100%;overflow:visible;}.turnstile-unavailable{margin:0;padding:12px 13px;border-radius:13px;background:rgba(248,113,113,.10);border:1px solid rgba(248,113,113,.24);color:#fecaca;font-size:14px;line-height:1.5;}button{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;border:0;border-radius:14px;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#061018;font-weight:950;font-size:var(--font-cta);line-height:1.1;padding:13px 18px;cursor:pointer;}.status{margin:0 0 16px;padding:13px 14px;border-radius:14px;background:rgba(74,222,163,.10);border:1px solid rgba(74,222,163,.22);color:#d1fae5;font-size:14px;line-height:1.55;}.status.error{background:rgba(248,113,113,.10);border-color:rgba(248,113,113,.24);color:#fecaca;}.fallback{color:#f4cf79;font-weight:900;margin:18px 0 0;font-size:var(--font-small);}.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-top:24px;}.note{padding:18px;border-radius:18px;background:rgba(148,163,184,.07);color:#c6d0da;line-height:1.6;font-size:14px;}.bridge{margin-top:22px;padding:18px;border-radius:18px;background:linear-gradient(135deg,rgba(74,222,163,.10),rgba(56,189,248,.08));border:1px solid rgba(74,222,163,.18);color:#d1fae5;font-size:15px;}.feed-link{display:inline-block;margin-top:22px;color:#69c9f2;font-size:14px;font-weight:900;text-decoration:none;}@media(max-width:700px){:root{--font-hero:clamp(32px,9vw,38px);--font-section:clamp(24px,6vw,28px);}body{padding:24px 16px}.hero{padding:28px}.notes{grid-template-columns:1fr;}form{grid-template-columns:1fr;}.turnstile-field,.turnstile-unavailable{grid-column:auto;}button,input{width:100%;}}
+*{box-sizing:border-box;}:root{--font-hero:clamp(40px,5vw,52px);--font-section:clamp(26px,2.4vw,34px);--font-body:16px;--font-small:13px;--font-kicker:11px;--font-cta:14px;}body{margin:0;min-height:100vh;background:radial-gradient(circle at 18% 8%,rgba(0,255,170,.11),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;font-size:var(--font-body);}
+.wrap{max-width:944px;margin:0 auto;padding:42px 22px;}.back{color:#69c9f2;text-decoration:none;font-weight:900;}.hero{margin-top:24px;padding:46px;border-radius:30px;background:linear-gradient(180deg,rgba(18,29,42,.97),rgba(12,22,33,.97));border:1px solid rgba(148,163,184,.16);box-shadow:0 24px 70px rgba(0,0,0,.30);}
+.eyebrow{color:#4adea3;font-size:var(--font-kicker);font-weight:950;letter-spacing:.13em;text-transform:uppercase;}h1{color:#f2f5f8;font-size:var(--font-hero);line-height:1.04;margin:14px 0 18px;letter-spacing:0;}p{color:#b9c5d2;line-height:1.7;font-size:var(--font-body);}.signup{margin-top:28px;padding:24px;border-radius:22px;background:#0d1826;border:1px solid rgba(74,222,163,.22);}form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:start;}input{min-width:240px;border:1px solid rgba(148,163,184,.24);background:#07111d;color:#e5edf5;border-radius:14px;padding:14px 15px;font-size:16px;}.turnstile-field,.turnstile-unavailable{grid-column:1/-1;max-width:100%;overflow:visible;}.turnstile-unavailable{margin:0;padding:12px 13px;border-radius:13px;background:rgba(248,113,113,.10);border:1px solid rgba(248,113,113,.24);color:#fecaca;font-size:14px;line-height:1.5;}button{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;border:0;border-radius:14px;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#061018;font-weight:950;font-size:var(--font-cta);line-height:1.1;padding:13px 18px;cursor:pointer;}.status{margin:0 0 16px;padding:13px 14px;border-radius:14px;background:rgba(74,222,163,.10);border:1px solid rgba(74,222,163,.22);color:#d1fae5;font-size:14px;line-height:1.55;}.status.error{background:rgba(248,113,113,.10);border-color:rgba(248,113,113,.24);color:#fecaca;}.fallback{color:#f4cf79;font-weight:900;margin:18px 0 0;font-size:var(--font-small);}.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-top:24px;}.note{padding:18px;border-radius:18px;background:rgba(148,163,184,.07);color:#c6d0da;line-height:1.6;font-size:14px;}.bridge{margin-top:22px;padding:18px;border-radius:18px;background:linear-gradient(135deg,rgba(74,222,163,.10),rgba(56,189,248,.08));border:1px solid rgba(74,222,163,.18);color:#d1fae5;font-size:15px;}.feed-link{display:inline-block;margin-top:22px;color:#69c9f2;font-size:14px;font-weight:900;text-decoration:none;}@media(max-width:700px){:root{--font-hero:clamp(32px,9vw,38px);--font-section:clamp(24px,6vw,28px);}.wrap{padding:24px 16px}.hero{padding:28px}.notes{grid-template-columns:1fr;}form{grid-template-columns:1fr;}.turnstile-field,.turnstile-unavailable{grid-column:auto;}button,input{width:100%;}}
 </style>
 </head>
 <body>
+{{ stockradar_header_navigation('app') | safe }}
 <div class="wrap">
 <a class="back" href="/">← Back to StockRadar</a>
 <main class="hero">
@@ -12152,10 +12160,11 @@ newsletter_latest_html = """
 <title>{{ issue.title }} — StockRadar</title>
 <link rel="alternate" type="application/rss+xml" title="StockRadar Weekly RSS" href="/newsletter/rss">
 <style>
-*{box-sizing:border-box;}body{margin:0;padding:34px 20px;background:radial-gradient(circle at 18% 8%,rgba(0,255,170,.10),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;}.wrap{max-width:860px;margin:0 auto;}a{color:#69c9f2;font-weight:900;text-decoration:none;}.header,.section{background:linear-gradient(180deg,rgba(18,29,42,.97),rgba(12,22,33,.97));border:1px solid rgba(148,163,184,.16);border-radius:24px;padding:26px;margin-bottom:18px;}.kicker{color:#4adea3;font-size:12px;font-weight:950;letter-spacing:.12em;text-transform:uppercase;}h1{color:#f2f5f8;font-size:clamp(36px,7vw,54px);line-height:1.04;margin:12px 0;}h2,h3{color:#eef2f6;}h2{margin:0 0 14px;}h3{margin:20px 0 8px;}p,li{color:#b9c5d2;line-height:1.72;}.meta{color:#91a3b4;}.badge{display:inline-block;padding:6px 10px;border-radius:999px;background:rgba(74,222,163,.10);color:#b8f5d5;font-size:12px;font-weight:950;text-transform:uppercase;}.status{margin-left:7px;color:#f4cf79;font-size:12px;font-weight:900;}.signal{padding:18px 0;border-bottom:1px solid rgba(148,163,184,.12);}.signal:last-child{border-bottom:0;padding-bottom:0;}.confidence{color:#91a3b4;font-size:12px;font-weight:900;}.top-links{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:18px;}@media(max-width:700px){body{padding:24px 16px}.header,.section{padding:22px;}}
+*{box-sizing:border-box;}body{margin:0;background:radial-gradient(circle at 18% 8%,rgba(0,255,170,.10),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;}.wrap{max-width:900px;margin:0 auto;padding:34px 20px;}a{color:#69c9f2;font-weight:900;text-decoration:none;}.header,.section{background:linear-gradient(180deg,rgba(18,29,42,.97),rgba(12,22,33,.97));border:1px solid rgba(148,163,184,.16);border-radius:24px;padding:26px;margin-bottom:18px;}.kicker{color:#4adea3;font-size:12px;font-weight:950;letter-spacing:.12em;text-transform:uppercase;}h1{color:#f2f5f8;font-size:clamp(36px,7vw,54px);line-height:1.04;margin:12px 0;}h2,h3{color:#eef2f6;}h2{margin:0 0 14px;}h3{margin:20px 0 8px;}p,li{color:#b9c5d2;line-height:1.72;}.meta{color:#91a3b4;}.badge{display:inline-block;padding:6px 10px;border-radius:999px;background:rgba(74,222,163,.10);color:#b8f5d5;font-size:12px;font-weight:950;text-transform:uppercase;}.status{margin-left:7px;color:#f4cf79;font-size:12px;font-weight:900;}.signal{padding:18px 0;border-bottom:1px solid rgba(148,163,184,.12);}.signal:last-child{border-bottom:0;padding-bottom:0;}.confidence{color:#91a3b4;font-size:12px;font-weight:900;}.top-links{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:18px;}@media(max-width:700px){.wrap{padding:24px 16px}.header,.section{padding:22px;}}
 </style>
 </head>
 <body>
+{{ stockradar_header_navigation('app') | safe }}
 <div class="wrap">
 <nav class="top-links"><a href="/newsletter">← Newsletter signup</a><a href="/newsletter/rss">RSS feed</a></nav>
 <header class="header">
@@ -12262,15 +12271,18 @@ newsletter_latest_unavailable_html = """
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>StockRadar Weekly is temporarily unavailable</title>
 <style>
-body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif}.card{max-width:680px;padding:30px;border:1px solid rgba(148,163,184,.2);border-radius:24px;background:#121d2a}h1{color:#f2f5f8}p{line-height:1.7;color:#b9c5d2}a{color:#69c9f2;font-weight:900;text-decoration:none}
+body{margin:0;min-height:100vh;background:linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif}.unavailable-wrap{min-height:calc(100vh - 100px);display:grid;place-items:center;padding:24px}.card{max-width:680px;padding:30px;border:1px solid rgba(148,163,184,.2);border-radius:24px;background:#121d2a}h1{color:#f2f5f8}p{line-height:1.7;color:#b9c5d2}a{color:#69c9f2;font-weight:900;text-decoration:none}
 </style>
 </head>
 <body>
+{{ stockradar_header_navigation('app') | safe }}
+<div class="unavailable-wrap">
 <main class="card">
 <h1>StockRadar Weekly is temporarily unavailable</h1>
 <p>We could not load a validated published issue just now. The error has been logged and the newsletter has not been regenerated from unverified data.</p>
 <p><a href="/newsletter">Return to newsletter signup</a> · <a href="/">Return to StockRadar</a></p>
 </main>
+</div>
 </body>
 </html>
 """
@@ -12518,6 +12530,7 @@ html = """
 html{scroll-behavior:smooth;}
 body{margin:0;background:radial-gradient(circle at 18% 8%,rgba(0,255,170,0.11),transparent 30%),radial-gradient(circle at 90% 12%,rgba(245,185,79,0.08),transparent 28%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;display:flex;min-height:100vh;font-size:var(--font-body);}
 body.public-home{display:block;}
+body.dashboard-view{display:block;}
 a{color:#38bdf8;text-decoration:none;font-weight:800;}
 a:hover{text-decoration:underline;}
 .sidebar{width:280px;min-height:100vh;padding:28px;background:rgba(7,17,24,0.92);border-right:1px solid rgba(148,163,184,0.12);position:sticky;top:0;}
@@ -12541,6 +12554,7 @@ a:hover{text-decoration:underline;}
 .owner-box{margin-top:20px;color:#94a3b8;font-size:13px;line-height:1.6;}
 .main{flex:1;padding:44px;overflow-y:auto;max-width:1500px;margin:0 auto;display:flex;flex-direction:column;}
 .public-main{max-width:1180px;overflow:visible;}
+.dashboard-view .main{box-sizing:border-box;width:min(1180px,100%);max-width:1180px;overflow:visible;}
 .top-intel-layout{display:grid;grid-template-columns:1fr;gap:14px;align-items:start;margin-bottom:22px;}
 .public-header{position:relative;z-index:60;width:100%;padding:10px 24px;background:rgba(7,17,24,0.94);border-bottom:1px solid rgba(148,163,184,0.12);backdrop-filter:blur(18px);}
 .public-header-inner{display:flex;align-items:center;justify-content:space-between;gap:18px;width:min(1180px,100%);margin:0 auto;}
@@ -12759,7 +12773,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 .filter-button.active-filter{background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#050505;border-color:transparent;}
 .filter-status{margin-top:12px;color:#94a3b8;font-size:13px;font-weight:800;}
 .hidden-signal-row{display:none;}
-	@media(max-width:900px){:root{--font-hero:clamp(32px,9vw,38px);--font-section:clamp(24px,6vw,28px);}body{flex-direction:column;}.sidebar{width:100%;min-height:auto;position:relative;top:auto;z-index:11000;padding:12px max(16px,env(safe-area-inset-right)) 12px max(16px,env(safe-area-inset-left));overflow:visible;white-space:normal;border-right:0;border-bottom:1px solid rgba(148,163,184,0.12);}.sidebar-navigation-shell{position:relative;}.sidebar-header{display:flex;align-items:center;justify-content:space-between;gap:12px;}.sidebar .logo{display:block;max-width:170px;margin:0;}.sidebar .logo-img{max-width:170px;max-height:46px;}.sidebar-menu-toggle{display:inline-flex;}.sidebar-nav{display:none;position:absolute;top:calc(100% + 8px);right:0;left:0;z-index:11001;max-height:calc(100dvh - 82px - env(safe-area-inset-top) - env(safe-area-inset-bottom));padding:10px 10px max(12px,env(safe-area-inset-bottom));overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;border:1px solid rgba(148,163,184,.22);border-radius:18px;background:#0b1521;box-shadow:0 24px 70px rgba(0,0,0,.58);}.sidebar-navigation-shell.nav-menu-open .sidebar-nav{display:block;}.sidebar .nav-section-label{display:block;margin:12px 6px 6px;}.sidebar .menu-help,.sidebar .owner-box{display:block;margin:8px 6px 12px;}.sidebar .menu-divider{display:block;margin:10px 0;}.sidebar .nav-link{display:flex;align-items:center;width:100%;min-height:44px;padding:11px 12px;margin:4px 0;font-size:13px;white-space:normal;}.main{padding:20px 16px;width:100%;}.top-bar{position:relative;justify-content:stretch;}.smart-search{width:100%;}.live-alert-strip{width:100%;}.live-alert-header{padding:8px 11px;font-size:11px;}.live-alert-track{padding:5px 0;}.live-alert-loop{gap:14px;animation-duration:48s;}.live-headline{flex-basis:540px;min-height:28px;padding:3px 14px 3px 0;gap:6px;}.live-news-title{font-size:12px;max-width:225px;}.market-news-stocks{display:inline-flex;}.market-news-stocks .live-affected-label{font-size:9px;}.market-news-impact .live-meta{display:none;}.market-news-impact .live-score{font-size:9px;}.summary-grid,.market-grid,.feature-grid,.impact-grid,.radar-summary,.signal-guide-grid,.filter-grid,.trust-strip,.signal-snapshot-grid{grid-template-columns:1fr;}.product-step-grid{grid-template-columns:1fr;}.premium-example-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.premium-brief-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.premium-home-grid{grid-template-columns:repeat(2,minmax(0,1fr));max-width:720px;}.newsletter-cta-card{align-items:flex-start;flex-direction:column;}.hero-card{padding:28px 22px}.hero-card h1{font-size:var(--font-hero);line-height:1.05;}.hero-card .hero-subtitle{font-size:15px;}.hero-actions a,.premium-price-row a{width:100%;text-align:center;}}
+	@media(max-width:900px){:root{--font-hero:clamp(32px,9vw,38px);--font-section:clamp(24px,6vw,28px);}body{flex-direction:column;}.sidebar{width:100%;min-height:auto;position:relative;top:auto;z-index:11000;padding:12px max(16px,env(safe-area-inset-right)) 12px max(16px,env(safe-area-inset-left));overflow:visible;white-space:normal;border-right:0;border-bottom:1px solid rgba(148,163,184,0.12);}.sidebar-navigation-shell{position:relative;}.sidebar-header{display:flex;align-items:center;justify-content:space-between;gap:12px;}.sidebar .logo{display:block;max-width:170px;margin:0;}.sidebar .logo-img{max-width:170px;max-height:46px;}.sidebar-menu-toggle{display:inline-flex;}.sidebar-nav{display:none;position:absolute;top:calc(100% + 8px);right:0;left:0;z-index:11001;max-height:calc(100dvh - 82px - env(safe-area-inset-top) - env(safe-area-inset-bottom));padding:10px 10px max(12px,env(safe-area-inset-bottom));overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;border:1px solid rgba(148,163,184,.22);border-radius:18px;background:#0b1521;box-shadow:0 24px 70px rgba(0,0,0,.58);}.sidebar-navigation-shell.nav-menu-open .sidebar-nav{display:block;}.sidebar .nav-section-label{display:block;margin:12px 6px 6px;}.sidebar .menu-help,.sidebar .owner-box{display:block;margin:8px 6px 12px;}.sidebar .menu-divider{display:block;margin:10px 0;}.sidebar .nav-link{display:flex;align-items:center;width:100%;min-height:44px;padding:11px 12px;margin:4px 0;font-size:13px;white-space:normal;}.main{padding:20px 16px;width:100%;}.dashboard-view .card{overflow-x:auto;}.dashboard-view .live-news-empty{white-space:normal;}.top-bar{position:relative;justify-content:stretch;}.smart-search{width:100%;}.live-alert-strip{width:100%;}.live-alert-header{padding:8px 11px;font-size:11px;}.live-alert-track{padding:5px 0;}.live-alert-loop{gap:14px;animation-duration:48s;}.live-headline{flex-basis:540px;min-height:28px;padding:3px 14px 3px 0;gap:6px;}.live-news-title{font-size:12px;max-width:225px;}.market-news-stocks{display:inline-flex;}.market-news-stocks .live-affected-label{font-size:9px;}.market-news-impact .live-meta{display:none;}.market-news-impact .live-score{font-size:9px;}.summary-grid,.market-grid,.feature-grid,.impact-grid,.radar-summary,.signal-guide-grid,.filter-grid,.trust-strip,.signal-snapshot-grid{grid-template-columns:1fr;}.product-step-grid{grid-template-columns:1fr;}.premium-example-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.premium-brief-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.premium-home-grid{grid-template-columns:repeat(2,minmax(0,1fr));max-width:720px;}.newsletter-cta-card{align-items:flex-start;flex-direction:column;}.hero-card{padding:28px 22px}.hero-card h1{font-size:var(--font-hero);line-height:1.05;}.hero-card .hero-subtitle{font-size:15px;}.hero-actions a,.premium-price-row a{width:100%;text-align:center;}}
 	@media(display-mode:standalone){.sidebar{padding-top:max(12px,env(safe-area-inset-top));padding-bottom:max(12px,env(safe-area-inset-bottom));}body{padding-bottom:env(safe-area-inset-bottom);}}
 	@media(max-width:640px){.public-header{padding:12px 14px;}.public-header-inner{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px 12px;}.public-header .logo{width:154px;}.public-header .logo-img{max-width:154px;max-height:42px;}.public-nav-links{grid-column:1/-1;justify-content:flex-start;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;overflow:visible;}.public-nav-link{padding:9px 6px;font-size:12px;white-space:normal;text-align:center;}.public-nav-login{display:inline-flex;visibility:visible;opacity:1;}.public-nav-primary{grid-column:2;grid-row:1;min-width:86px;}.public-nav-links .public-nav-primary{grid-column:auto;grid-row:auto;}.product-steps,.free-report-preview{padding:20px 18px;}.hero-search-panel{margin-top:22px;padding-top:20px;}.hero-search-panel .smart-search-row{flex-direction:column;}.hero-search-panel .smart-search button{width:100%;min-height:42px;}.suggested-searches-label{width:100%;}.suggested-search-chip{flex:1 1 calc(50% - 8px);}.free-report-preview-header{gap:12px;}.free-report-preview .cta-primary{width:100%;text-align:center;}.public-home-actions{display:flex;overflow:visible;}.public-portfolio-cta{display:inline-flex;visibility:visible;opacity:1;width:100%;}.premium-home-card{padding:20px 18px;}.premium-home-header{text-align:left;margin-bottom:14px;}.premium-home-card h2{font-size:clamp(28px,7vw,34px);}.premium-example-header{flex-direction:column;gap:8px;}.premium-example-grid,.premium-home-grid{grid-template-columns:1fr;max-width:none;}.premium-home-feature{min-height:0;padding:16px;}.premium-home-cta-banner{align-items:flex-start;flex-direction:column;gap:6px;width:100%;}.premium-home-cta-banner small{text-align:left;}}
 </style>
@@ -12768,30 +12782,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 {% if is_public_home %}
 {{ stockradar_header_navigation('public') | safe }}
 {% else %}
-<div class="sidebar">
-  <div class="sidebar-navigation-shell" data-stockradar-navigation="true">
-    <div class="sidebar-header">
-        <a class="logo" href="/" aria-label="StockRadar"><img class="logo-img" src="/static/stockradar-main-logo.png" alt="StockRadar" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-block';"><span class="logo-fallback">StockRadar</span></a>
-        <button class="sidebar-menu-toggle" type="button" aria-expanded="false" aria-controls="dashboard-primary-menu" data-stockradar-menu-toggle>Menu</button>
-    </div>
-    <nav class="sidebar-nav" id="dashboard-primary-menu" data-stockradar-primary-nav="true" data-stockradar-menu aria-label="Dashboard navigation">
-    {% for section_name, navigation_items in stockradar_navigation_sections('dashboard', active_tab) %}
-        <div class="nav-section-label">{{ section_name }}</div>
-        {% if section_name == 'Main Menu' %}<div class="menu-help">Use these links to jump straight to the tool you need.</div>{% endif %}
-        {% for item in navigation_items %}
-        {% if item.logout %}
-        {{ stockradar_logout_control(item, 'dashboard-sidebar') | safe }}
-        {% else %}
-        <a class="nav-link{% if item.active_tab %} tab-button{% endif %}{% if item.active %} active-tab{% endif %}{% if item.dashboard_class %} {{ item.dashboard_class }}{% endif %}"{% if item.manage_subscription %} data-account-manage-subscription="true"{% endif %}{% if item.id == 'investment-compass' %} data-nav-id="investment-compass"{% endif %} href="{{ item.href }}">{% if item.icon %}{{ item.icon }} {% endif %}{{ item.label }}{% if item.badge %} <span class="nav-premium-badge">{{ item.badge }}</span>{% endif %}</a>
-        {% endif %}
-        {% endfor %}
-        {% if section_name != 'Account' %}<div class="menu-divider"></div>{% endif %}
-    {% endfor %}
-        <div class="owner-box">Premium unlocks full AI reasoning, risk reads, next-move analysis and market intelligence.</div>
-    </nav>
-  </div>
-</div>
-{{ stockradar_navigation_script() | safe }}
+{{ stockradar_header_navigation('app') | safe }}
 {% endif %}
 
 
@@ -13551,8 +13542,8 @@ def beginner():
 login_html = """
 <!DOCTYPE html>
 <html>
-<head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Login</title><style>body{background:#020617;color:white;font-family:Arial;display:flex;justify-content:center;align-items:center;height:100vh;}form{background:#0f172a;padding:40px;border-radius:20px;width:340px;border:1px solid rgba(255,255,255,0.08);}input{width:100%;padding:14px;margin-bottom:15px;border:none;border-radius:10px;}button{width:100%;padding:14px;background:#38bdf8;border:none;border-radius:10px;color:white;font-weight:bold;cursor:pointer;}a{color:#38bdf8;}</style></head>
-<body><form method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><h1>🔐 Login</h1><p style="color:#94a3b8;">Sign in to access your account.</p>{% if login_error %}<p style="background:rgba(239,68,68,0.16);border:1px solid rgba(239,68,68,0.35);color:#fecaca;padding:12px;border-radius:10px;font-weight:bold;">{{ login_error }}</p>{% endif %}<input type="email" name="email" placeholder="Email" maxlength="254" required><input type="password" name="password" placeholder="Password" maxlength="1024" required><button type="submit">Login</button><p style="color:#94a3b8;font-size:13px;margin-top:20px;">Sign in to continue.</p><p><a href="/">Return to Dashboard</a></p>{{ disclaimer_footer() | safe }}</form></body>
+<head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Login</title><style>*{box-sizing:border-box;}body{margin:0;background:#020617;color:white;font-family:Arial;min-height:100vh;}.login-wrap{min-height:calc(100vh - 100px);display:flex;justify-content:center;align-items:center;padding:24px;}form{background:#0f172a;padding:40px;border-radius:20px;width:340px;border:1px solid rgba(255,255,255,0.08);}input{width:100%;padding:14px;margin-bottom:15px;border:none;border-radius:10px;}button{width:100%;padding:14px;background:#38bdf8;border:none;border-radius:10px;color:white;font-weight:bold;cursor:pointer;}a{color:#38bdf8;}</style></head>
+<body>{{ stockradar_header_navigation('app') | safe }}<div class="login-wrap"><form method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><h1>🔐 Login</h1><p style="color:#94a3b8;">Sign in to access your account.</p>{% if login_error %}<p style="background:rgba(239,68,68,0.16);border:1px solid rgba(239,68,68,0.35);color:#fecaca;padding:12px;border-radius:10px;font-weight:bold;">{{ login_error }}</p>{% endif %}<input type="email" name="email" placeholder="Email" maxlength="254" required><input type="password" name="password" placeholder="Password" maxlength="1024" required><button type="submit">Login</button><p style="color:#94a3b8;font-size:13px;margin-top:20px;">Sign in to continue.</p><p><a href="/">Return to Dashboard</a></p>{{ disclaimer_footer() | safe }}</form></div></body>
 </html>
 """
 
