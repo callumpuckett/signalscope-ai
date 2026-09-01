@@ -14251,8 +14251,18 @@ def newsletter_latest():
             sanitise_newsletter_error(error),
         )
         return render_template_string(newsletter_latest_unavailable_html), 503
+    published_html = published["html"]
+    if 'id="stockradar-primary-navigation-styles"' not in published_html:
+        header_html = stockradar_header_navigation("app")
+        published_html = re.sub(
+            r"(<body(?:\s[^>]*)?>)",
+            lambda match: f"{match.group(1)}{header_html}",
+            published_html,
+            count=1,
+            flags=re.IGNORECASE,
+        )
     return Response(
-        published["html"],
+        published_html,
         content_type="text/html; charset=utf-8",
     )
 

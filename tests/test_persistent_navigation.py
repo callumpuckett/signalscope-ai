@@ -211,6 +211,21 @@ def test_newsletter_and_login_shells_reuse_shared_header():
     assert "{{ stockradar_header_navigation('app') | safe }}" in app.newsletter_latest_unavailable_html
 
 
+def test_legacy_published_newsletter_keeps_content_and_receives_shared_shell():
+    legacy_html = "<html><body><main>Legacy issue content</main></body></html>"
+
+    with patch.object(
+        app,
+        "load_latest_published_newsletter_artifact",
+        return_value={"html": legacy_html},
+    ):
+        response = app.app.test_client().get("/newsletter/latest")
+
+    page = response.get_data(as_text=True)
+    assert "Legacy issue content" in page
+    assert_shared_stockradar_shell(response)
+
+
 def test_newsletter_templates_do_not_render_side_tab():
     client = app.app.test_client()
 
