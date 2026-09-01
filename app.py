@@ -2570,7 +2570,53 @@ COMPANY_LOGO_METADATA_CACHE = {}
 COMPANY_LOGO_PROVIDER_BASE_URL = (
     "https://financialmodelingprep.com/image-stock"
 )
-COMPANY_LOGO_PROVIDER_SYMBOL_OVERRIDES = {"V": "0QZ0.L"}
+COMPANY_LOGO_PROVIDER_SYMBOL_OVERRIDES = {
+    "0A2V.L": "SAN.PA",
+    "0AA7.L": "TRUE-B.ST",
+    "0BOE.L": "BCO.DE",
+    "0HD6.L": "0RIH.L",
+    "0HLE.L": "SAN",
+    "0K8D.L": "NOKIA.HE",
+    "0NOF.L": "PG",
+    "0Q15.L": "ABT",
+    "0QOS.L": "PEP",
+    "0QYJ.L": "CRM",
+    "0QYP.L": "MSFT",
+    "0QZ6.L": "NKE.DE",
+    "0R1W.L": "WMT",
+    "0R37.L": "BRK-B",
+    "ALC": "ALC.SW",
+    "AXIA-PC": "AXIA",
+    "BA": "BCO.DE",
+    "BCE": "BCE.TO",
+    "CVE": "CVE.TO",
+    "ERIC": "ERIC-B.ST",
+    "FRMI.L": "FRMI",
+    "HEI": "HEI-A",
+    "LMT": "LMT.MX",
+    "MICC.L": "MICC",
+    "NKE": "NKE.DE",
+    "NLY": "NLY-PF",
+    "NOK": "NOKIA.HE",
+    "RACE": "RACE.MI",
+    "SNY": "SAN.PA",
+    "SOL-USD": "SOLUSD",
+    "STLA": "STLAM.MI",
+    "TECK": "TECK-B.TO",
+    "UBER": "0A1U.L",
+    "UBS": "UBSG.SW",
+    "UNH": "0R0O.L",
+    "V": "0QZ0.L",
+}
+COMPANY_LOGO_FALLBACK_TICKERS = frozenset({
+    "0A4H.L", "ABBV", "ADI", "ADSK", "AIG", "ALB", "ALL", "ALNY",
+    "AMP", "ANET", "APG", "APP", "AVB", "AWK", "AXON", "BLK", "BWA",
+    "CDNS", "CEG", "CSX", "CTAS", "DHI", "DIS", "ET", "FAST", "HSY",
+    "IBM", "IOT", "IREN", "JBL", "JMGI.L", "KR", "MRVL", "NTAP", "OKTA",
+    "ON", "QQQ", "RBLX", "RCL", "REGN", "ROKU", "SMH", "STT", "ULTA",
+    "VRTX", "WSM", "ZM", "^DJI", "^FTSE", "^GSPC", "^HSI", "^IXIC",
+    "^N225", "^RUT",
+})
 COMPANY_DOMAIN_LOGO_BASE_URL = "https://www.google.com/s2/favicons"
 DIVIDEND_CONTEXT_CACHE_TTL_SECONDS = 3600
 DIVIDEND_CONTEXT_UNAVAILABLE_CACHE_TTL_SECONDS = 300
@@ -2970,10 +3016,11 @@ def company_logo_metadata(value):
     company_name = str(item.get("name") or canonical or "Unknown company").strip()
     explicit_logo_url = safe_company_logo_url(item.get("logo_url"))
     domain = safe_company_domain(item.get("domain") or item.get("website"))
+    force_initials_fallback = canonical in COMPANY_LOGO_FALLBACK_TICKERS
     provider_symbol = quote(
         COMPANY_LOGO_PROVIDER_SYMBOL_OVERRIDES.get(canonical, canonical),
         safe="",
-    )
+    ) if not force_initials_fallback else ""
     provider_logo_url = (
         f"{COMPANY_LOGO_PROVIDER_BASE_URL}/{provider_symbol}.png"
         if provider_symbol else ""
@@ -2982,7 +3029,9 @@ def company_logo_metadata(value):
         f"{COMPANY_DOMAIN_LOGO_BASE_URL}?domain={quote(domain, safe='.-')}&sz=128"
         if domain else ""
     )
-    primary_logo_url = explicit_logo_url or provider_logo_url or domain_logo_url
+    primary_logo_url = (
+        explicit_logo_url or provider_logo_url or domain_logo_url
+    ) if not force_initials_fallback else ""
     fallback_logo_url = ""
     if domain_logo_url and domain_logo_url != primary_logo_url:
         fallback_logo_url = domain_logo_url

@@ -1,3 +1,5 @@
+import json
+import re
 from pathlib import Path
 from unittest.mock import patch
 
@@ -105,18 +107,58 @@ def test_initials_badge_renders_when_no_logo_url_is_available():
     )
 
 
-def test_visa_uses_legible_provider_asset_in_server_and_dynamic_renderers():
+def test_audited_logo_overrides_match_server_and_dynamic_renderers():
     reset_logo_caches()
 
-    metadata = app.company_logo_metadata("V")
     javascript = (ROOT_DIR / "static" / "company_logos.js").read_text(
         encoding="utf-8"
     )
+    match = re.search(
+        r"var providerSymbolOverrides = (\{.*?\});",
+        javascript,
+        flags=re.DOTALL,
+    )
+    assert match is not None
+    dynamic_overrides = json.loads(match.group(1))
 
+    assert dynamic_overrides == app.COMPANY_LOGO_PROVIDER_SYMBOL_OVERRIDES
+    assert len(dynamic_overrides) == 36
+    for ticker, provider_symbol in dynamic_overrides.items():
+        metadata = app.company_logo_metadata(ticker)
+        assert metadata["ticker"] == ticker
+        assert metadata["logo_url"].endswith(f"/{provider_symbol}.png")
+
+    metadata = app.company_logo_metadata("V")
     assert metadata["ticker"] == "V"
     assert metadata["company_name"] == "Visa Inc."
     assert metadata["logo_url"].endswith("/0QZ0.L.png")
-    assert 'safeTicker === "V" ? "0QZ0.L" : safeTicker' in javascript
+
+
+def test_audited_blank_assets_use_existing_initials_fallback_in_both_renderers():
+    reset_logo_caches()
+
+    javascript = (ROOT_DIR / "static" / "company_logos.js").read_text(
+        encoding="utf-8"
+    )
+    match = re.search(
+        r"var fallbackTickers = (\{.*?\});",
+        javascript,
+        flags=re.DOTALL,
+    )
+    assert match is not None
+    dynamic_fallbacks = {
+        ticker for ticker, enabled in json.loads(match.group(1)).items() if enabled
+    }
+
+    assert dynamic_fallbacks == app.COMPANY_LOGO_FALLBACK_TICKERS
+    assert len(dynamic_fallbacks) == 54
+    assert {"SMH", "QQQ", "ABBV", "IBM", "^GSPC"} <= dynamic_fallbacks
+    for ticker in dynamic_fallbacks:
+        metadata = app.company_logo_metadata(ticker)
+        markup = BeautifulSoup(str(app.stock_identity(ticker)), "html.parser")
+        assert metadata["logo_url"] == ""
+        assert markup.select_one("img.company-logo-image") is None
+        assert markup.select_one(".company-logo-fallback").get_text(strip=True)
 
 
 def test_universe_normalisation_preserves_optional_logo_metadata():

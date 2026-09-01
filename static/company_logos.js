@@ -1,6 +1,101 @@
 (function () {
     "use strict";
 
+    var providerSymbolOverrides = {
+        "0A2V.L": "SAN.PA",
+        "0AA7.L": "TRUE-B.ST",
+        "0BOE.L": "BCO.DE",
+        "0HD6.L": "0RIH.L",
+        "0HLE.L": "SAN",
+        "0K8D.L": "NOKIA.HE",
+        "0NOF.L": "PG",
+        "0Q15.L": "ABT",
+        "0QOS.L": "PEP",
+        "0QYJ.L": "CRM",
+        "0QYP.L": "MSFT",
+        "0QZ6.L": "NKE.DE",
+        "0R1W.L": "WMT",
+        "0R37.L": "BRK-B",
+        "ALC": "ALC.SW",
+        "AXIA-PC": "AXIA",
+        "BA": "BCO.DE",
+        "BCE": "BCE.TO",
+        "CVE": "CVE.TO",
+        "ERIC": "ERIC-B.ST",
+        "FRMI.L": "FRMI",
+        "HEI": "HEI-A",
+        "LMT": "LMT.MX",
+        "MICC.L": "MICC",
+        "NKE": "NKE.DE",
+        "NLY": "NLY-PF",
+        "NOK": "NOKIA.HE",
+        "RACE": "RACE.MI",
+        "SNY": "SAN.PA",
+        "SOL-USD": "SOLUSD",
+        "STLA": "STLAM.MI",
+        "TECK": "TECK-B.TO",
+        "UBER": "0A1U.L",
+        "UBS": "UBSG.SW",
+        "UNH": "0R0O.L",
+        "V": "0QZ0.L"
+    };
+    var fallbackTickers = {
+        "0A4H.L": true,
+        "ABBV": true,
+        "ADI": true,
+        "ADSK": true,
+        "AIG": true,
+        "ALB": true,
+        "ALL": true,
+        "ALNY": true,
+        "AMP": true,
+        "ANET": true,
+        "APG": true,
+        "APP": true,
+        "AVB": true,
+        "AWK": true,
+        "AXON": true,
+        "BLK": true,
+        "BWA": true,
+        "CDNS": true,
+        "CEG": true,
+        "CSX": true,
+        "CTAS": true,
+        "DHI": true,
+        "DIS": true,
+        "ET": true,
+        "FAST": true,
+        "HSY": true,
+        "IBM": true,
+        "IOT": true,
+        "IREN": true,
+        "JBL": true,
+        "JMGI.L": true,
+        "KR": true,
+        "MRVL": true,
+        "NTAP": true,
+        "OKTA": true,
+        "ON": true,
+        "QQQ": true,
+        "RBLX": true,
+        "RCL": true,
+        "REGN": true,
+        "ROKU": true,
+        "SMH": true,
+        "STT": true,
+        "ULTA": true,
+        "VRTX": true,
+        "WSM": true,
+        "ZM": true,
+        "^DJI": true,
+        "^FTSE": true,
+        "^GSPC": true,
+        "^HSI": true,
+        "^IXIC": true,
+        "^N225": true,
+        "^RUT": true
+    };
+
     function showInitials(image) {
         image.hidden = true;
         image.removeAttribute("src");
@@ -58,8 +153,8 @@
         fallback.setAttribute("aria-hidden", "true");
         fallback.textContent = initialsFor(label, safeTicker);
 
-        if (safeTicker) {
-            var providerSymbol = safeTicker === "V" ? "0QZ0.L" : safeTicker;
+        if (safeTicker && !fallbackTickers[safeTicker]) {
+            var providerSymbol = providerSymbolOverrides[safeTicker] || safeTicker;
             var image = document.createElement("img");
             image.className = "company-logo-image";
             image.src = "https://financialmodelingprep.com/image-stock/" + encodeURIComponent(providerSymbol) + ".png";
