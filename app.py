@@ -621,7 +621,7 @@ STOCKRADAR_HEADER_NAVIGATION_TEMPLATE = """
 </style>
 <header class="public-header">
     <div class="public-header-inner{% if navigation_density_high %} nav-density-high{% endif %}" data-stockradar-navigation="true">
-        <a class="logo" href="/" aria-label="StockRadar home"><img class="logo-img" src="/static/stockradar-main-logo.png" alt="StockRadar" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-block';"><span class="logo-fallback">StockRadar</span></a>
+        <a class="logo" href="/" aria-label="StockRadar home"><img class="logo-img" src="/static/stockradar-header-logo.png" alt="StockRadar" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-block';"><span class="logo-fallback">StockRadar</span></a>
         <button class="stockradar-menu-toggle" type="button" aria-expanded="false" aria-controls="stockradar-primary-menu" data-stockradar-menu-toggle>Menu</button>
         <nav class="public-nav-links" id="stockradar-primary-menu" data-stockradar-primary-nav="true" data-stockradar-menu aria-label="Primary navigation">
         {% for section_name, items in navigation_sections %}

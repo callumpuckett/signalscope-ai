@@ -237,6 +237,7 @@ def test_shared_header_uses_flagship_desktop_brand_with_proportionate_mobile_sca
         header = app.stockradar_header_navigation("app")
 
     assert ".public-header .logo{display:block;width:310px;max-width:310px" in header
+    assert 'src="/static/stockradar-header-logo.png"' in header
     assert "width:100%;max-width:310px;max-height:none;height:auto" in header
     assert "padding:3px max(24px" in header
     assert "flex-wrap:nowrap" in header
