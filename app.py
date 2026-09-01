@@ -2570,6 +2570,7 @@ COMPANY_LOGO_METADATA_CACHE = {}
 COMPANY_LOGO_PROVIDER_BASE_URL = (
     "https://financialmodelingprep.com/image-stock"
 )
+COMPANY_LOGO_PROVIDER_SYMBOL_OVERRIDES = {"V": "0QZ0.L"}
 COMPANY_DOMAIN_LOGO_BASE_URL = "https://www.google.com/s2/favicons"
 DIVIDEND_CONTEXT_CACHE_TTL_SECONDS = 3600
 DIVIDEND_CONTEXT_UNAVAILABLE_CACHE_TTL_SECONDS = 300
@@ -2969,7 +2970,10 @@ def company_logo_metadata(value):
     company_name = str(item.get("name") or canonical or "Unknown company").strip()
     explicit_logo_url = safe_company_logo_url(item.get("logo_url"))
     domain = safe_company_domain(item.get("domain") or item.get("website"))
-    provider_symbol = quote(canonical, safe="")
+    provider_symbol = quote(
+        COMPANY_LOGO_PROVIDER_SYMBOL_OVERRIDES.get(canonical, canonical),
+        safe="",
+    )
     provider_logo_url = (
         f"{COMPANY_LOGO_PROVIDER_BASE_URL}/{provider_symbol}.png"
         if provider_symbol else ""

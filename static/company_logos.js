@@ -59,9 +59,10 @@
         fallback.textContent = initialsFor(label, safeTicker);
 
         if (safeTicker) {
+            var providerSymbol = safeTicker === "V" ? "0QZ0.L" : safeTicker;
             var image = document.createElement("img");
             image.className = "company-logo-image";
-            image.src = "https://financialmodelingprep.com/image-stock/" + encodeURIComponent(safeTicker) + ".png";
+            image.src = "https://financialmodelingprep.com/image-stock/" + encodeURIComponent(providerSymbol) + ".png";
             image.alt = companyNameForAlt(label, safeTicker) + " logo";
             image.loading = safeSize === "detail" ? "eager" : "lazy";
             image.decoding = "async";

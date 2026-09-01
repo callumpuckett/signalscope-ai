@@ -105,6 +105,20 @@ def test_initials_badge_renders_when_no_logo_url_is_available():
     )
 
 
+def test_visa_uses_legible_provider_asset_in_server_and_dynamic_renderers():
+    reset_logo_caches()
+
+    metadata = app.company_logo_metadata("V")
+    javascript = (ROOT_DIR / "static" / "company_logos.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert metadata["ticker"] == "V"
+    assert metadata["company_name"] == "Visa Inc."
+    assert metadata["logo_url"].endswith("/0QZ0.L.png")
+    assert 'safeTicker === "V" ? "0QZ0.L" : safeTicker' in javascript
+
+
 def test_universe_normalisation_preserves_optional_logo_metadata():
     row = app.normalise_universe_row(
         {
