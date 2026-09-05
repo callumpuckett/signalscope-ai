@@ -12926,6 +12926,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
             </section>
             <div class="hero-actions public-home-actions" aria-label="Portfolio tools">
                 <a class="cta-secondary public-portfolio-cta" href="/portfolio-fit">Build Your Portfolio</a>
+                <a class="cta-secondary" href="/newsletter">Join StockRadar Weekly</a>
             </div>
         {% else %}
 	        <p style="color:#4adea3;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 12px;">AI-assisted market research</p>
