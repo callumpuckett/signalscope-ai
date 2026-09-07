@@ -12836,6 +12836,13 @@ button,.button{display:inline-block;border:none;background:linear-gradient(135de
 .model-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:16px;}
 .model-box{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:18px;padding:16px;}
 .model-box strong{display:block;font-size:26px;margin-bottom:6px;}
+.model-box{min-width:0;overflow-wrap:anywhere;}
+.portfolio-example,.portfolio-matches-locked{margin-top:14px;padding-top:14px;border-top:1px solid rgba(0,255,170,0.20);}
+.portfolio-example h3,.portfolio-matches-locked h3{font-size:15px;line-height:1.4;margin:6px 0;}
+.portfolio-example small{color:#a7f3d0;}
+.portfolio-example p,.portfolio-matches-locked p,.portfolio-example-note{font-size:13px;line-height:1.6;}
+.portfolio-example a,.portfolio-matches-locked a{display:inline-block;color:#00ffaa;font-size:13px;min-height:44px;padding:10px 0;}
+
 .warning{background:rgba(239,68,68,0.09);border:1px solid rgba(239,68,68,0.20);border-radius:20px;padding:18px;color:#fecaca;line-height:1.65;}
 ul{color:#cbd5e1;line-height:1.75;padding-left:20px;}
 .tag{display:inline-block;background:rgba(56,189,248,0.12);border:1px solid rgba(56,189,248,0.22);color:#bae6fd;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:950;margin:4px 6px 4px 0;}
@@ -12890,11 +12897,31 @@ ul{color:#cbd5e1;line-height:1.75;padding-left:20px;}
     <p>{{ result.summary }}</p>
 
     <div class="model-grid">
-        <div class="model-box"><strong>{{ result.etf }}%</strong><span>Core ETFs</span></div>
-        <div class="model-box"><strong>{{ result.quality }}%</strong><span>Quality stocks</span></div>
-        <div class="model-box"><strong>{{ result.defensive }}%</strong><span>Defensive names</span></div>
-        <div class="model-box"><strong>{{ result.learning }}%</strong><span>Learning picks</span></div>
+        {% for key, label in [('etf', 'Core ETFs'), ('quality', 'Quality stocks'), ('defensive', 'Defensive names'), ('learning', 'Learning picks')] %}
+        <div class="model-box"><strong>{{ result[key] }}%</strong><span>{{ label }}</span>
+            {% if examples and key in examples.buckets %}
+            {% for example in examples.buckets[key][:3 if has_premium_access else 1] %}
+            <div class="portfolio-example">
+                <small>{{ 'Example to research' if loop.first else 'Premium Portfolio Match' }}</small>
+                <h3>{{ example.name }}</h3>
+                <small>{{ example.role }}</small>
+                <p>{% if not loop.first %}Why it fits this portfolio role: {% endif %}{{ example.reason }}</p>
+                {% if example.url %}<a href="{{ example.url }}">Research {{ example.symbol }} →</a>{% endif %}
+            </div>
+            {% endfor %}
+            {% if not has_premium_access %}
+            <div class="portfolio-matches-locked">
+                <h3>Premium Portfolio Matches</h3>
+                <p>2 more examples matched to your {{ examples.profile }} profile, with reasoning for why they fit this role.</p>
+                <a href="/upgrade">Unlock Premium →</a>
+            </div>
+            {% endif %}
+            {% endif %}
+        </div>
+        {% endfor %}
     </div>
+
+    {% if examples %}<p class="portfolio-example-note">Examples are alternatives to research, not a list to buy together. Holdings may overlap. Even defensive shares can lose value; check fund availability, fees and currency exposure. Educational examples, not personalised financial advice.</p>{% endif %}
 
     <h2 style="margin-top:24px;">Next steps</h2>
     <ul>
@@ -12961,6 +12988,69 @@ def validate_beginner_form(form):
         return None, "Please enter a valid monthly amount between £0 and £1,000,000."
     cleaned["amount"] = amount
     return cleaned, ""
+
+
+# Curated research examples; order is free example, then two Premium examples.
+BEGINNER_EXAMPLE_ASSETS = {
+    "VT": ("Vanguard Total World Stock ETF", "Global equity core", "Spreads equity exposure across countries; global shares can still fall sharply."),
+    "VTI": ("Vanguard Total Stock Market ETF", "Broad US equity core", "Covers US companies of different sizes for long-term equity research; it remains US-focused."),
+    "VIG": ("Vanguard Dividend Appreciation ETF", "Dividend growth", "Groups companies with a history of dividend growth; future payouts are not guaranteed."),
+    "USMV": ("iShares MSCI USA Min Vol Factor ETF", "Lower-volatility equity", "Targets US stocks with lower volatility characteristics; it does not protect capital."),
+    "MSFT": (None, "Quality growth", "Cloud and software businesses offer growth exposure; valuation and technology concentration matter."),
+    "AAPL": (None, "Established consumer technology", "Devices and services offer an established business to study; demand and valuation can change."),
+    "BRK-B": (None, "Diversified businesses", "Insurance and other operating businesses offer varied earnings drivers; this is still one stock."),
+    "JNJ": (None, "Healthcare income research", "Healthcare demand and dividend history fit income research; legal risks and payout sustainability need checking."),
+    "PG": (None, "Everyday essentials", "Household products provide repeat demand for defensive research; costs and competition can pressure profits."),
+    "KO": (None, "Defensive consumer brands", "Everyday beverage demand fits a defensive role; dividends and share prices are not guaranteed."),
+    "MCD": (None, "Established franchise business", "A global restaurant franchise offers a different defensive business to study; consumer spending still matters."),
+    "PEP": (None, "Consumer income research", "Food and beverage brands fit dividend research; debt and payout coverage deserve attention."),
+    "AMZN": (None, "Growth business study", "Retail and cloud offer different growth drivers for a small learning role; spending can weigh on profits."),
+    "NVDA": (None, "Higher-volatility growth", "AI computing offers a growth case to study in a limited learning role; expectations and prices can swing sharply."),
+    "PLTR": (None, "Software growth study", "Data software offers a higher-volatility learning example; valuation and customer growth need scrutiny."),
+}
+
+BEGINNER_EXAMPLE_PROFILES = {
+    "balanced": (("VT", "VTI", "VIG"), ("BRK-B", "MSFT", "AAPL"), ("KO", "PG", "MCD"), ("AMZN", "PEP", "JNJ")),
+    "growth": (("VTI", "VT", "VIG"), ("MSFT", "AAPL", "BRK-B"), ("PG", "KO", "MCD"), ("AMZN", "NVDA", "PLTR")),
+    "cautious": (("VT", "USMV", "VIG"), ("BRK-B", "JNJ", "MSFT"), ("PG", "KO", "MCD"), ("PEP", "AAPL", "AMZN")),
+    "income": (("VIG", "VT", "USMV"), ("JNJ", "PG", "MSFT"), ("PEP", "KO", "MCD"), ("AAPL", "BRK-B", "AMZN")),
+    "higher-growth": (("VTI", "VT", "VIG"), ("MSFT", "AAPL", "AMZN"), ("MCD", "PG", "KO"), ("NVDA", "PLTR", "BRK-B")),
+}
+BEGINNER_EXAMPLE_LABELS = {
+    "balanced": "balanced", "growth": "long-term growth", "cautious": "cautious / lower-risk",
+    "income": "income-oriented", "higher-growth": "higher-growth / higher-volatility",
+}
+
+
+def build_beginner_examples(form, result):
+    if not any(result[key] for key in ("etf", "quality", "defensive", "learning")):
+        return {}
+    # Low risk takes precedence over growth; income retains its objective-specific examples.
+    if form["goal"] == "income":
+        profile = "income"
+    elif form["risk"] == "low":
+        profile = "cautious"
+    elif result["profile"] == "Growth-focused beginner investor":
+        profile = "higher-growth"
+    elif form["goal"] == "growth":
+        profile = "growth"
+    else:
+        profile = "balanced"
+    known_symbols = stock_display_lookup()
+    buckets = {}
+    for key, symbols in zip(("etf", "quality", "defensive", "learning"), BEGINNER_EXAMPLE_PROFILES[profile]):
+        if not result[key]:
+            continue
+        buckets[key] = []
+        for symbol in symbols:
+            fallback_name, role, reason = BEGINNER_EXAMPLE_ASSETS[symbol]
+            buckets[key].append({
+                "symbol": symbol,
+                "name": stock_display_label(symbol) if symbol in known_symbols else (fallback_name or symbol),
+                "role": role, "reason": reason,
+                "url": url_for("stock_detail", symbol=symbol) if symbol in known_symbols else None,
+            })
+    return {"profile": BEGINNER_EXAMPLE_LABELS[profile], "buckets": buckets}
 
 
 def build_beginner_result(form):
@@ -13032,6 +13122,7 @@ def build_beginner_result(form):
 
 @app.route("/beginner", methods=["GET", "POST"])
 def beginner():
+    examples = {}
     result = None
     validation_error = ""
 
@@ -13039,9 +13130,12 @@ def beginner():
         cleaned_form, validation_error = validate_beginner_form(request.form)
         if cleaned_form is not None:
             result = build_beginner_result(cleaned_form)
+            examples = build_beginner_examples(cleaned_form, result)
 
     return render_template_string(
         beginner_html,
+        examples=examples,
+        has_premium_access=premium_has_access(),
         result=result,
         validation_error=validation_error,
     )
