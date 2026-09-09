@@ -13362,6 +13362,7 @@ beginner_html = """
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Investment Compass — StockRadar</title>
+{{ company_identity_assets() }}
 <style>
 *{box-sizing:border-box;}
 body{margin:0;background:radial-gradient(circle at 20% 10%,rgba(0,255,170,0.15),transparent 28%),radial-gradient(circle at 90% 10%,rgba(255,184,107,0.12),transparent 28%),linear-gradient(135deg,#050505,#111827);color:white;font-family:Arial,sans-serif;min-height:100vh;padding:46px;}
@@ -13386,6 +13387,7 @@ button,.button{display:inline-block;border:none;background:linear-gradient(135de
 .model-box{min-width:0;overflow-wrap:anywhere;}
 .portfolio-example,.portfolio-matches-locked{margin-top:14px;padding-top:14px;border-top:1px solid rgba(0,255,170,0.20);}
 .portfolio-example h3,.portfolio-matches-locked h3{font-size:15px;line-height:1.4;margin:6px 0;}
+.portfolio-example .company-logo-frame{width:40px;height:40px;}
 .portfolio-example small{color:#a7f3d0;}
 .portfolio-example p,.portfolio-matches-locked p,.portfolio-example-note{font-size:13px;line-height:1.6;}
 .portfolio-example a,.portfolio-matches-locked a{display:inline-block;color:#00ffaa;font-size:13px;min-height:44px;padding:10px 0;}
@@ -13450,7 +13452,7 @@ ul{color:#cbd5e1;line-height:1.75;padding-left:20px;}
             {% for example in examples.buckets[key][:3 if has_premium_access else 1] %}
             <div class="portfolio-example">
                 <small>{{ 'Example to research' if loop.first else 'Premium Portfolio Match' }}</small>
-                <h3>{{ example.name }}</h3>
+                <h3>{{ stock_identity(example.symbol, example.name, 'card') }}</h3>
                 <small>{{ example.role }}</small>
                 <p>{% if not loop.first %}Why it fits this portfolio role: {% endif %}{{ example.reason }}</p>
                 {% if example.url %}<a href="{{ example.url }}">Research {{ example.symbol }} →</a>{% endif %}

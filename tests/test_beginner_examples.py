@@ -4,6 +4,7 @@ import re
 from unittest.mock import patch
 import pytest
 import app
+from bs4 import BeautifulSoup
 
 
 def form(**changes):
@@ -38,7 +39,20 @@ def test_rendered_examples(changes,key,access):
     result=unescape(response.get_data(as_text=True)).split('id="beginner-result"')[1].split('Next steps')[0]
     cards=result.split('<div class="model-box">')[1:]
     assert len(cards)==4
+    page = BeautifulSoup(response.get_data(as_text=True), "html.parser")
+    assert page.select_one('link[href="/static/company_logos.css"]')
+    assert page.select_one('script[src="/static/company_logos.js"]')
     for card,symbols in zip(cards,app.BEGINNER_EXAMPLE_PROFILES[key]):
+        identities = BeautifulSoup(card, "html.parser").select('.portfolio-example [data-company-identity]')
+        visible_symbols = symbols[:1 if access=='free' else 3]
+        assert [identity['data-company-identity'] for identity in identities] == list(visible_symbols)
+        for identity in identities:
+            assert 'company-identity--card' in identity['class']
+            assert identity.select_one('.company-logo-fallback')
+            image = identity.select_one('img')
+            if image:
+                assert image['loading'] == 'lazy'
+                assert image['src'] == app.company_logo_metadata(identity['data-company-identity'])['logo_url']
         assert card.count('class="portfolio-example"')==(1 if access=='free' else 3)
         assert ('Premium Portfolio Matches' in card)==(access=='free')
         assert ('Unlock Premium' in card)==(access=='free')
@@ -70,3 +84,21 @@ def test_initial_invalid_and_mobile_layout():
     assert '.grid,.form-grid,.model-grid{grid-template-columns:1fr;}' in app.beginner_html
     assert '.model-box{min-width:0;overflow-wrap:anywhere;}' in app.beginner_html
     assert 'min-height:44px;padding:10px 0' in app.beginner_html
+
+
+def test_portfolio_examples_reuse_initials_when_logos_are_unavailable():
+    original = app.company_logo_metadata
+
+    def unavailable(symbol):
+        return original(symbol) | {"logo_url": "", "fallback_logo_url": ""}
+
+    with patch.object(app, "company_logo_metadata", side_effect=unavailable):
+        response = app.app.test_client().post('/beginner', data=form() | {'amount': ''})
+    page = BeautifulSoup(response.get_data(as_text=True), "html.parser")
+    examples = page.select('.portfolio-example')
+    assert len(examples) == 4
+    for example in examples:
+        assert example.select_one('img') is None
+        assert example.select_one('.company-logo-fallback').get_text(strip=True)
+        assert example.select_one('.company-identity-name').get_text(strip=True)
+    assert '.portfolio-example .company-logo-frame{width:40px;height:40px;}' in app.beginner_html
