@@ -6176,6 +6176,16 @@ opportunity_alerts_html = """
 opportunities_html = """
 <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>StockRadar Opportunities — Daily Premium Research</title>
+<meta name="description" content="Preview StockRadar Opportunity Radar: explore the daily research-ranking approach and a limited opportunity preview. Full ranked research requires Premium.">
+<link rel="canonical" href="https://www.stockradarhq.com/opportunities">
+<meta property="og:title" content="StockRadar Opportunities — Daily Premium Research">
+<meta property="og:description" content="Preview StockRadar Opportunity Radar: explore the daily research-ranking approach and a limited opportunity preview. Full ranked research requires Premium.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://www.stockradarhq.com/opportunities">
+<meta property="og:site_name" content="StockRadar">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="StockRadar Opportunities — Daily Premium Research">
+<meta name="twitter:description" content="Preview StockRadar Opportunity Radar: explore the daily research-ranking approach and a limited opportunity preview. Full ranked research requires Premium.">
 <style>
 *{box-sizing:border-box}body{margin:0;min-height:100vh;padding:42px 24px;background:radial-gradient(circle at 12% 5%,rgba(0,255,170,.12),transparent 30%),linear-gradient(135deg,#07111c,#101827);color:#eef4f8;font-family:Arial,sans-serif}.wrap{max-width:1180px;margin:0 auto}.back{display:inline-block;margin:0 0 22px;color:#6cd3f7;font-weight:900;text-decoration:none}.hero,.panel,.opportunity{border:1px solid rgba(148,163,184,.16);background:linear-gradient(180deg,rgba(18,30,43,.98),rgba(10,20,31,.98));box-shadow:0 24px 70px rgba(0,0,0,.28)}.hero{padding:38px;border-radius:30px;margin-bottom:20px}.eyebrow{color:#4adea3;font-size:11px;font-weight:950;letter-spacing:.13em;text-transform:uppercase}h1{font-size:clamp(36px,5vw,54px);line-height:1.04;margin:10px 0 14px}h2{font-size:clamp(24px,3vw,32px);margin:0 0 12px}h3{margin:0;font-size:22px}p,li{color:#b7c5d1;line-height:1.65}.method{max-width:820px}.notice{padding:14px 16px;border-radius:15px;background:rgba(74,222,163,.08);border:1px solid rgba(74,222,163,.2);color:#d1fae5}.grid{display:grid;gap:17px}.opportunity{border-radius:24px;padding:24px}.topline,.identity{display:flex;align-items:center;gap:12px}.topline{justify-content:space-between;flex-wrap:wrap}.rank{display:inline-grid;place-items:center;width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#4adea3,#f0c36a);color:#071018;font-weight:950}.status,.signal{display:inline-flex;padding:6px 9px;border-radius:999px;font-size:11px;font-weight:950;letter-spacing:.06em}.status{background:rgba(105,201,242,.11);color:#a5e4fb}.status.rising,.status.new{background:rgba(74,222,163,.12);color:#bbf7d0}.status.falling,.status.exited{background:rgba(251,113,133,.11);color:#fecdd3}.signal{background:rgba(240,195,106,.12);color:#fde68a}.score{font-size:32px;font-weight:950}.score small{font-size:13px;color:#91a3b4}.metrics{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin:20px 0}.metric{padding:13px;border-radius:15px;background:rgba(148,163,184,.06);min-width:0}.metric span{display:block;color:#91a3b4;font-size:10px;text-transform:uppercase;letter-spacing:.08em;font-weight:900}.metric strong{display:block;margin-top:5px;font-size:14px;overflow-wrap:anywhere}.explain{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.explain div{padding:15px;border-radius:15px;background:rgba(7,17,28,.56)}.explain strong{display:block;margin-bottom:6px;color:#e7f0f5}.explain p{margin:0;font-size:13px}.history{display:flex;align-items:center;gap:16px;margin-top:18px}.history svg{width:180px;height:54px}.history polyline{fill:none;stroke:#4adea3;stroke-width:3}.locked{position:relative;overflow:hidden}.locked>.grid{filter:blur(5px);user-select:none;pointer-events:none}.lockbox{position:absolute;inset:0;display:grid;place-items:center;padding:24px;background:rgba(5,12,20,.61)}.lockcard{max-width:600px;padding:28px;border-radius:24px;text-align:center;background:#111d2b;border:1px solid rgba(240,195,106,.32)}.button{display:inline-flex;justify-content:center;align-items:center;padding:13px 18px;border:0;border-radius:14px;background:linear-gradient(135deg,#4adea3,#f0c36a);color:#071018;font-weight:950;text-decoration:none;margin:6px;cursor:pointer}.secondary{background:rgba(105,201,242,.12);border:1px solid rgba(105,201,242,.25);color:#bfeafa}.panel{padding:26px;border-radius:24px;margin-top:20px}.alert-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.check{display:flex;align-items:center;gap:9px;color:#dce7ee}.tickers{grid-column:1/-1}.tickers input{width:100%;padding:13px;border-radius:12px;border:1px solid rgba(148,163,184,.24);background:#07111c;color:white}.events{padding-left:20px}.muted{font-size:13px;color:#91a3b4}@media(max-width:850px){body{padding:24px 16px}.hero{padding:28px 22px}.metrics{grid-template-columns:repeat(3,1fr)}.explain{grid-template-columns:1fr}}@media(max-width:520px){.metrics{grid-template-columns:repeat(2,1fr)}.score{font-size:28px}.alert-form{grid-template-columns:1fr}.tickers{grid-column:auto}.history{align-items:flex-start;flex-direction:column}.button{width:100%;margin:6px 0}}
 </style></head><body>{{ stockradar_header_navigation('app') | safe }}<main class="wrap">
@@ -13960,7 +13970,20 @@ stock_detail_html = """
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{{ stock_display_label(symbol) }} Stock Detail</title>
+{% set report_label = stock_display_label(symbol) %}
+{% set report_title = report_label ~ ' Stock Detail' %}
+{% set report_description = 'Explore ' ~ report_label ~ ' on StockRadar: a public signal and confidence preview, with price history where available. Educational research, not financial advice.' %}
+<title>{{ report_title }}</title>
+<meta name="description" content="{{ report_description }}">
+<link rel="canonical" href="{{ report_canonical_url }}">
+<meta property="og:title" content="{{ report_title }}">
+<meta property="og:description" content="{{ report_description }}">
+<meta property="og:type" content="website">
+<meta property="og:url" content="{{ report_canonical_url }}">
+<meta property="og:site_name" content="StockRadar">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="{{ report_title }}">
+<meta name="twitter:description" content="{{ report_description }}">
 {{ company_identity_assets() }}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="{{ url_for('static', filename='stock_chart.js') }}"></script>
@@ -14717,6 +14740,7 @@ def sitemap_xml():
         "/how-it-works",
         "/universe",
         "/upgrade",
+        "/opportunities",
         "/privacy",
         "/terms",
         "/refund-policy",
@@ -14731,12 +14755,10 @@ def sitemap_xml():
         if item.get("ticker")
     ]
     public_paths = list(dict.fromkeys(public_paths + stock_paths))
-    last_modified = datetime.now(timezone.utc).date().isoformat()
     urls = "\n".join(
         (
             "  <url>\n"
             f"    <loc>{PRODUCTION_BASE_URL}{path}</loc>\n"
-            f"    <lastmod>{last_modified}</lastmod>\n"
             "  </url>"
         )
         for path in public_paths
@@ -15160,6 +15182,7 @@ def stock_detail(symbol):
 
     return render_template_string(
         stock_detail_html,
+        report_canonical_url=f"{PRODUCTION_BASE_URL}/stock/{quote(cleaned_symbol, safe='.-')}",
         symbol=cleaned_symbol,
         active_range=active_range,
         range_label=CHART_RANGES[active_range]["label"],
