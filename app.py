@@ -1,4 +1,4 @@
-from flask import Flask, Response, render_template_string, redirect, url_for, request, session, jsonify, has_request_context
+from flask import Flask, Response, render_template_string, redirect, url_for, request, session, jsonify, has_request_context, g
 from datetime import datetime, time as dt_time, timedelta, timezone
 from difflib import SequenceMatcher
 from email.utils import format_datetime
@@ -458,7 +458,10 @@ def navigation_access_matches(access, owner_logged_in, has_premium_access):
 
 def stockradar_navigation_sections(location, active_tab=""):
     owner_logged_in = owner_has_access()
-    has_premium_access = premium_has_access()
+    has_premium_access = (
+        g.premium_access_result
+        if "premium_access_result" in g else premium_has_access()
+    )
     sections = []
 
     for section_name in ("Main Menu", "Risk Check", "Account"):
@@ -1929,6 +1932,7 @@ PREMIUM_SESSION_KEYS = (
 
 
 def clear_premium_session():
+    g.pop("premium_access_result", None)
     for key in PREMIUM_SESSION_KEYS:
         session.pop(key, None)
 
@@ -1997,6 +2001,7 @@ def revalidate_legacy_premium_session():
 
 def premium_has_access():
     if owner_has_access():
+        g.premium_access_result = True
         return True
 
     record = premium_entitlement_record(
@@ -2008,10 +2013,12 @@ def premium_has_access():
         record = revalidate_legacy_premium_session()
     if not record or record.get("premium_active") is not True:
         clear_premium_session()
+        g.premium_access_result = False
         return False
 
     session["premium_active"] = True
     session["entitlement_version"] = int(record.get("entitlement_version") or 0)
+    g.premium_access_result = True
     return True
 
 
@@ -14905,7 +14912,8 @@ def dashboard():
     data.setdefault("total_count", 0)
     data.setdefault("sectors", [])
     data.setdefault("high_conviction_count", 0)
-    data.setdefault("premium_decision_brief", build_premium_decision_brief(data.get("recommendations", [])))
+    if "premium_decision_brief" not in data:
+        data["premium_decision_brief"] = build_premium_decision_brief(data.get("recommendations", []))
     data.setdefault("market_snapshot", [])
     data.setdefault("market_status", market_status())
     data.setdefault("last_updated", datetime.now().strftime("%d %b %Y, %H:%M"))
