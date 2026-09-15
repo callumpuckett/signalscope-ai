@@ -6188,14 +6188,21 @@ opportunities_html = """
 
 @app.route("/opportunities")
 def opportunities():
+    route_started = time.perf_counter()
+    snapshot_seconds = alert_seconds = 0.0
     premium = premium_has_access()
+    entitlement_seconds = time.perf_counter() - route_started
     if premium:
+        stage_started = time.perf_counter()
         snapshot, state = get_opportunity_page_snapshot()
+        snapshot_seconds = time.perf_counter() - stage_started
         for item in snapshot.get("opportunities", []):
             item["history"] = opportunity_history(state, item["ticker"])
             item["history_points"] = opportunity_history_points(item["history"])
         account_key = opportunity_account_key()
+        stage_started = time.perf_counter()
         alert_state = newsletter_storage_load("opportunity_alerts")
+        alert_seconds = time.perf_counter() - stage_started
         preferences = {
             **default_opportunity_alert_preferences(),
             **alert_state.get("preferences", {}).get(account_key, {}),
@@ -6205,7 +6212,19 @@ def opportunities():
         snapshot = build_opportunity_snapshot(get_recommendations(), market_data_provider=lambda ticker: {})
         preferences = default_opportunity_alert_preferences()
         events = []
-    return render_template_string(opportunities_html, premium=premium, snapshot=snapshot, preferences=preferences, events=events)
+    response = render_template_string(opportunities_html, premium=premium, snapshot=snapshot, preferences=preferences, events=events)
+    total_seconds = time.perf_counter() - route_started
+    # WARNING keeps this diagnostic visible under the default production log level.
+    app.logger.warning(
+        "event=opportunities_timing route_total_ms=%.3f entitlement_ms=%.3f "
+        "snapshot_ms=%.3f alerts_ms=%.3f remaining_ms=%.3f",
+        total_seconds * 1000,
+        entitlement_seconds * 1000,
+        snapshot_seconds * 1000,
+        alert_seconds * 1000,
+        (total_seconds - entitlement_seconds - snapshot_seconds - alert_seconds) * 1000,
+    )
+    return response
 
 
 @app.route("/opportunities/alerts", methods=["POST"])
