@@ -167,7 +167,7 @@ def test_free_preview_is_locked_and_does_not_touch_opportunity_storage():
     storage_load.assert_not_called()
 
 
-def test_premium_page_shows_full_ranking_history_and_alert_controls():
+def test_premium_page_shows_full_ranking_history_and_deferred_alerts(caplog):
     snapshot = app.build_opportunity_snapshot(
         [recommendation("MSFT")],
         now=datetime(2026, 8, 31, tzinfo=timezone.utc),
@@ -178,7 +178,7 @@ def test_premium_page_shows_full_ranking_history_and_alert_controls():
         patch.object(app, "premium_has_access", return_value=True),
         patch.object(app, "owner_has_access", return_value=True),
         patch.object(app, "ensure_daily_opportunity_snapshot", return_value=(snapshot, state, False)),
-        patch.object(app, "newsletter_storage_load", return_value={"preferences": {}, "events": []}),
+        patch.object(app, "newsletter_storage_load", side_effect=AssertionError("HTML must not read alert storage")),
     ):
         response = app.app.test_client().get("/opportunities")
 
@@ -187,7 +187,10 @@ def test_premium_page_shows_full_ranking_history_and_alert_controls():
     assert "MSFT" in page
     assert "Historical Opportunity Score" in page
     assert "Premium watchlist alerts" in page
-    assert "External email/push delivery is not enabled" in page
+    assert 'href="/opportunities/alerts"' in page
+    assert "window.addEventListener('load'" in page
+    assert 'action="/opportunities/alerts"' not in page
+    assert "alerts_ms=0.000" in caplog.text
 
 
 def test_premium_user_can_save_sanitized_alert_preferences():
@@ -321,3 +324,84 @@ def test_free_upgrade_page_explains_and_links_to_opportunity_preview():
     assert "Daily Opportunity Radar" in page
     assert "See today’s strongest StockRadar research opportunities" in page
     assert 'href="/opportunities">Preview Opportunities</a>' in page
+
+
+def test_alert_panel_reads_fresh_account_scoped_preferences_and_latest_ten_events():
+    state = {
+        "preferences": {"owner": {"enabled": True, "tickers": ["MSFT"]}},
+        "events": [
+            {"account_key": "owner", "ticker": f"T{i}", "reasons": ["changed"],
+             "snapshot_date": "2026-09-15"} for i in range(12)
+        ] + [{"account_key": "other", "ticker": "PRIVATE", "reasons": ["secret"]}],
+    }
+    with (
+        patch.object(app, "premium_has_access", return_value=True),
+        patch.object(app, "owner_has_access", return_value=True),
+        patch.object(app, "newsletter_storage_load", return_value=state) as load,
+    ):
+        client = app.app.test_client()
+        response = client.get("/opportunities/alerts")
+        page = response.get_data(as_text=True)
+        state["preferences"]["owner"]["tickers"] = ["AAPL"]
+        fresh = client.get("/opportunities/alerts").get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "no-store" in response.headers["Cache-Control"]
+    assert 'name="enabled" checked' in page
+    assert 'name="signal_changes" checked' in page
+    assert 'value="MSFT"' in page
+    assert 'value="AAPL"' in fresh
+    assert "PRIVATE" not in page
+    assert "<strong>T0</strong>" not in page
+    assert "<strong>T1</strong>" not in page
+    assert page.index("<strong>T11</strong>") < page.index("<strong>T2</strong>")
+    assert 'name="csrf_token"' in page
+    assert 'method="post" action="/opportunities/alerts"' in page
+    assert "External email/push delivery is not enabled" in page
+    assert load.call_count == 2
+    load.assert_called_with("opportunity_alerts")
+
+
+def test_alert_get_and_post_require_premium_and_account_identity():
+    for premium, account_key, expected in [(False, "", 302), (True, "", 403)]:
+        with (
+            patch.object(app, "premium_has_access", return_value=premium),
+            patch.object(app, "opportunity_account_key", return_value=account_key),
+            patch.object(app, "newsletter_storage_load") as load,
+            patch.object(app, "newsletter_storage_update") as update,
+        ):
+            client = app.app.test_client()
+            for method in (client.get, client.post):
+                response = method("/opportunities/alerts")
+                assert response.status_code == expected
+                if not premium:
+                    assert response.headers["Location"].endswith("/upgrade")
+            load.assert_not_called()
+            update.assert_not_called()
+
+
+def test_alert_panel_escapes_stored_content():
+    with (
+        patch.object(app, "premium_has_access", return_value=True),
+        patch.object(app, "opportunity_account_key", return_value="owner"),
+        patch.object(app, "newsletter_storage_load", return_value={
+            "events": [{"account_key": "owner", "ticker": "<script>bad()</script>",
+                        "reasons": ["<img src=x onerror=bad()>"], "snapshot_date": "today"}],
+        }),
+    ):
+        page = app.app.test_client().get("/opportunities/alerts").get_data(as_text=True)
+    assert "<script>bad()" not in page
+    assert "&lt;script&gt;" in page
+    assert "&lt;img" in page
+
+
+def test_alert_save_still_requires_csrf():
+    app.app.config["WTF_CSRF_ENABLED"] = True
+    with (
+        patch.object(app, "premium_has_access", return_value=True),
+        patch.object(app, "opportunity_account_key", return_value="owner"),
+        patch.object(app, "newsletter_storage_update") as update,
+    ):
+        response = app.app.test_client().post("/opportunities/alerts", data={"enabled": "on"})
+    assert response.status_code == 400
+    update.assert_not_called()

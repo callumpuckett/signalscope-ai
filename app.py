@@ -1,4 +1,4 @@
-from flask import Flask, Response, render_template_string, redirect, url_for, request, session, jsonify, has_request_context, g
+from flask import Flask, Response, render_template_string, redirect, url_for, request, session, jsonify, has_request_context, g, abort
 from datetime import datetime, time as dt_time, timedelta, timezone
 from difflib import SequenceMatcher
 from email.utils import format_datetime
@@ -6168,6 +6168,11 @@ def premium_decision(symbol):
     )
 
 
+opportunity_alerts_html = """
+<section class="panel" id="alerts"><h2>Premium watchlist alerts</h2><p>Opt in to track meaningful daily changes. Events are deduplicated by account, date, ticker and reason.</p><form class="alert-form" method="post" action="/opportunities/alerts"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label class="check"><input type="checkbox" name="enabled" {% if preferences.enabled %}checked{% endif %}> Enable alerts</label><label class="check"><input type="checkbox" name="signal_changes" {% if preferences.signal_changes %}checked{% endif %}> Signal changes</label><label class="check"><input type="checkbox" name="score_changes" {% if preferences.score_changes %}checked{% endif %}> Score changes ≥2</label><label class="check"><input type="checkbox" name="risk_changes" {% if preferences.risk_changes %}checked{% endif %}> Risk changes</label><label class="check"><input type="checkbox" name="ranking_changes" {% if preferences.ranking_changes %}checked{% endif %}> Ranking changes</label><label class="tickers">Optional tickers (comma-separated)<input name="tickers" maxlength="240" value="{{ preferences.tickers|join(', ') }}" placeholder="MSFT, AAPL"></label><button class="button" type="submit">Save alert preferences</button></form>{% if events %}<h3>Recent tracked changes</h3><ul class="events">{% for event in events %}<li><strong>{{ event.ticker }}</strong> — {{ event.reasons|join('; ') }} · {{ event.snapshot_date }}</li>{% endfor %}</ul>{% endif %}<p class="muted">This release records optional in-app alert events. External email/push delivery is not enabled.</p></section>
+"""
+
+
 opportunities_html = """
 <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>StockRadar Opportunities — Daily Premium Research</title>
@@ -6180,7 +6185,19 @@ opportunities_html = """
 <div class="metrics"><div class="metric"><span>Signal</span><strong>{{ item.signal_score }}/25</strong></div><div class="metric"><span>Conviction</span><strong>{{ item.conviction_score }}/25</strong></div><div class="metric"><span>Momentum</span><strong>{{ item.momentum_score }}/20</strong></div><div class="metric"><span>Fundamentals</span><strong>{{ item.fundamentals_score }}/15</strong></div><div class="metric"><span>Risk quality</span><strong>{{ item.risk_score }}/10</strong></div><div class="metric"><span>Valuation</span><strong>{{ item.valuation_score }}/5</strong></div></div>
 <p><strong>Fundamentals:</strong> {{ item.fundamentals }} · <strong>Valuation/context:</strong> {{ item.valuation_context }}</p><div class="explain"><div><strong>Positives</strong><p>{{ item.explanation.positives }}</p></div><div><strong>Risks</strong><p>{{ item.explanation.risks }}</p></div><div><strong>What to monitor</strong><p>{{ item.explanation.monitor }}</p></div></div><div class="history"><svg viewBox="0 0 180 54" role="img" aria-label="Historical Opportunity Score for {{ item.ticker }}"><polyline points="{{ item.history_points }}"/></svg><span class="muted">{{ item.history|length }} daily snapshot{% if item.history|length != 1 %}s{% endif %} · last 30 retained for charting</span></div></article>{% endfor %}</section>
 {% if snapshot.exited %}<section class="panel"><h2>Exited today</h2><p>{% for item in snapshot.exited %}<span class="status exited">EXITED</span> {{ item.label }}{% if not loop.last %} · {% endif %}{% endfor %}</p></section>{% endif %}
-<section class="panel" id="alerts"><h2>Premium watchlist alerts</h2><p>Opt in to track meaningful daily changes. Events are deduplicated by account, date, ticker and reason.</p><form class="alert-form" method="post" action="/opportunities/alerts"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label class="check"><input type="checkbox" name="enabled" {% if preferences.enabled %}checked{% endif %}> Enable alerts</label><label class="check"><input type="checkbox" name="signal_changes" {% if preferences.signal_changes %}checked{% endif %}> Signal changes</label><label class="check"><input type="checkbox" name="score_changes" {% if preferences.score_changes %}checked{% endif %}> Score changes ≥2</label><label class="check"><input type="checkbox" name="risk_changes" {% if preferences.risk_changes %}checked{% endif %}> Risk changes</label><label class="check"><input type="checkbox" name="ranking_changes" {% if preferences.ranking_changes %}checked{% endif %}> Ranking changes</label><label class="tickers">Optional tickers (comma-separated)<input name="tickers" maxlength="240" value="{{ preferences.tickers|join(', ') }}" placeholder="MSFT, AAPL"></label><button class="button" type="submit">Save alert preferences</button></form>{% if events %}<h3>Recent tracked changes</h3><ul class="events">{% for event in events %}<li><strong>{{ event.ticker }}</strong> — {{ event.reasons|join('; ') }} · {{ event.snapshot_date }}</li>{% endfor %}</ul>{% endif %}<p class="muted">This release records optional in-app alert events. External email/push delivery is not enabled.</p></section>
+<section class="panel" id="alerts" aria-live="polite"><h2>Premium watchlist alerts</h2><p>Loading alert preferences and recent changes…</p><a href="/opportunities/alerts">Open alert preferences and recent changes</a></section>
+<script>
+window.addEventListener('load', async function () {
+    const panel = document.getElementById('alerts');
+    try {
+        const response = await fetch('/opportunities/alerts', {credentials: 'same-origin', cache: 'no-store', redirect: 'error'});
+        if (!response.ok) throw new Error('Alerts unavailable');
+        panel.outerHTML = await response.text();
+    } catch (error) {
+        panel.querySelector('p').textContent = 'Alerts could not be loaded. Use the link below to try again.';
+    }
+});
+</script>
 {% else %}<section class="panel locked"><div class="grid">{% for item in snapshot.opportunities[:3] %}<article class="opportunity"><div class="topline"><div class="identity"><span class="rank">{{ item.rank }}</span><h3>{{ item.label }}</h3></div><div class="score">{{ item.opportunity_score|int }}<small>/100</small></div></div><div class="metrics"><div class="metric"><span>Signal</span><strong>{{ item.signal }}</strong></div><div class="metric"><span>Status</span><strong>{{ item.status }}</strong></div></div></article>{% endfor %}</div><div class="lockbox"><div class="lockcard"><div class="eyebrow">Premium preview</div><h2>See today's full Top 5 and what changed.</h2><p>Unlock component scores, price context, historical movement, positives, risks, monitoring prompts and optional watchlist alerts.</p><a class="button" href="/upgrade">Unlock Premium</a><a class="button secondary" href="/newsletter">Get StockRadar Weekly free</a><p class="muted">Prefer weekly context? StockRadar Weekly summarises the market signal without a Premium subscription.</p></div></div></section>{% endif %}
 {{ disclaimer_footer() | safe }}</main>{{ newsletter_side_tab() | safe }}</body></html>
 """
@@ -6199,20 +6216,9 @@ def opportunities():
         for item in snapshot.get("opportunities", []):
             item["history"] = opportunity_history(state, item["ticker"])
             item["history_points"] = opportunity_history_points(item["history"])
-        account_key = opportunity_account_key()
-        stage_started = time.perf_counter()
-        alert_state = newsletter_storage_load("opportunity_alerts")
-        alert_seconds = time.perf_counter() - stage_started
-        preferences = {
-            **default_opportunity_alert_preferences(),
-            **alert_state.get("preferences", {}).get(account_key, {}),
-        }
-        events = [event for event in alert_state.get("events", []) if event.get("account_key") == account_key][-10:][::-1]
     else:
         snapshot = build_opportunity_snapshot(get_recommendations(), market_data_provider=lambda ticker: {})
-        preferences = default_opportunity_alert_preferences()
-        events = []
-    response = render_template_string(opportunities_html, premium=premium, snapshot=snapshot, preferences=preferences, events=events)
+    response = render_template_string(opportunities_html, premium=premium, snapshot=snapshot)
     total_seconds = time.perf_counter() - route_started
     # WARNING keeps this diagnostic visible under the default production log level.
     app.logger.warning(
@@ -6225,6 +6231,22 @@ def opportunities():
         (total_seconds - entitlement_seconds - snapshot_seconds - alert_seconds) * 1000,
     )
     return response
+
+
+@app.route("/opportunities/alerts", methods=["GET"])
+def opportunity_alert_panel():
+    if not premium_has_access():
+        return redirect(url_for("upgrade"))
+    account_key = opportunity_account_key()
+    if not account_key:
+        abort(403)
+    alert_state = newsletter_storage_load("opportunity_alerts")
+    preferences = {
+        **default_opportunity_alert_preferences(),
+        **alert_state.get("preferences", {}).get(account_key, {}),
+    }
+    events = [event for event in alert_state.get("events", []) if event.get("account_key") == account_key][-10:][::-1]
+    return render_template_string(opportunity_alerts_html, preferences=preferences, events=events), 200, {"Cache-Control": "no-store"}
 
 
 @app.route("/opportunities/alerts", methods=["POST"])
