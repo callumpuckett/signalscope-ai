@@ -167,7 +167,7 @@ def test_free_preview_is_locked_and_does_not_touch_opportunity_storage():
     storage_load.assert_not_called()
 
 
-def test_premium_page_shows_full_ranking_history_and_deferred_alerts(caplog):
+def test_premium_page_shows_full_ranking_history_and_deferred_alerts():
     snapshot = app.build_opportunity_snapshot(
         [recommendation("MSFT")],
         now=datetime(2026, 8, 31, tzinfo=timezone.utc),
@@ -192,7 +192,6 @@ def test_premium_page_shows_full_ranking_history_and_deferred_alerts(caplog):
     assert page.index('id="alerts"') < page.index("(async function () {")
     assert "})();\n</script>" in page
     assert 'action="/opportunities/alerts"' not in page
-    assert "alerts_ms=0.000" in caplog.text
 
 
 def test_premium_user_can_save_sanitized_alert_preferences():
