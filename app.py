@@ -13103,7 +13103,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
     </div>
 
     <div class="trust-strip" aria-label="How to use StockRadar">
-        <div class="trust-item"><strong>Educational research tool</strong>Plain-English market context for independent research.</div>
+        <div class="trust-item"><strong>Educational research tool</strong>Understand what the signals and scores mean, then check the evidence for yourself. <a href="/how-it-works">Read our research methodology →</a></div>
         <div class="trust-item"><strong>Prompts, not instructions</strong>BUY, HOLD and SELL patterns are starting points to investigate.</div>
         <div class="trust-item"><strong>Risk still matters</strong>Check concentration, time horizon and portfolio fit before acting.</div>
     </div>
@@ -13868,6 +13868,7 @@ p{color:#cbd5e1;line-height:1.68;font-size:var(--font-body);}
         <h2 id="premium-radar" style="margin-top:16px;">Start with a ranked view. Understand the research behind it.</h2>
         <p class="difference-lead">See today’s strongest StockRadar research opportunities in the complete ranked Top 5, with component scores, daily movement and supporting research.</p>
         <p>Premium members can explore the positives, risks and what to monitor for each setup. Rankings help organise your research; they are not predictions or instructions to trade.</p>
+        <p class="note"><a href="/how-it-works#opportunity-score">How the Opportunity Score is calculated →</a></p>
         <a class="button secondary" href="/opportunities">Preview Opportunities</a>
         {% if premium_payments_enabled %}
         <div class="pay-box">
@@ -14767,6 +14768,10 @@ def how_it_works():
             </section>
         </div>
 
+        <h2>From inputs to research prompts</h2>
+        <p>StockRadar combines available signal records, company and market context with rules-based research summaries. The signal list reads available local research files; if those cannot be used, it uses built-in examples. It also fills out coverage with generated watchlist prompts. A displayed signal is not proof that fresh company analysis has taken place.</p>
+        <p>Generated prompts use fixed ticker groups and list-position rules, with preset confidence values. They are not calculated from current price movements. Market prices, headlines and company information provide additional context to check independently.</p>
+
         <h2>What BUY, HOLD and SELL mean</h2>
         <div class="signal-guide">
             <section class="signal-explainer buy">
@@ -14782,6 +14787,52 @@ def how_it_works():
                 <p>A caution or weakness signal. It does not mean “you must sell immediately”.</p>
             </section>
         </div>
+
+        <h2>How to read conviction and risk</h2>
+        <p>Conviction is the confidence input attached to a signal: it may come from an imported record, a built-in example or a generated preset. It is not a probability of profit or a statistically calibrated forecast. An 82% conviction value does not mean an 82% chance of making money.</p>
+        <p>Recognised signal labels are normalised to BUY, HOLD or SELL. If a label is unrecognised, confidence of at least 72 maps to BUY; a positive value of 45 or below maps to SELL; otherwise it maps to HOLD. Missing signal fields in imported records default to HOLD.</p>
+        <p>Stock-page risk commentary uses signal and confidence rules. In the Premium Decision Panel, SELL means “Higher caution”; otherwise confidence of at least 80 means “Medium risk”, at least 60 means “Medium / watch closely”, and lower values mean “Early / watchlist”. These labels do not measure the size or probability of a loss, and do not assess your complete circumstances.</p>
+
+        <h2 id="opportunity-score">How Opportunity Radar’s 100-point score works</h2>
+        <p>The Opportunity Score is a deterministic sum of six components. The displayed component limits total 100, but the current rules do not use every possible point. No model selects the ranked names.</p>
+        <div class="section-grid">
+            <section class="info-section"><h2>Signal · up to 25</h2><p>BUY receives 25 points, HOLD 14 and SELL 4.</p></section>
+            <section class="info-section"><h2>Conviction · up to 25</h2><p>Confidence is bounded to 0–100, multiplied by 0.25 and rounded to one decimal place.</p></section>
+            <section class="info-section"><h2>Momentum · up to 20</h2><p>BUY receives 15 points, HOLD 9 and SELL 3. This is a signal-based proxy, not a separate calculation of recent price momentum.</p></section>
+            <section class="info-section"><h2>Fundamentals · up to 15</h2><p>The fixed quality group receives 15 points, the fixed fund group 12, and other tickers 10. These points are not recalculated from live financial statements.</p></section>
+            <section class="info-section"><h2>Risk quality · up to 10</h2><p>BUY starts at 8 points, HOLD at 7 and SELL at 3. The volatile group subtracts 2; the fund group adds 1. The result is bounded to 0–10. Higher points mean a less cautious rule-based classification, not safety.</p></section>
+            <section class="info-section"><h2>Valuation · up to 5</h2><p>The fund group receives 4 points and other tickers 3. This is a fixed context allowance, not a fair-value estimate or a live valuation-ratio calculation.</p></section>
+        </div>
+        <details class="info-section">
+            <summary>Current fixed ticker groups</summary>
+            <p><strong>Quality:</strong> MSFT, AAPL, GOOGL, AMZN, META, V, MA, COST, JNJ, PG.</p>
+            <p><strong>Funds:</strong> SPY, QQQ, DIA, IWM, SMH, GLD, SLV, TLT, HYG.</p>
+            <p><strong>Volatile:</strong> TSLA, PLTR, SPCX, BTC-USD, ETH-USD, SOL-USD, AMD, NVDA.</p>
+            <p>These are implementation groups, not comprehensive or continuously reassessed classifications of investment quality or risk.</p>
+        </details>
+        <p>Totals are rounded to one decimal place and bounded to 0–100. The available recommendation list is sorted by highest score, with ticker alphabetical order breaking ties; the first five form the ranked view. Prices are added after ranking and do not change the score. For example, BUY with 80% confidence in the quality group, outside the volatile and fund groups, scores 25 + 20 + 15 + 15 + 8 + 3 = 86.</p>
+        <p>Radar risk labels use its risk-quality component: 8 or more is “Managed”, 5–7 is “Medium”, and below 5 is “Elevated”. “Managed” does not mean that losses are controlled or prevented.</p>
+        <p><strong>Different views, different meanings:</strong> the Opportunity Score ranks this shortlist. Conviction is an input, not the total. The Premium Decision Panel’s score breakdown describes signal strength, confidence, portfolio role, risk, concentration and watch-next context; it is not this six-component sum. Do not treat scores or labels across views as interchangeable.</p>
+
+        <h2>What AI contributes — and what it doesn’t</h2>
+        <p>The current application can display supplied research text, including fields labelled AI reason or insight. Its Opportunity Radar explanations and Premium Decision Panel wording are assembled from templates and rules using the available inputs. These views do not call a generative AI model to choose stocks, calculate rankings or predict prices.</p>
+        <p>The application does not establish how every imported research file was produced. “AI” wording alone is not evidence of an independently verified model assessment. Read the underlying inputs and limitations alongside the explanation.</p>
+
+        <h2>Data freshness and limitations</h2>
+        <p>The Premium Opportunity Radar stores one snapshot per London calendar day and reuses it during that day. A background task can create it, or the first Premium request can create a missing snapshot. There is no guaranteed publication time. Reloading the page does not continuously recalculate the saved ranking. History charts show up to 30 recorded daily scores.</p>
+        <p>The Free Opportunities preview is built from the available recommendation list when requested; it is not the saved Premium snapshot. It does not fetch market prices for that preview.</p>
+        <p>Recommendation and dashboard caches default to five minutes, with configurable intervals. Cache expiry does not guarantee that an underlying research file has been updated. Headlines, prices, company information and daily rankings can have different timestamps.</p>
+        <p>Radar price context uses Yahoo Finance history accessed through yfinance, taking the latest available close in the requested one-month history. It is not an executable live quote. If that history is unavailable, Radar displays “Unavailable” and keeps the rules-based ranking. Missing chart data produces an unavailable chart rather than invented prices.</p>
+        <p>Check dates and source material yourself. Available coverage may be incomplete, generated prompts may persist, and a current price does not establish that a signal or its reasoning is current.</p>
+
+        <h2>Check the evidence yourself</h2>
+        <ol class="research-flow">
+            <li>Identify whether you are reading a signal, conviction input, Opportunity Score or qualitative decision summary.</li>
+            <li>Read the positives and ask which current company filings, announcements or market evidence support them.</li>
+            <li>Review risks and valuation separately; a high score does not replace those checks.</li>
+            <li>Consider concentration and overlap alongside your own time horizon and circumstances.</li>
+            <li>Write down what new evidence would weaken the case or deserve another review.</li>
+        </ol>
 
         <h2>How to use StockRadar</h2>
         <ol class="research-flow">
