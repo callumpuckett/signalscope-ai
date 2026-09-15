@@ -13828,69 +13828,57 @@ p{color:#cbd5e1;line-height:1.68;font-size:var(--font-body);}
         <div class="card">
             <span class="badge">StockRadar Premium</span>
             <h1>Understand the signal before you act.</h1>
-            <p><strong>Trading apps show you the market. StockRadar Premium helps you understand what the signal is trying to tell you.</strong></p>
-            <p>Free tells you the signal. Premium explains why it matters, what risk to check, where the stock may fit and what to research next.</p>
-            <div class="feature"><span class="tick">✓</span><span><strong>Why this signal?</strong> Read the reasoning behind the headline BUY, HOLD or SELL research prompt.</span></div>
-            <div class="feature"><span class="tick">✓</span><span><strong>What could go wrong?</strong> Check risk level, concentration warning and caution notes before adding exposure.</span></div>
-            <div class="feature"><span class="tick">✓</span><span><strong>What deserves attention?</strong> Opportunity Radar scans daily to rank the strongest StockRadar research opportunities.</span></div>
+            <p><strong>Free shows the signal. Premium explains the decision.</strong></p>
+            <p>Free shows you the signal. Premium gives you the research, reasoning and context behind it.</p>
+            <p>Go beyond BUY, HOLD or SELL: understand the case, question the risks and decide what deserves further research.</p>
         </div>
         <div class="card">
             <span class="badge">{% if premium_payments_enabled %}Premium plan{% else %}Premium preview{% endif %}</span>
             <div class="price">£5 <span>/ month</span></div>
-            <p class="note"><strong style="color:#cbd5e1;">£5/month. Cancel anytime.</strong> Cancellation stops future billing, with access continuing until the end of the current billing period.</p>
+            <p><strong>£5/month · Cancel anytime</strong></p>
             {% if premium_payments_enabled %}
-            <p>One monthly subscription unlocks the Premium research toolkit. It is designed to help you ask better questions, not to tell you what to buy or sell.</p>
-            <div class="note" style="padding:12px;border-radius:14px;background:rgba(56,189,248,0.08);border:1px solid rgba(56,189,248,0.16);color:#bae6fd;"><strong>Controlled early access:</strong> Checkout is explicitly enabled for the current environment.</div>
-            <p class="note">£5/month early access premium subscription. Cancellation requests are handled through <a href="/manage-subscription">Manage Subscription</a> while self-service billing is being built.</p>
+            <p>One monthly subscription unlocks the Premium research toolkit.</p>
+            <form method="POST" action="/create-checkout-session">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="button" type="submit" style="border:none;cursor:pointer;width:100%;">Start Premium — £5/month</button>
+                </form>
+            <p class="note">Secure Stripe checkout. Premium access is linked to the email used at checkout.</p>
             {% else %}
             <p>Premium subscriptions are not open yet. This page previews the planned £5/month research toolkit while StockRadar completes payment readiness checks.</p>
-            <div class="note" style="padding:12px;border-radius:14px;background:rgba(245,158,11,0.09);border:1px solid rgba(245,158,11,0.20);color:#fde68a;"><strong>Soft launch:</strong> No payment can be started from this environment unless checkout is explicitly enabled.</div>
+            <a class="button secondary" href="/feedback">Join the testing feedback loop</a>
+            <p class="note">Checkout remains disabled during soft launch. No payment details are collected on this page.</p>
             {% endif %}
-            <p class="note"><strong style="color:#cbd5e1;">Educational only.</strong> Premium provides research tools and analysis, not financial advice, personalised investment recommendations or return promises.</p>
-            <div class="pay-box">
-                <p class="note">Premium access provides research tools and analysis only. StockRadar is not financial advice.</p>
-                {% if premium_payments_enabled %}
-                <form method="POST" action="/create-checkout-session">
+            <p class="note">Cancellation stops future billing, with access continuing until the end of the current billing period.</p>
+            <p class="note"><strong>Educational only.</strong> Premium provides research tools and analysis, not financial advice, personalised investment recommendations or return promises.</p>
+        </div>
+    </div>
+    <section class="card difference-card" aria-labelledby="premium-adds">
+        <h2 id="premium-adds">What Premium adds</h2>
+        <p class="difference-lead">Turn a signal into a clearer research question.</p>
+        <div class="brief-grid">
+            <div class="brief-card"><strong>Opportunity Radar</strong><span>See the strongest research setups ranked in one place.</span></div>
+            <div class="brief-card"><strong>AI Reasoning</strong><span>Understand what’s driving the signal.</span></div>
+            <div class="brief-card"><strong>Risk Read</strong><span>See what could weaken the investment case.</span></div>
+            <div class="brief-card"><strong>Portfolio Fit</strong><span>Understand how a stock may fit alongside other holdings.</span></div>
+            <div class="brief-card"><strong>Watch Next</strong><span>Know which developments or evidence deserve another review.</span></div>
+        </div>
+    </section>
+    <section class="card difference-card" aria-labelledby="premium-radar">
+        <span class="badge">Daily Opportunity Radar</span>
+        <h2 id="premium-radar" style="margin-top:16px;">Start with a ranked view. Understand the research behind it.</h2>
+        <p class="difference-lead">See today’s strongest StockRadar research opportunities in the complete ranked Top 5, with component scores, daily movement and supporting research.</p>
+        <p>Premium members can explore the positives, risks and what to monitor for each setup. Rankings help organise your research; they are not predictions or instructions to trade.</p>
+        <a class="button secondary" href="/opportunities">Preview Opportunities</a>
+        {% if premium_payments_enabled %}
+        <div class="pay-box">
+            <p><strong>Go beyond the signal for £5/month.</strong> Cancel anytime.</p>
+            <form method="POST" action="/create-checkout-session">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button class="button" type="submit" style="border:none;cursor:pointer;width:100%;">Start Premium with Stripe Checkout</button>
+                    <button class="button" type="submit" style="border:none;cursor:pointer;width:100%;">Start Premium — £5/month</button>
                 </form>
-                <div class="trust-points" aria-label="Payment and subscription trust notes">
-                    <div class="trust-point"><strong>Secure Stripe checkout</strong>Payments are handled by Stripe. StockRadar does not store your full card details.</div>
-                    <div class="trust-point"><strong>Cancel anytime</strong>Premium is £5/month. Cancellation stops future billing, with access continuing until the end of the current billing period.</div>
-                    <div class="trust-point"><strong>Email-linked access</strong>Your Premium access is linked to the email used at checkout. For help, use <a href="/contact">Contact</a>.</div>
-                </div>
-                <div class="note">Need to cancel later? Visit <a href="/manage-subscription">Manage Subscription</a>. Early access cancellations are handled through support until self-service billing management is added.</div>
-                {% else %}
-                <a class="button secondary" href="/feedback" style="width:100%;margin-right:0;">Join the testing feedback loop</a>
-                <div class="note">Checkout remains disabled during soft launch. No payment details are collected on this page.</div>
-                <div class="trust-points" aria-label="Premium trust notes">
-                    <div class="trust-point"><strong>Secure Stripe checkout</strong>When Premium checkout is available, payment is handled by Stripe and StockRadar does not store full card details.</div>
-                    <div class="trust-point"><strong>Simple pricing</strong>Premium is planned at £5/month with cancel-anytime support.</div>
-                    <div class="trust-point"><strong>Email-linked access</strong>Premium access is linked to the email used at checkout. For help, use <a href="/contact">Contact</a>.</div>
-                    <div class="trust-point"><strong>Educational only</strong>Signals are research prompts, not instructions, guarantees or personalised financial advice.</div>
-                </div>
-                {% endif %}
-                <div class="note"><a href="/feedback">Send Feedback</a> about the upgrade experience while StockRadar is in early access.</div>
-            </div>
         </div>
-    </div>
-    <div class="card difference-card">
-        <span class="badge">Why Premium is different</span>
-        <h2 style="margin-top:16px;">A decision-support and education layer — not another broker screen.</h2>
-        <p class="difference-lead">Standard trading apps help you view prices and place trades. StockRadar Premium helps you slow down, understand the signal and decide what deserves further research without information overload.</p>
-        <div class="grid">
-            <div class="mini"><strong>Daily Opportunity Radar</strong>See today’s strongest StockRadar research opportunities, score movement and ranking context. <a href="/opportunities">Preview Opportunities</a>.</div>
-            <div class="mini"><strong>Plain-English signal reasoning</strong>Understand why the current prompt is showing.</div>
-            <div class="mini"><strong>Risk read before you act</strong>See what could weaken the research case.</div>
-            <div class="mini"><strong>Portfolio-fit context</strong>Check role and possible duplicate exposure.</div>
-            <div class="mini"><strong>Watch-next trigger</strong>Know which evidence deserves another look.</div>
-            <div class="mini"><strong>Beginner mistake to avoid</strong>Spot the common trap linked to the signal.</div>
-            <div class="mini"><strong>Caution zone</strong>Keep weaker setups visible, not hidden by optimism.</div>
-            <div class="mini"><strong>Compare stocks with context</strong>Review two choices without declaring a guaranteed winner.</div>
-            <div class="mini"><strong>No information overload</strong>Get the simple answer first, with detail only where useful.</div>
-        </div>
-        <p class="note"><strong style="color:#cbd5e1;">£5/month. Cancel anytime.</strong> Educational decision support only — not financial advice, trade execution or a promise of returns.</p>
-    </div>
+        {% endif %}
+    </section>
     <div class="card" style="margin-top:24px;background:linear-gradient(135deg,rgba(14,44,50,0.92),rgba(31,34,45,0.86));border-color:rgba(74,222,163,0.20);">
         <span class="badge">Premium Decision Brief</span>
         <h2>What would Premium help you review today?</h2>
@@ -13904,6 +13892,35 @@ p{color:#cbd5e1;line-height:1.68;font-size:var(--font-body);}
         </div>
         <p class="note">Educational only. Premium does not provide personal financial advice or tell you what to trade.</p>
     </div>
+    <section class="card difference-card" aria-labelledby="premium-more">
+        <h2 id="premium-more">More context for your research</h2>
+        <div class="grid">
+            <div class="mini"><strong>Premium Decision Panels</strong>Explore the reasoning, caution notes and evidence behind a signal.</div>
+            <div class="mini"><strong>Premium Watchlist Intelligence</strong>Keep stronger setups and caution zones in view.</div>
+            <div class="mini"><strong>Portfolio Fit Checker</strong>Review a stock’s role, concentration and possible duplicate exposure.</div>
+            <div class="mini"><strong>Compare stocks with context</strong>Review two choices without declaring a guaranteed winner.</div>
+            <div class="mini"><strong>Beginner mistake to avoid</strong>Spot the common trap linked to the signal.</div>
+        </div>
+    </section>
+    <section class="card difference-card" aria-labelledby="premium-details">
+        <h2 id="premium-details">Subscription details and support</h2>
+        <p class="note">StockRadar is currently in early access. Premium features and support processes are still being improved.</p>
+        {% if premium_payments_enabled %}
+        <p class="note">£5/month early access premium subscription. Cancellation requests are handled through <a href="/manage-subscription">Manage Subscription</a> while self-service billing is being built.</p>
+                <div class="trust-points" aria-label="Payment and subscription trust notes">
+                    <div class="trust-point"><strong>Secure Stripe checkout</strong>Payments are handled by Stripe. StockRadar does not store your full card details.</div>
+                    <div class="trust-point"><strong>Cancel anytime</strong>Premium is £5/month. Cancellation stops future billing, with access continuing until the end of the current billing period.</div>
+                    <div class="trust-point"><strong>Email-linked access</strong>Your Premium access is linked to the email used at checkout. For help, use <a href="/contact">Contact</a>.</div>
+                </div>
+                <div class="note">Need to cancel later? Visit <a href="/manage-subscription">Manage Subscription</a>. Early access cancellations are handled through support until self-service billing management is added.</div>
+
+        {% else %}
+        <p class="note">Premium is planned at £5/month with cancel-anytime support. No payment can be started from this environment unless checkout is explicitly enabled.</p>
+        <p class="note">When Premium checkout is available, payment is handled by Stripe and StockRadar does not store full card details. Premium access is linked to the email used at checkout. For help, use <a href="/contact">Contact</a>.</p>
+        {% endif %}
+        <p class="note">Premium access provides research tools and analysis only. StockRadar is not financial advice.</p>
+        <p class="note"><a href="/feedback">Send Feedback</a> about the upgrade experience while StockRadar is in early access.</p>
+    </section>
     {% endif %}
     {% if not has_premium_access %}
     <div class="card" style="margin-top:24px;background:linear-gradient(135deg,rgba(56,189,248,0.10),rgba(15,23,42,0.78));border-color:rgba(56,189,248,0.22);">
@@ -13914,14 +13931,15 @@ p{color:#cbd5e1;line-height:1.68;font-size:var(--font-body);}
         <a class="button secondary" href="/newsletter">Join Free</a>
     </div>
     {% endif %}
-    <div class="card future-card">
+    <details class="card future-card">
+        <summary>Future research tools — not included as live features</summary>
         <p class="future-label">Coming later · Future Premium research feature · Not live yet</p>
         <h2>Coming later: Dividend Dip Tracker</h2>
         <p>Dividend/distribution snapshots are already live on stock detail pages where data is available.</p>
         <p>Dividend Dip Tracker is still planned as a future scanner for dividend-related watchlist moves, ex-dividend effects, income dips and possible yield-trap risks.</p>
         <p>This future tracker will be a research prompt tool only. It will not be financial advice, a buy signal, or a recommendation to trade around dividends.</p>
         <p class="note"><strong style="color:#fde68a;">Future Premium research feature · Not live yet · Not financial advice</strong></p>
-    </div>
+    </details>
     {{ disclaimer_footer() | safe }}
 </div>
 {{ newsletter_side_tab() | safe }}

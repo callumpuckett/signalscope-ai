@@ -35,7 +35,8 @@ def test_homepage_explains_product_and_has_primary_calls_to_action():
 
 
 def test_upgrade_page_clearly_lists_price_and_premium_tools():
-    response = app.app.test_client().get("/upgrade")
+    with patch.object(app, "stripe_checkout_configured", return_value=True):
+        response = app.app.test_client().get("/upgrade")
     page = response.get_data(as_text=True)
 
     assert response.status_code == 200
