@@ -703,7 +703,10 @@ def add_security_headers(response):
         session.get("owner_logged_in") is True
         or session.get("premium_active") is True
     )
-    if authenticated_response or request.path.startswith(sensitive_paths):
+    if request.path == "/static/stockradar-header-logo.png" and response.status_code in {200, 304}:
+        response.headers["Cache-Control"] = "public, max-age=3600"
+        response.headers.pop("Pragma", None)
+    elif authenticated_response or request.path.startswith(sensitive_paths):
         response.headers["Cache-Control"] = "no-store, max-age=0"
         response.headers["Pragma"] = "no-cache"
     elif request.path.startswith("/static/"):
@@ -935,6 +938,7 @@ OPPORTUNITY_SNAPSHOT_CHECK_INTERVAL_SECONDS = int(
     os.environ.get("OPPORTUNITY_SNAPSHOT_CHECK_INTERVAL_SECONDS", "21600")
 )
 OPPORTUNITY_SNAPSHOT_THREAD_STARTED = False
+OPPORTUNITY_PAGE_CACHE = None
 BEEHIIV_API_KEY = os.environ.get("BEEHIIV_API_KEY", "").strip()
 BEEHIIV_PUBLICATION_ID = os.environ.get("BEEHIIV_PUBLICATION_ID", "").strip()
 BEEHIIV_AUTOSEND_ENABLED = (
@@ -3602,6 +3606,24 @@ def ensure_daily_opportunity_snapshot(now=None, recommendations=None, market_dat
     return stored, refreshed, created["value"]
 
 
+def get_opportunity_page_snapshot():
+    """Reuse persisted daily data; keep request-specific mutations isolated."""
+    global OPPORTUNITY_PAGE_CACHE
+    london_now = newsletter_london_now()
+    snapshot_date = london_now.date().isoformat()
+    cached = OPPORTUNITY_PAGE_CACHE
+    if cached is not None and cached[0] == snapshot_date:
+        return copy.deepcopy(cached[1])
+
+    snapshot, state, _ = ensure_daily_opportunity_snapshot(now=london_now)
+    persisted = state.get("snapshots", {}).get(snapshot_date)
+    if persisted:
+        cached = (snapshot_date, copy.deepcopy((persisted, state)))
+        OPPORTUNITY_PAGE_CACHE = cached
+        return copy.deepcopy(cached[1])
+    return snapshot, state
+
+
 def build_homepage_free_report_preview(recommendations=None):
     """Build a free-only Microsoft preview from data already loaded for the homepage."""
     for item in recommendations or []:
@@ -6168,7 +6190,7 @@ opportunities_html = """
 def opportunities():
     premium = premium_has_access()
     if premium:
-        snapshot, state, _ = ensure_daily_opportunity_snapshot()
+        snapshot, state = get_opportunity_page_snapshot()
         for item in snapshot.get("opportunities", []):
             item["history"] = opportunity_history(state, item["ticker"])
             item["history_points"] = opportunity_history_points(item["history"])
