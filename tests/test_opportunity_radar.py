@@ -188,7 +188,9 @@ def test_premium_page_shows_full_ranking_history_and_deferred_alerts(caplog):
     assert "Historical Opportunity Score" in page
     assert "Premium watchlist alerts" in page
     assert 'href="/opportunities/alerts"' in page
-    assert "window.addEventListener('load'" in page
+    assert "window.addEventListener('load'" not in page
+    assert page.index('id="alerts"') < page.index("(async function () {")
+    assert "})();\n</script>" in page
     assert 'action="/opportunities/alerts"' not in page
     assert "alerts_ms=0.000" in caplog.text
 

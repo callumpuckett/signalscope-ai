@@ -6187,7 +6187,7 @@ opportunities_html = """
 {% if snapshot.exited %}<section class="panel"><h2>Exited today</h2><p>{% for item in snapshot.exited %}<span class="status exited">EXITED</span> {{ item.label }}{% if not loop.last %} · {% endif %}{% endfor %}</p></section>{% endif %}
 <section class="panel" id="alerts" aria-live="polite"><h2>Premium watchlist alerts</h2><p>Loading alert preferences and recent changes…</p><a href="/opportunities/alerts">Open alert preferences and recent changes</a></section>
 <script>
-window.addEventListener('load', async function () {
+(async function () {
     const panel = document.getElementById('alerts');
     try {
         const response = await fetch('/opportunities/alerts', {credentials: 'same-origin', cache: 'no-store', redirect: 'error'});
@@ -6196,7 +6196,7 @@ window.addEventListener('load', async function () {
     } catch (error) {
         panel.querySelector('p').textContent = 'Alerts could not be loaded. Use the link below to try again.';
     }
-});
+})();
 </script>
 {% else %}<section class="panel locked"><div class="grid">{% for item in snapshot.opportunities[:3] %}<article class="opportunity"><div class="topline"><div class="identity"><span class="rank">{{ item.rank }}</span><h3>{{ item.label }}</h3></div><div class="score">{{ item.opportunity_score|int }}<small>/100</small></div></div><div class="metrics"><div class="metric"><span>Signal</span><strong>{{ item.signal }}</strong></div><div class="metric"><span>Status</span><strong>{{ item.status }}</strong></div></div></article>{% endfor %}</div><div class="lockbox"><div class="lockcard"><div class="eyebrow">Premium preview</div><h2>See today's full Top 5 and what changed.</h2><p>Unlock component scores, price context, historical movement, positives, risks, monitoring prompts and optional watchlist alerts.</p><a class="button" href="/upgrade">Unlock Premium</a><a class="button secondary" href="/newsletter">Get StockRadar Weekly free</a><p class="muted">Prefer weekly context? StockRadar Weekly summarises the market signal without a Premium subscription.</p></div></div></section>{% endif %}
 {{ disclaimer_footer() | safe }}</main>{{ newsletter_side_tab() | safe }}</body></html>
