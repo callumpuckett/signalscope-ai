@@ -474,7 +474,7 @@ def test_return_outlook_free_metric_and_server_side_premium_gate():
     assert "Revenue growth reported at 12.0%" not in free
     assert "USD 150.00" not in free
     assert "Revenue growth reported at 12.0%" in premium
-    for heading in ("Base case", "Bull case", "Downside case", "What Has To Go Right?", "Valuation check"):
+    for heading in ("Base case", "Bull case", "Downside case", "What Has To Go Right?", "<summary>Valuation</summary>"):
         assert heading in premium
     assert "return_outlook" not in snapshot["opportunities"][0]
 
@@ -500,3 +500,56 @@ def test_return_outlook_reuses_existing_metadata_fetch_and_cache():
         second = app.opportunity_return_outlook("MSFT")
     assert first["metric"] == second["metric"] == "+20.0%"
     provider.assert_called_once_with()
+
+
+def render_outlook_preview(outlook, market=None, premium=True):
+    snapshot = app.build_opportunity_snapshot(
+        [recommendation("COST")], market_data_provider=lambda _: market or no_market_data("COST"),
+    )
+    with (
+        patch.object(app, "get_recommendations", return_value=[recommendation("COST")]),
+        patch.object(app, "get_opportunity_page_snapshot", return_value=(snapshot, {"snapshots": {}})),
+        patch.object(app, "opportunity_return_outlook", return_value=outlook),
+        patch.object(app, "premium_has_access", return_value=premium),
+    ):
+        return app.app.test_client().get("/opportunities").get_data(as_text=True)
+
+
+def test_outlook_research_is_collapsed_and_scenario_percentages_lead():
+    from html.parser import HTMLParser
+
+    class DetailsParser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.details = []
+        def handle_starttag(self, tag, attrs):
+            if tag == "details":
+                self.details.append(dict(attrs))
+
+    page = render_outlook_preview(app.build_return_outlook(outlook_info(), now=1_789_646_400))
+    parser = DetailsParser()
+    parser.feed(page)
+    assert len(parser.details) == 6
+    assert all("open" not in attrs for attrs in parser.details)
+    for heading in ("Why it could rise", "What could go wrong", "What to watch", "Valuation", "Detailed research", "How is 12M Upside calculated?"):
+        assert f"<summary>{heading}</summary>" in page
+    assert '<strong class="scenario-value">+50.0%</strong><span class="scenario-target">USD 150.00</span>' in page
+    assert page.index('What Has To Go Right?') < page.index('<summary>Why it could rise')
+    assert page.index('<summary>Detailed research') < page.index('Daily score change:')
+    assert page.index('<summary>Detailed research') < page.index('Rank movement:')
+    assert page.index('Historical Opportunity Score') < page.index('<summary>How is 12M Upside calculated?')
+
+
+def test_current_price_uses_validated_reference_only_when_chart_price_missing():
+    outlook = app.build_return_outlook(outlook_info(), now=1_789_646_400)
+    fallback = render_outlook_preview(outlook)
+    assert 'Current price:</strong> USD 100.00' in fallback
+    assert 'Yahoo Finance reference quote ·' in fallback
+    chart = render_outlook_preview(outlook, {"current_price": 99, "current_price_label": "$99.00"})
+    assert 'Current price:</strong> $99.00' in chart
+    assert '(latest available chart close)' in chart
+    assert 'Yahoo Finance reference quote ·' not in chart
+    missing = render_outlook_preview(app.build_return_outlook({}))
+    assert 'Current price:</strong> Unavailable' in missing
+    assert missing.count('No reliable target reference') == 3
+    assert 'nan%' not in missing
