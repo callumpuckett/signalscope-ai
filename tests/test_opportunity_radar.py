@@ -573,7 +573,8 @@ def test_current_price_uses_validated_reference_only_when_chart_price_missing():
     assert 'class="scenario-grid"' not in missing
     assert 'class="upside-value">Unavailable' not in missing
     assert '<summary>Why it could rise</summary>' not in missing
-    assert '12M Upside unavailable' in missing
+    assert '12M Upside unavailable' not in missing
+    assert 'Analyst outlook data is currently unavailable.' in missing
     assert 'nan%' not in missing
 
 
@@ -652,7 +653,15 @@ def test_persisted_prior_day_outlook_is_available_during_cooldown_but_not_after_
 def test_unavailable_ui_is_compact_and_valid_cache_is_labelled_without_timestamp_changes():
     for premium in (False, True):
         absent = render_outlook_preview(app.build_return_outlook({}), premium=premium)
-        assert '12M Upside unavailable' in absent
+        assert '12M Upside unavailable' not in absent
+        assert 'Not enough reliable analyst-target data' not in absent
+        assert '<div class="upside-headline">' not in absent
+        assert '<summary>How is 12M Upside calculated?</summary>' not in absent
+        status = 'Analyst outlook data is currently unavailable.'
+        if premium:
+            assert absent.index('<summary>Detailed research</summary>') < absent.index(status)
+        else:
+            assert status not in absent
         assert 'class="upside-value">Unavailable' not in absent
         assert 'class="scenario-grid"' not in absent
         assert '<summary>What could go wrong</summary>' not in absent
