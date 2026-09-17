@@ -815,3 +815,37 @@ def test_success_marker_does_not_bypass_seven_day_quote_expiry(daily_outlook_sta
         result, _ = app.get_opportunity_page_snapshot()
         provider.assert_not_called()
     assert all(app.eligible_return_outlook(row["return_outlook"])["metric"] == "Unavailable" for row in result["opportunities"])
+
+
+def test_snapshot_freshness_uses_existing_date_and_does_not_label_free_preview_as_refreshed():
+    snapshot = app.build_opportunity_snapshot([recommendation("COST")], now=datetime(2026, 9, 17, tzinfo=timezone.utc), market_data_provider=no_market_data)
+    with (
+        patch.object(app, "get_opportunity_page_snapshot", return_value=(snapshot, {"snapshots": {}})),
+        patch.object(app, "premium_has_access", return_value=True),
+    ):
+        page = app.app.test_client().get("/opportunities").get_data(as_text=True)
+        assert 'Updated <time datetime="2026-09-17">17 Sep</time> · Daily' in page
+        snapshot.pop("snapshot_date")
+        missing = app.app.test_client().get("/opportunities").get_data(as_text=True)
+        assert '<p class="snapshot-freshness"' not in missing
+    free = render_outlook_preview(app.build_return_outlook({}), premium=False)
+    assert '<p class="snapshot-freshness"' not in free
+
+
+def test_five_cards_preserve_assessments_and_mixed_outlook_availability():
+    now = 1_789_646_400
+    snapshot = app.build_opportunity_snapshot(
+        [recommendation(ticker) for ticker in ("COST", "MSFT", "AMZN", "META", "AAPL")],
+        now=datetime.fromtimestamp(now, timezone.utc), market_data_provider=no_market_data,
+    )
+    for index, row in enumerate(snapshot["opportunities"]):
+        row["return_outlook"] = app.build_return_outlook(outlook_info() if index % 2 == 0 else {}, now=now)
+    with patch.object(app.time, "time", return_value=now), patch.object(app, "premium_has_access", return_value=True), patch.object(app, "get_opportunity_page_snapshot", return_value=(snapshot, {"snapshots": {}})):
+        page = app.app.test_client().get("/opportunities").get_data(as_text=True)
+    assert page.count('<article class="opportunity">') == 5
+    assert page.count('<span class="score-label">Decision Score</span>') == 5
+    assert page.count('<summary>Detailed research</summary>') == 5
+    assert page.count('<strong class="upside-value">+20.0%</strong>') == 3
+    assert page.count('aria-label="Return Outlook"') == 3
+    assert page.count('Analyst outlook data is currently unavailable.') == 2
+    assert '12M Upside unavailable' not in page
