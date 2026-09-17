@@ -156,6 +156,7 @@ def test_alert_events_include_top_five_exits():
 def test_free_preview_is_locked_and_does_not_touch_opportunity_storage():
     with (
         patch.object(app, "premium_has_access", return_value=False),
+        patch.object(app, "get_dividend_context", return_value={}),
         patch.object(app, "get_recommendations", return_value=[recommendation("MSFT")]),
         patch.object(app, "newsletter_storage_load") as storage_load,
     ):
@@ -178,6 +179,7 @@ def test_premium_page_shows_full_ranking_history_and_deferred_alerts():
         patch.object(app, "premium_has_access", return_value=True),
         patch.object(app, "owner_has_access", return_value=True),
         patch.object(app, "ensure_daily_opportunity_snapshot", return_value=(snapshot, state, False)),
+        patch.object(app, "get_dividend_context", return_value={}),
         patch.object(app, "newsletter_storage_load", side_effect=AssertionError("HTML must not read alert storage")),
     ):
         response = app.app.test_client().get("/opportunities")
@@ -406,3 +408,95 @@ def test_alert_save_still_requires_csrf():
         response = app.app.test_client().post("/opportunities/alerts", data={"enabled": "on"})
     assert response.status_code == 400
     update.assert_not_called()
+
+
+def outlook_info(**overrides):
+    info = {
+        "quoteType": "EQUITY", "currency": "USD",
+        "regularMarketPrice": 100, "regularMarketTime": 1_789_646_400,
+        "targetMeanPrice": 120, "targetHighPrice": 150, "targetLowPrice": 80,
+        "numberOfAnalystOpinions": 12, "revenueGrowth": .12,
+        "earningsGrowth": .08, "operatingMargins": .20, "trailingPE": 25,
+        "earningsTimestamp": 1_800_000_000,
+    }
+    return dict(info, **overrides)
+
+
+def test_return_outlook_uses_provider_targets_and_company_evidence():
+    outlook = app.build_return_outlook(outlook_info(), now=1_789_646_400)
+    assert outlook["metric"] == "+20.0%"
+    assert outlook["cases"] == {
+        "Base case": "USD 120.00 (+20.0%)",
+        "Bull case": "USD 150.00 (+50.0%)",
+        "Downside case": "USD 80.00 (-20.0%)",
+    }
+    assert len(outlook["drivers"]) == 3
+    assert "12.0%" in outlook["drivers"][0]
+    assert "25.0×" in outlook["valuation"]
+    assert "Next reported earnings date" in outlook["catalyst"]
+    negative = app.build_return_outlook(outlook_info(targetMeanPrice=90), now=1_789_646_400)
+    assert negative["metric"] == "-10.0%"
+
+
+def test_return_outlook_rejects_unreliable_or_ambiguous_data():
+    for change in (
+        {"regularMarketPrice": 0}, {"regularMarketPrice": float("nan")},
+        {"regularMarketPrice": True}, {"regularMarketPrice": 1e-308},
+        {"targetMeanPrice": float("inf")},
+        {"targetHighPrice": None}, {"targetLowPrice": 130},
+        {"numberOfAnalystOpinions": 1}, {"numberOfAnalystOpinions": 2.5},
+        {"regularMarketTime": 1}, {"regularMarketTime": 1_789_646_401},
+        {"currency": "GBp"}, {"currency": ""}, {"quoteType": "ETF"},
+    ):
+        result = app.build_return_outlook(outlook_info(**change), now=1_789_646_400)
+        assert result["metric"] == "Unavailable", change
+        assert result["cases"] == {}, change
+    absent = app.build_return_outlook({})
+    assert absent["drivers"] == []
+    assert "Insufficient" in absent["risk"]
+    assert "unavailable" in absent["valuation"]
+
+
+def test_return_outlook_free_metric_and_server_side_premium_gate():
+    outlook = app.build_return_outlook(outlook_info(), now=1_789_646_400)
+    snapshot = app.build_opportunity_snapshot([recommendation("MSFT")], market_data_provider=no_market_data)
+    with (
+        patch.object(app, "get_recommendations", return_value=[recommendation("MSFT")]),
+        patch.object(app, "get_dividend_context", return_value={"return_outlook": outlook}),
+        patch.object(app, "get_opportunity_page_snapshot", return_value=(snapshot, {"snapshots": {}})),
+        patch.object(app, "premium_has_access", return_value=False),
+    ):
+        free = app.app.test_client().get("/opportunities").get_data(as_text=True)
+        with patch.object(app, "premium_has_access", return_value=True):
+            premium = app.app.test_client().get("/opportunities").get_data(as_text=True)
+    assert "+20.0%" in free and "+20.0%" in premium
+    assert "12 analysts" in free and "not a guaranteed return" in free
+    assert "Revenue growth reported at 12.0%" not in free
+    assert "USD 150.00" not in free
+    assert "Revenue growth reported at 12.0%" in premium
+    for heading in ("Base case", "Bull case", "Downside case", "What Has To Go Right?", "Valuation check"):
+        assert heading in premium
+    assert "return_outlook" not in snapshot["opportunities"][0]
+
+
+def test_return_outlook_provider_failure_is_unavailable():
+    with patch.object(app, "get_dividend_context", side_effect=RuntimeError("offline")):
+        assert app.opportunity_return_outlook("MSFT")["metric"] == "Unavailable"
+
+
+def test_return_outlook_reuses_existing_metadata_fetch_and_cache():
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    provider = Mock(return_value=outlook_info(
+        regularMarketTime=app.time.time(), dividendYield=.8,
+        forwardAnnualDividendRate=1.0, financialCurrency="USD",
+    ))
+    with (
+        patch.object(app, "DIVIDEND_CONTEXT_CACHE", {}),
+        patch.object(app.yf, "Ticker", return_value=SimpleNamespace(get_info=provider)),
+    ):
+        first = app.opportunity_return_outlook("MSFT")
+        second = app.opportunity_return_outlook("MSFT")
+    assert first["metric"] == second["metric"] == "+20.0%"
+    provider.assert_called_once_with()

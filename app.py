@@ -3357,6 +3357,68 @@ def rank_stockradar_opportunities(recommendations):
     )
 
 
+def build_return_outlook(info, now=None):
+    """Describe supplied analyst targets and company evidence without inventing forecasts."""
+    info = info if isinstance(info, dict) else {}
+    now = time.time() if now is None else now
+    result = {"metric": "Unavailable", "cases": {}, "drivers": []}
+    number = lambda key: fundamental_number(info.get(key))
+    price = number("regularMarketPrice")
+    quoted_at = number("regularMarketTime")
+    mean, high, low = (number(key) for key in ("targetMeanPrice", "targetHighPrice", "targetLowPrice"))
+    count = number("numberOfAnalystOpinions")
+    currency = str(info.get("currency") or "")
+    # Subunit quotes (GBp/GBX etc.) lack independently identified target units.
+    units_clear = currency in {"USD", "EUR", "GBP", "CAD", "AUD", "CHF", "JPY", "HKD"}
+    reliable = (
+        info.get("quoteType") == "EQUITY" and units_clear
+        and price is not None and price > 0
+        and quoted_at is not None and 0 <= now - quoted_at <= 7 * 86400
+        and count is not None and count >= 2 and count.is_integer()
+        and all(value is not None and value > 0 for value in (low, mean, high))
+        and low <= mean <= high
+        and all(fundamental_number((value / price - 1) * 100) is not None for value in (low, mean, high))
+    )
+    if reliable:
+        result.update(
+            metric=f"{(mean / price - 1) * 100:+.1f}%",
+            reference=f"{currency} {price:,.2f}",
+            price_date=datetime.fromtimestamp(quoted_at, tz=timezone.utc).strftime("%d %b %Y %H:%M UTC"),
+            analyst_count=int(count),
+            cases={label: f"{currency} {target:,.2f} ({(target / price - 1) * 100:+.1f}%)"
+                   for label, target in (("Base case", mean), ("Bull case", high), ("Downside case", low))},
+        )
+    equity = info.get("quoteType") == "EQUITY"
+    revenue, earnings, margin = (number(key) if equity else None for key in ("revenueGrowth", "earningsGrowth", "operatingMargins"))
+    for label, value in (("Revenue growth", revenue), ("Earnings growth", earnings), ("Operating margin", margin)):
+        if value is not None and value > 0:
+            result["drivers"].append(f"{label} reported at {value * 100:.1f}%; sustaining this would support the upside case.")
+    if revenue is not None and revenue < 0:
+        risk = f"Reported revenue growth is {revenue * 100:.1f}%. Continued contraction could undermine the target case."
+    elif earnings is not None and earnings < 0:
+        risk = f"Reported earnings growth is {earnings * 100:.1f}%. Continued earnings declines could undermine the target case."
+    elif result["drivers"]:
+        risk = "A reversal in the positive fundamentals listed above would weaken this conditional upside case. A company-specific thesis breaker is not established by these data alone."
+    else:
+        risk = "Insufficient company evidence to identify a supported thesis risk or breaker."
+    pe = number("trailingPE") if equity else None
+    next_earnings = format_next_earnings(info, now=datetime.fromtimestamp(now, tz=timezone.utc)) if equity else ""
+    result.update(
+        risk=risk,
+        catalyst=f"Next reported earnings date: {next_earnings}. Watch whether the reported fundamentals persist." if next_earnings else "No upcoming company catalyst verified in the available data.",
+        valuation=f"Trailing P/E: {pe:.1f}×. This alone does not establish fair value; peer and historical comparisons are unavailable here." if pe is not None and pe > 0 else "A usable earnings valuation multiple is unavailable.",
+        go_right="The positive fundamentals listed above would need to persist and market pricing would need to reach the analyst target. The data do not establish that either will happen." if result["drivers"] and reliable else "Insufficient target or company evidence to explain a supported path to the base case.",
+    )
+    return result
+
+
+def opportunity_return_outlook(ticker):
+    try:
+        return get_dividend_context(ticker).get("return_outlook") or build_return_outlook({})
+    except Exception:
+        return build_return_outlook({})
+
+
 def opportunity_market_context(ticker):
     chart = stock_history(ticker, "1mo")
     prices = list(chart.get("prices") or []) if chart.get("ok") else []
@@ -4890,6 +4952,7 @@ def get_dividend_context(symbol):
             cleaned_symbol,
         )
 
+    return_outlook = build_return_outlook(info, now=now)
     instrument_profile = dict(universe_item)
     if sector and not instrument_profile.get("sector"):
         instrument_profile["sector"] = sector
@@ -5118,6 +5181,7 @@ def get_dividend_context(symbol):
         "ex_dividend_date": date_text(ex_dividend_value),
         "payout_ratio": percentage_text(payout_value),
         "fundamentals": build_key_fundamentals(info, is_etf=is_etf),
+        "return_outlook": return_outlook,
         "dividend_frequency_note": frequency_note,
         "beginner_explanation": beginner_explanation,
         "risk_note": (
@@ -6190,9 +6254,12 @@ opportunities_html = """
 *{box-sizing:border-box}body{margin:0;min-height:100vh;padding:42px 24px;background:radial-gradient(circle at 12% 5%,rgba(0,255,170,.12),transparent 30%),linear-gradient(135deg,#07111c,#101827);color:#eef4f8;font-family:Arial,sans-serif}.wrap{max-width:1180px;margin:0 auto}.back{display:inline-block;margin:0 0 22px;color:#6cd3f7;font-weight:900;text-decoration:none}.hero,.panel,.opportunity{border:1px solid rgba(148,163,184,.16);background:linear-gradient(180deg,rgba(18,30,43,.98),rgba(10,20,31,.98));box-shadow:0 24px 70px rgba(0,0,0,.28)}.hero{padding:38px;border-radius:30px;margin-bottom:20px}.eyebrow{color:#4adea3;font-size:11px;font-weight:950;letter-spacing:.13em;text-transform:uppercase}h1{font-size:clamp(36px,5vw,54px);line-height:1.04;margin:10px 0 14px}h2{font-size:clamp(24px,3vw,32px);margin:0 0 12px}h3{margin:0;font-size:22px}p,li{color:#b7c5d1;line-height:1.65}.method{max-width:820px}.notice{padding:14px 16px;border-radius:15px;background:rgba(74,222,163,.08);border:1px solid rgba(74,222,163,.2);color:#d1fae5}.grid{display:grid;gap:17px}.opportunity{border-radius:24px;padding:24px}.topline,.identity{display:flex;align-items:center;gap:12px}.topline{justify-content:space-between;flex-wrap:wrap}.rank{display:inline-grid;place-items:center;width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#4adea3,#f0c36a);color:#071018;font-weight:950}.status,.signal{display:inline-flex;padding:6px 9px;border-radius:999px;font-size:11px;font-weight:950;letter-spacing:.06em}.status{background:rgba(105,201,242,.11);color:#a5e4fb}.status.rising,.status.new{background:rgba(74,222,163,.12);color:#bbf7d0}.status.falling,.status.exited{background:rgba(251,113,133,.11);color:#fecdd3}.signal{background:rgba(240,195,106,.12);color:#fde68a}.score{font-size:32px;font-weight:950}.score small{font-size:13px;color:#91a3b4}.metrics{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin:20px 0}.metric{padding:13px;border-radius:15px;background:rgba(148,163,184,.06);min-width:0}.metric span{display:block;color:#91a3b4;font-size:10px;text-transform:uppercase;letter-spacing:.08em;font-weight:900}.metric strong{display:block;margin-top:5px;font-size:14px;overflow-wrap:anywhere}.explain{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.explain div{padding:15px;border-radius:15px;background:rgba(7,17,28,.56)}.explain strong{display:block;margin-bottom:6px;color:#e7f0f5}.explain p{margin:0;font-size:13px}.history{display:flex;align-items:center;gap:16px;margin-top:18px}.history svg{width:180px;height:54px}.history polyline{fill:none;stroke:#4adea3;stroke-width:3}.locked{position:relative;overflow:hidden}.locked>.grid{filter:blur(5px);user-select:none;pointer-events:none}.lockbox{position:absolute;inset:0;display:grid;place-items:center;padding:24px;background:rgba(5,12,20,.61)}.lockcard{max-width:600px;padding:28px;border-radius:24px;text-align:center;background:#111d2b;border:1px solid rgba(240,195,106,.32)}.button{display:inline-flex;justify-content:center;align-items:center;padding:13px 18px;border:0;border-radius:14px;background:linear-gradient(135deg,#4adea3,#f0c36a);color:#071018;font-weight:950;text-decoration:none;margin:6px;cursor:pointer}.secondary{background:rgba(105,201,242,.12);border:1px solid rgba(105,201,242,.25);color:#bfeafa}.panel{padding:26px;border-radius:24px;margin-top:20px}.alert-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.check{display:flex;align-items:center;gap:9px;color:#dce7ee}.tickers{grid-column:1/-1}.tickers input{width:100%;padding:13px;border-radius:12px;border:1px solid rgba(148,163,184,.24);background:#07111c;color:white}.events{padding-left:20px}.muted{font-size:13px;color:#91a3b4}@media(max-width:850px){body{padding:24px 16px}.hero{padding:28px 22px}.metrics{grid-template-columns:repeat(3,1fr)}.explain{grid-template-columns:1fr}}@media(max-width:520px){.metrics{grid-template-columns:repeat(2,1fr)}.score{font-size:28px}.alert-form{grid-template-columns:1fr}.tickers{grid-column:auto}.history{align-items:flex-start;flex-direction:column}.button{width:100%;margin:6px 0}}
 </style></head><body>{{ stockradar_header_navigation('app') | safe }}<main class="wrap">
 <a class="back" href="/">← Back to StockRadar</a><section class="hero"><div class="eyebrow">Premium daily research ranking</div><h1>StockRadar Opportunities</h1><p class="method">Five research opportunities ranked once per day by a transparent, deterministic 100-point framework. The score combines signal, conviction, momentum, fundamentals, risk and valuation context. Plain-English explanations describe the result; they do not select the stocks.</p><p class="notice"><strong>Educational research only.</strong> Rankings are prompts for further investigation, not personalised advice or instructions to trade.</p></section>
+{% macro return_metric(outlook) %}<div class="metric"><span>12M Upside</span><strong>{{ outlook.metric }}</strong></div>{% endmacro %}
+{% macro return_source(outlook) %}<p class="muted">Potential price upside = (Yahoo Finance analyst mean target / reference price − 1) × 100. Excludes dividends, fees and FX; not a guaranteed return.{% if outlook.cases %} Reference price: {{ outlook.reference }} · {{ outlook.price_date }} · {{ outlook.analyst_count }} analysts. Targets accessed through yfinance; individual target dates and the exact horizon are not supplied, so 12M is indicative.{% else %} Reliable comparable analyst targets or a recent price are unavailable.{% endif %}</p>{% endmacro %}
 {% if premium %}<section class="grid" aria-label="Today's ranked opportunities">{% for item in snapshot.opportunities %}<article class="opportunity"><div class="topline"><div class="identity"><span class="rank">{{ item.rank }}</span><div><h3>{{ item.label }}</h3><span class="status {{ item.status|lower }}">{{ item.status }}</span> <span class="signal">{{ item.signal }}</span></div></div><div class="score">{{ item.opportunity_score|int }}<small>/100</small></div></div>
-<div class="metrics"><div class="metric"><span>Current price</span><strong>{{ item.current_price_label }}</strong></div><div class="metric"><span>Daily score</span><strong>{% if item.score_change > 0 %}+{% endif %}{{ item.score_change }}</strong></div><div class="metric"><span>Rank movement</span><strong>{% if item.rank_change > 0 %}+{% endif %}{{ item.rank_change }}</strong></div><div class="metric"><span>Conviction</span><strong>{{ item.conviction }}</strong></div><div class="metric"><span>Risk</span><strong>{{ item.risk }}</strong></div><div class="metric"><span>Momentum</span><strong>{{ item.momentum }}</strong></div></div>
+<div class="metrics">{{ return_metric(item.return_outlook) }}<div class="metric"><span>Current price</span><strong>{{ item.current_price_label }}</strong></div><div class="metric"><span>Daily score</span><strong>{% if item.score_change > 0 %}+{% endif %}{{ item.score_change }}</strong></div><div class="metric"><span>Rank movement</span><strong>{% if item.rank_change > 0 %}+{% endif %}{{ item.rank_change }}</strong></div><div class="metric"><span>Conviction</span><strong>{{ item.conviction }}</strong></div><div class="metric"><span>Risk</span><strong>{{ item.risk }}</strong></div><div class="metric"><span>Momentum</span><strong>{{ item.momentum }}</strong></div></div>
 <div class="metrics"><div class="metric"><span>Signal</span><strong>{{ item.signal_score }}/25</strong></div><div class="metric"><span>Conviction</span><strong>{{ item.conviction_score }}/25</strong></div><div class="metric"><span>Momentum</span><strong>{{ item.momentum_score }}/20</strong></div><div class="metric"><span>Fundamentals</span><strong>{{ item.fundamentals_score }}/15</strong></div><div class="metric"><span>Risk quality</span><strong>{{ item.risk_score }}/10</strong></div><div class="metric"><span>Valuation</span><strong>{{ item.valuation_score }}/5</strong></div></div>
+{{ return_source(item.return_outlook) }}<section aria-label="Return Outlook"><h3>Return Outlook</h3><p class="muted">Analyst mean, high and low targets are base, bull and downside references, not probability-weighted StockRadar forecasts. The low target is not a loss floor and may be above today’s price.</p><div class="explain">{% for label in ['Base case', 'Bull case', 'Downside case'] %}<div><strong>{{ label }}</strong><p>{{ item.return_outlook.cases.get(label, 'Unavailable — no reliable target reference.') }}</p></div>{% endfor %}</div><h4>Company-specific upside drivers</h4>{% if item.return_outlook.drivers %}<ul>{% for driver in item.return_outlook.drivers %}<li>{{ driver }}</li>{% endfor %}</ul>{% endif %}{% if item.return_outlook.drivers|length < 2 %}<p class="muted">Insufficient evidence for two company-specific upside drivers.</p>{% endif %}<div class="explain"><div><strong>Main thesis risk / thesis breaker</strong><p>{{ item.return_outlook.risk }}</p></div><div><strong>Key catalyst / what to watch next</strong><p>{{ item.return_outlook.catalyst }}</p></div><div><strong>Valuation check</strong><p>{{ item.return_outlook.valuation }}</p></div></div><h4>What Has To Go Right?</h4><p>{{ item.return_outlook.go_right }}</p><p class="muted">Company fundamentals and earnings dates: Yahoo Finance via yfinance. Conditional observations from available figures, not a comprehensive company thesis.</p></section>
 <p><strong>Fundamentals:</strong> {{ item.fundamentals }} · <strong>Valuation/context:</strong> {{ item.valuation_context }}</p><div class="explain"><div><strong>Positives</strong><p>{{ item.explanation.positives }}</p></div><div><strong>Risks</strong><p>{{ item.explanation.risks }}</p></div><div><strong>What to monitor</strong><p>{{ item.explanation.monitor }}</p></div></div><div class="history"><svg viewBox="0 0 180 54" role="img" aria-label="Historical Opportunity Score for {{ item.ticker }}"><polyline points="{{ item.history_points }}"/></svg><span class="muted">{{ item.history|length }} daily snapshot{% if item.history|length != 1 %}s{% endif %} · last 30 retained for charting</span></div></article>{% endfor %}</section>
 {% if snapshot.exited %}<section class="panel"><h2>Exited today</h2><p>{% for item in snapshot.exited %}<span class="status exited">EXITED</span> {{ item.label }}{% if not loop.last %} · {% endif %}{% endfor %}</p></section>{% endif %}
 <section class="panel" id="alerts" aria-live="polite"><h2>Premium watchlist alerts</h2><p>Loading alert preferences and recent changes…</p><a href="/opportunities/alerts">Open alert preferences and recent changes</a></section>
@@ -6208,7 +6275,7 @@ opportunities_html = """
     }
 })();
 </script>
-{% else %}<section class="panel locked"><div class="grid">{% for item in snapshot.opportunities[:3] %}<article class="opportunity"><div class="topline"><div class="identity"><span class="rank">{{ item.rank }}</span><h3>{{ item.label }}</h3></div><div class="score">{{ item.opportunity_score|int }}<small>/100</small></div></div><div class="metrics"><div class="metric"><span>Signal</span><strong>{{ item.signal }}</strong></div><div class="metric"><span>Status</span><strong>{{ item.status }}</strong></div></div></article>{% endfor %}</div><div class="lockbox"><div class="lockcard"><div class="eyebrow">Premium preview</div><h2>See today's full Top 5 and what changed.</h2><p>Unlock component scores, price context, historical movement, positives, risks, monitoring prompts and optional watchlist alerts.</p><a class="button" href="/upgrade">Unlock Premium</a><a class="button secondary" href="/newsletter">Get StockRadar Weekly free</a><p class="muted">Prefer weekly context? StockRadar Weekly summarises the market signal without a Premium subscription.</p></div></div></section>{% endif %}
+{% else %}<section class="panel" aria-label="Free 12M Upside preview"><h2>12M Upside preview</h2>{% for item in snapshot.opportunities[:3] %}<article class="opportunity"><h3>{{ item.label }}</h3><div class="metrics"><div class="metric"><span>Signal</span><strong>{{ item.signal }}</strong></div><div class="metric"><span>Opportunity Score</span><strong>{{ item.opportunity_score|int }}/100</strong></div><div class="metric"><span>Risk</span><strong>{{ item.risk }}</strong></div>{{ return_metric(item.return_outlook) }}</div>{{ return_source(item.return_outlook) }}</article>{% endfor %}<p><a class="button" href="/upgrade">Unlock Premium Return Outlook</a></p><p class="muted">Base, bull and downside references, company evidence and what has to go right.</p></section><section class="panel locked"><div class="grid">{% for item in snapshot.opportunities[:3] %}<article class="opportunity"><div class="topline"><div class="identity"><span class="rank">{{ item.rank }}</span><h3>{{ item.label }}</h3></div><div class="score">{{ item.opportunity_score|int }}<small>/100</small></div></div><div class="metrics"><div class="metric"><span>Signal</span><strong>{{ item.signal }}</strong></div><div class="metric"><span>Status</span><strong>{{ item.status }}</strong></div></div></article>{% endfor %}</div><div class="lockbox"><div class="lockcard"><div class="eyebrow">Premium preview</div><h2>See today's full Top 5 and what changed.</h2><p>Unlock component scores, price context, historical movement, positives, risks, monitoring prompts and optional watchlist alerts.</p><a class="button" href="/upgrade">Unlock Premium</a><a class="button secondary" href="/newsletter">Get StockRadar Weekly free</a><p class="muted">Prefer weekly context? StockRadar Weekly summarises the market signal without a Premium subscription.</p></div></div></section>{% endif %}
 {{ disclaimer_footer() | safe }}</main>{{ newsletter_side_tab() | safe }}</body></html>
 """
 
@@ -6223,6 +6290,10 @@ def opportunities():
             item["history_points"] = opportunity_history_points(item["history"])
     else:
         snapshot = build_opportunity_snapshot(get_recommendations(), market_data_provider=lambda ticker: {})
+    # Enrich a request-local copy; do not change persisted rankings or history.
+    snapshot = dict(snapshot, opportunities=[dict(item) for item in snapshot.get("opportunities", [])])
+    for item in snapshot["opportunities"][:None if premium else 3]:
+        item["return_outlook"] = opportunity_return_outlook(item["ticker"])
     response = render_template_string(opportunities_html, premium=premium, snapshot=snapshot)
     return response
 
