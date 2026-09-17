@@ -2654,6 +2654,25 @@ def record_yahoo_failure(exc):
         YAHOO_COOLDOWN_UNTIL = max(YAHOO_COOLDOWN_UNTIL, time.time() + YAHOO_RETRY_SECONDS)
 
 
+def outlook_retrieval_date(outlook):
+    retrieved_at = fundamental_number((outlook or {}).get("retrieved_at"))
+    if retrieved_at is None:
+        return ""
+    try:
+        return datetime.fromtimestamp(retrieved_at, ZoneInfo("Europe/London")).date().isoformat()
+    except (ValueError, OverflowError, OSError):
+        return ""
+
+
+class YahooRefreshDeferred(RuntimeError):
+    """An intentional cache-only/cooldown decision, not a failed network fetch."""
+
+
+def yahoo_deferred_error():
+    reason = "cooldown active" if time.time() < YAHOO_COOLDOWN_UNTIL else "cache-only crawler"
+    return YahooRefreshDeferred(f"Yahoo refresh deferred ({reason})")
+
+
 def eligible_return_outlook(outlook, now=None):
     """Only reuse validated pairs while their ORIGINAL quote remains within seven days."""
     now = time.time() if now is None else now
@@ -3446,9 +3465,11 @@ def build_return_outlook(info, now=None):
     return result
 
 
-def opportunity_return_outlook(ticker):
+def opportunity_return_outlook(ticker, refresh_date=None):
     try:
-        return get_dividend_context(ticker).get("return_outlook") or build_return_outlook({})
+        context = (get_dividend_context(ticker, outlook_refresh_date=refresh_date)
+                   if refresh_date else get_dividend_context(ticker))
+        return context.get("return_outlook") or build_return_outlook({})
     except Exception:
         return build_return_outlook({})
 
@@ -3714,35 +3735,56 @@ def persisted_opportunity_outlooks(state, now=None):
 
 
 def enrich_opportunity_outlooks(snapshot, state):
+    global OPPORTUNITY_PAGE_CACHE
     with YAHOO_REFRESH_LOCK:
         now = time.time()
+        today = datetime.fromtimestamp(now, ZoneInfo("Europe/London")).date().isoformat()
         rows = snapshot.get("opportunities", [])
-        pending = [row for row in rows if not eligible_return_outlook(row.get("return_outlook"), now).get("cases")]
         previous = persisted_opportunity_outlooks(state, now)
+        changed = False
         for row in rows:
-            if not eligible_return_outlook(row.get("return_outlook"), now).get("cases"):
-                if row["ticker"] in previous:
-                    row["return_outlook"] = previous[row["ticker"]]
-        if not pending or now < snapshot.get("outlook_retry_after", 0) or not yahoo_refresh_allowed():
+            original = copy.deepcopy(row)
+            current = eligible_return_outlook(row.get("return_outlook"), now)
+            saved = previous.get(row["ticker"], {})
+            if saved.get("cases") and saved.get("retrieved_at", 0) > current.get("retrieved_at", 0):
+                row["return_outlook"] = current = saved
+            # Infer legacy completion only from the ORIGINAL validated retrieval date.
+            if current.get("cases"):
+                row["outlook_refresh_date"] = outlook_retrieval_date(current)
+            complete = row.get("outlook_refresh_date") == today
+            retry_after = row.get("outlook_retry_after", snapshot.get("outlook_retry_after", 0))
+            if not complete and now >= retry_after and yahoo_refresh_allowed():
+                row["outlook_retry_after"] = now + YAHOO_RETRY_SECONDS
+                result = opportunity_return_outlook(row["ticker"], refresh_date=today)
+                valid = eligible_return_outlook(result, time.time())
+                if valid.get("cases") and valid.get("retrieved_at", 0) >= current.get("retrieved_at", 0):
+                    row["return_outlook"] = result
+                    row["outlook_refresh_date"] = outlook_retrieval_date(result)
+                    if row["outlook_refresh_date"] == today:
+                        row["outlook_retry_after"] = 0
+            changed = changed or row != original
+        if not changed:
             return snapshot, state
-        snapshot["outlook_retry_after"] = now + YAHOO_RETRY_SECONDS
-        for row in pending:
-            result = opportunity_return_outlook(row["ticker"])
-            row["return_outlook"] = (result if result.get("cases") else previous.get(row["ticker"], result))
 
         def save(data):
             stored = data.get("snapshots", {}).get(snapshot["snapshot_date"])
             if stored is None:
                 return False
-            stored["outlook_retry_after"] = snapshot["outlook_retry_after"]
             by_ticker = {row["ticker"]: row for row in rows}
             for row in stored.get("opportunities", []):
-                candidate = by_ticker.get(row["ticker"], {}).get("return_outlook")
-                if candidate and candidate.get("cases"):
-                    existing = row.get("return_outlook") or {}
-                    if candidate.get("retrieved_at", 0) >= existing.get("retrieved_at", 0):
-                        row["return_outlook"] = copy.deepcopy(candidate)
-        newsletter_storage_update("opportunity_radar", save)
+                incoming = by_ticker.get(row["ticker"], {})
+                candidate = incoming.get("return_outlook") or {}
+                existing = row.get("return_outlook") or {}
+                if candidate.get("cases") and candidate.get("retrieved_at", 0) >= existing.get("retrieved_at", 0):
+                    row["return_outlook"] = copy.deepcopy(candidate)
+                    row["outlook_refresh_date"] = outlook_retrieval_date(candidate)
+                if eligible_return_outlook(row.get("return_outlook"), now).get("cases") and row.get("outlook_refresh_date") == today:
+                    row["outlook_retry_after"] = 0
+                elif "outlook_retry_after" in incoming:
+                    row["outlook_retry_after"] = max(row.get("outlook_retry_after", 0), incoming["outlook_retry_after"])
+        if newsletter_storage_update("opportunity_radar", save):
+            # Scheduler enrichment must also become visible to already-cached pages.
+            OPPORTUNITY_PAGE_CACHE = None
         return snapshot, state
 
 
@@ -4905,7 +4947,7 @@ def provider_failure_kind(exc):
 def fetch_yahoo_income_history(symbol):
     with YAHOO_REFRESH_LOCK:
         if not yahoo_refresh_allowed():
-            raise RuntimeError("Yahoo refresh deferred")
+            raise yahoo_deferred_error()
         try:
             return _fetch_yahoo_income_history(symbol)
         except Exception as exc:
@@ -4990,7 +5032,7 @@ def _fetch_yahoo_income_history(symbol):
     return history, provider_info
 
 
-def get_dividend_context(symbol):
+def get_dividend_context(symbol, *, outlook_refresh_date=None):
     cleaned_symbol = canonical_stock_symbol(symbol)
     with YAHOO_REFRESH_LOCK:
         now = time.time()
@@ -5001,7 +5043,9 @@ def get_dividend_context(symbol):
             ttl = (DIVIDEND_CONTEXT_UNAVAILABLE_CACHE_TTL_SECONDS
                    if income_status_from_context(context) == INCOME_STATUS_UNAVAILABLE
                    else DIVIDEND_CONTEXT_CACHE_TTL_SECONDS)
-            if (now - cached["timestamp"] < ttl
+            daily_complete = (context["return_outlook"].get("cases")
+                              and outlook_retrieval_date(context["return_outlook"]) == outlook_refresh_date)
+            if ((daily_complete if outlook_refresh_date else now - cached["timestamp"] < ttl)
                     or now < cached.get("retry_after", 0)
                     or not yahoo_refresh_allowed()):
                 return context
@@ -6930,7 +6974,7 @@ def safe_history(ticker, _ticker_object=None, **kwargs):
                 return cached["history"].copy(deep=True)
             raise RuntimeError("Yahoo history temporarily unavailable")
         if not yahoo_refresh_allowed():
-            raise RuntimeError("Yahoo refresh deferred")
+            raise yahoo_deferred_error()
         try:
             if yf is None:
                 raise RuntimeError("yfinance is not installed")
@@ -7193,7 +7237,10 @@ def stock_history(symbol, range_key):
         }
 
     except Exception as exc:
-        app.logger.warning("Chart data fetch failed for %s; using fallback chart data.", symbol)
+        if isinstance(exc, YahooRefreshDeferred):
+            app.logger.info("Chart data for %s: %s.", symbol, exc)
+        else:
+            app.logger.warning("Chart data fetch failed for %s; using fallback chart data.", symbol)
         return {
             "ok": False,
             "labels": [],
@@ -7231,8 +7278,11 @@ def stock_lifetime_growth(symbol):
             "direction": direction,
         }
 
-    except Exception:
-        app.logger.warning("Lifetime chart data fetch failed for %s; using fallback data.", symbol)
+    except Exception as exc:
+        if isinstance(exc, YahooRefreshDeferred):
+            app.logger.info("Lifetime chart data for %s: %s.", symbol, exc)
+        else:
+            app.logger.warning("Lifetime chart data fetch failed for %s; using fallback data.", symbol)
         return {
             "start_price": "—",
             "end_price": "—",

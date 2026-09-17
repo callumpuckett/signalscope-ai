@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 import json
@@ -579,3 +580,50 @@ def test_simultaneous_metadata_requests_share_one_refresh():
         results = list(pool.map(lambda _: fetch(), range(2)))
     assert results == ["+19.8%", "+19.8%"]
     ticker.get_info.assert_called_once()
+
+
+def test_daily_outlook_refresh_bypasses_yesterday_cache_ttl_but_reuses_today():
+    yesterday = datetime(2026, 7, 20, 22, 59, tzinfo=timezone.utc).timestamp()
+    today = yesterday+120  # London midnight passed; metadata TTL has not expired.
+    ticker = MagicMock()
+    ticker.get_info.side_effect = [valid_outlook_metadata(yesterday), valid_outlook_metadata(today)]
+    with patch.object(app.time, "time", return_value=yesterday) as clock, patch.object(app.yf, "Ticker", return_value=ticker):
+        first = app.get_dividend_context("COST")["return_outlook"]
+        clock.return_value = today
+        refreshed = app.opportunity_return_outlook("COST", refresh_date="2026-07-21")
+        assert refreshed["retrieved_at"] == today
+        assert first["retrieved_at"] == yesterday
+        clock.return_value = today+4000  # Same-day success remains reusable after hourly TTL.
+        reused = app.opportunity_return_outlook("COST", refresh_date="2026-07-21")
+        assert reused["retrieved_at"] == today
+        assert ticker.get_info.call_count == 2
+
+
+def test_daily_refresh_failure_keeps_original_dates_and_honours_retry():
+    yesterday = datetime(2026, 7, 20, 22, 59, tzinfo=timezone.utc).timestamp()
+    today = yesterday+120
+    ticker = MagicMock()
+    ticker.get_info.side_effect = [valid_outlook_metadata(yesterday), RuntimeError("429"), valid_outlook_metadata(today+301)]
+    with patch.object(app.time, "time", return_value=yesterday) as clock, patch.object(app.yf, "Ticker", return_value=ticker):
+        app.get_dividend_context("COST")
+        clock.return_value = today
+        failed = app.opportunity_return_outlook("COST", refresh_date="2026-07-21")
+        assert failed["retrieved_at"] == yesterday
+        assert failed["cached"] is True
+        clock.return_value = today+299
+        app.opportunity_return_outlook("COST", refresh_date="2026-07-21")
+        assert ticker.get_info.call_count == 2
+        clock.return_value = today+301
+        recovered = app.opportunity_return_outlook("COST", refresh_date="2026-07-21")
+        assert recovered["retrieved_at"] == today+301
+        assert ticker.get_info.call_count == 3
+
+
+def test_intentional_chart_deferrals_are_not_logged_as_provider_failures():
+    with app.app.test_request_context('/stock/COST', headers={"User-Agent": "SemrushBot"}), patch.object(app.yf, "Ticker") as provider, patch.object(app.app.logger, "warning") as warning, patch.object(app.app.logger, "info") as info:
+        app.stock_history("COST", "1mo")
+        app.stock_lifetime_growth("COST")
+        provider.assert_not_called()
+        warning.assert_not_called()
+        assert info.call_count == 2
+        assert "cache-only crawler" in str(info.call_args.args[-1])

@@ -603,7 +603,7 @@ def test_daily_snapshot_enrichment_persists_and_survives_process_cache_restart()
         app.DIVIDEND_CONTEXT_CACHE.clear()
         restored, _ = app.get_opportunity_page_snapshot()
         assert restored["opportunities"][0]["return_outlook"] == outlook
-        provider.assert_called_once_with("COST")
+        provider.assert_called_once_with("COST", refresh_date=snapshot["snapshot_date"])
         assert restored["opportunities"][0]["opportunity_score"] == snapshot["opportunities"][0]["opportunity_score"]
 
 
@@ -640,7 +640,8 @@ def test_persisted_prior_day_outlook_is_available_during_cooldown_but_not_after_
     prior["opportunities"][0]["return_outlook"] = app.build_return_outlook(outlook_info(), now=now)
     current = app.build_opportunity_snapshot([recommendation("COST")], now=datetime.fromtimestamp(now + 86400, timezone.utc), market_data_provider=no_market_data)
     with patch.object(app.time, "time", return_value=now + 86400), patch.object(app, "YAHOO_COOLDOWN_UNTIL", now + 86400 + 300), patch.object(app, "opportunity_return_outlook") as provider:
-        app.enrich_opportunity_outlooks(current, {"snapshots": {prior["snapshot_date"]: prior}})
+        with patch.object(app, "newsletter_storage_update", return_value=True):
+            app.enrich_opportunity_outlooks(current, {"snapshots": {prior["snapshot_date"]: prior}})
         saved = current["opportunities"][0]["return_outlook"]
         assert saved["metric"] == "+20.0%"
         assert saved["quote_timestamp"] == now
@@ -692,5 +693,116 @@ def test_new_daily_snapshot_attempts_fresh_outlook_before_using_prior_pair():
     state = {"snapshots": {"previous": {"opportunities": [{"ticker": "COST", "return_outlook": old}]}, current["snapshot_date"]: current}}
     with patch.object(app.time, "time", return_value=now+86400), patch.object(app, "opportunity_return_outlook", return_value=fresh) as provider, patch.object(app, "newsletter_storage_update", side_effect=lambda _, fn: fn(state)):
         app.enrich_opportunity_outlooks(current, state)
-    provider.assert_called_once_with("COST")
+    provider.assert_called_once_with("COST", refresh_date=current["snapshot_date"])
     assert current["opportunities"][0]["return_outlook"]["metric"] == "+25.0%"
+
+
+@pytest.fixture
+def daily_outlook_state(monkeypatch):
+    import copy
+    now = 1_789_646_400
+    stamp = datetime.fromtimestamp(now, timezone.utc)
+    old = app.build_return_outlook(outlook_info(regularMarketTime=now-86400), now=now-86400)
+    snapshot = app.build_opportunity_snapshot([recommendation("COST"), recommendation("MSFT")], now=stamp, market_data_provider=no_market_data)
+    for row in snapshot["opportunities"]:
+        row["return_outlook"] = copy.deepcopy(old)
+    stored = {"snapshots": {snapshot["snapshot_date"]: copy.deepcopy(snapshot)}}
+    clock = {"now": now}
+    monkeypatch.setattr(app.time, "time", lambda: clock["now"])
+    monkeypatch.setattr(app, "newsletter_london_now", lambda *args: datetime.fromtimestamp(clock["now"], timezone.utc))
+    monkeypatch.setattr(app, "newsletter_storage_load", lambda _: copy.deepcopy(stored))
+    def update(_store, updater):
+        updater(stored)
+        return True
+    monkeypatch.setattr(app, "newsletter_storage_update", update)
+    return now, snapshot, stored, clock
+
+
+def test_failed_daily_refresh_preserves_pair_and_retries_only_incomplete_ticker(daily_outlook_state):
+    now, snapshot, stored, clock = daily_outlook_state
+    day = snapshot["snapshot_date"]
+    old = snapshot["opportunities"][0]["return_outlook"]
+    good = app.build_return_outlook(outlook_info(), now=now)
+    def fetch(ticker, refresh_date):
+        assert refresh_date == day
+        return good if ticker == "MSFT" else old
+    with patch.object(app, "opportunity_return_outlook", side_effect=fetch) as provider:
+        first, _ = app.get_opportunity_page_snapshot()
+        rows = {row["ticker"]: row for row in first["opportunities"]}
+        assert rows["COST"]["return_outlook"]["retrieved_at"] == now-86400
+        assert rows["COST"]["return_outlook"]["quote_timestamp"] == now-86400
+        assert rows["COST"]["outlook_refresh_date"] != day
+        assert rows["COST"]["outlook_retry_after"] == now+300
+        assert rows["MSFT"]["outlook_refresh_date"] == day
+        assert rows["MSFT"]["outlook_retry_after"] == 0
+        clock["now"] = now+299
+        app.get_opportunity_page_snapshot()
+        app.OPPORTUNITY_PAGE_CACHE = None
+        app.get_opportunity_page_snapshot()
+        assert provider.call_count == 2
+        clock["now"] = now+301
+        with patch.object(app, "YAHOO_COOLDOWN_UNTIL", now+400):
+            app.get_opportunity_page_snapshot()
+        assert provider.call_count == 2
+        clock["now"] = now+401
+        provider.side_effect = None
+        provider.return_value = app.build_return_outlook(outlook_info(regularMarketTime=now+401, targetMeanPrice=130), now=now+401)
+        recovered, _ = app.get_opportunity_page_snapshot()
+        assert provider.call_count == 3
+        assert provider.call_args.kwargs == {"refresh_date": day}
+        assert provider.call_args.args == ("COST",)
+        persisted = {row["ticker"]: row for row in stored["snapshots"][day]["opportunities"]}
+        assert persisted["COST"]["return_outlook"]["metric"] == "+30.0%"
+        assert persisted["COST"]["outlook_refresh_date"] == day
+        for _ in range(2):
+            app.get_opportunity_page_snapshot()
+        assert provider.call_count == 3
+        assert any(row["return_outlook"]["metric"] == "+30.0%" for row in recovered["opportunities"])
+
+
+def test_scheduler_refresh_invalidates_existing_page_cache(daily_outlook_state):
+    import copy
+    now, snapshot, stored, clock = daily_outlook_state
+    day = snapshot["snapshot_date"]
+    stale = copy.deepcopy(snapshot)
+    app.OPPORTUNITY_PAGE_CACHE = (day, (stale, {"snapshots": {day: stale}}))
+    current = copy.deepcopy(snapshot)
+    fresh = app.build_return_outlook(outlook_info(targetMeanPrice=140), now=now)
+    with patch.object(app, "opportunity_return_outlook", return_value=fresh) as provider:
+        app.enrich_opportunity_outlooks(current, {"snapshots": {day: current}})
+        assert app.OPPORTUNITY_PAGE_CACHE is None
+        visible, _ = app.get_opportunity_page_snapshot()
+        assert all(row["return_outlook"]["metric"] == "+40.0%" for row in visible["opportunities"])
+        assert provider.call_count == 2
+
+
+def test_yesterdays_outlook_carried_during_cooldown_still_refreshes_afterwards(daily_outlook_state):
+    now, snapshot, stored, clock = daily_outlook_state
+    with patch.object(app, "YAHOO_COOLDOWN_UNTIL", now+300), patch.object(app, "opportunity_return_outlook") as provider:
+        visible, _ = app.get_opportunity_page_snapshot()
+        assert all(row["return_outlook"]["cases"] for row in visible["opportunities"])
+        assert all(row["outlook_refresh_date"] != snapshot["snapshot_date"] for row in visible["opportunities"])
+        provider.assert_not_called()
+    clock["now"] = now+301
+    with patch.object(app, "opportunity_return_outlook", return_value=app.build_return_outlook(outlook_info(), now=now+301)) as provider:
+        refreshed, _ = app.get_opportunity_page_snapshot()
+        assert provider.call_count == 2
+        assert all(row["outlook_refresh_date"] == snapshot["snapshot_date"] for row in refreshed["opportunities"])
+
+
+def test_outlook_retrieval_date_uses_london_not_utc_calendar():
+    before = datetime(2026, 7, 20, 22, 59, tzinfo=timezone.utc).timestamp()
+    after = datetime(2026, 7, 20, 23, 1, tzinfo=timezone.utc).timestamp()
+    assert app.outlook_retrieval_date({"retrieved_at": before}) == "2026-07-20"
+    assert app.outlook_retrieval_date({"retrieved_at": after}) == "2026-07-21"
+
+
+def test_success_marker_does_not_bypass_seven_day_quote_expiry(daily_outlook_state):
+    now, snapshot, stored, clock = daily_outlook_state
+    for row in stored["snapshots"][snapshot["snapshot_date"]]["opportunities"]:
+        row["return_outlook"]["quote_timestamp"] = now-7*86400-1
+        row["outlook_refresh_date"] = snapshot["snapshot_date"]
+    with patch.object(app, "opportunity_return_outlook", return_value=app.build_return_outlook({})) as provider:
+        result, _ = app.get_opportunity_page_snapshot()
+        provider.assert_not_called()
+    assert all(app.eligible_return_outlook(row["return_outlook"])["metric"] == "Unavailable" for row in result["opportunities"])
