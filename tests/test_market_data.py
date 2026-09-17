@@ -1,8 +1,18 @@
+import pytest
 from unittest.mock import patch
 
 import pandas as pd
 
 import app
+
+@pytest.fixture(autouse=True)
+def isolate_yahoo_refresh_state(monkeypatch):
+    monkeypatch.setattr(app, "YAHOO_COOLDOWN_UNTIL", 0.0)
+    monkeypatch.setattr(app, "YAHOO_HISTORY_CACHE", {})
+    monkeypatch.setattr(app, "DIVIDEND_CONTEXT_CACHE", {})
+    monkeypatch.setattr(app, "INCOME_HISTORY_CACHE", {})
+    monkeypatch.setattr(app, "OPPORTUNITY_PAGE_CACHE", None)
+
 
 
 def test_flat_close_dataframe_normalizes():
@@ -110,3 +120,66 @@ def test_stock_history_uses_canonical_symbol_for_company_name():
         timeout=6,
     )
     assert alias_result == ticker_result
+
+
+def test_history_cache_is_parameter_specific_bounded_and_returns_copies():
+    from unittest.mock import Mock
+    ticker = Mock()
+    ticker.history.return_value = pd.DataFrame({"Close": [10.0]})
+    with patch.object(app.yf, "Ticker", return_value=ticker), patch.object(app, "YAHOO_HISTORY_CACHE_LIMIT", 3):
+        first = app.safe_history("cost", period="1mo", interval="1d", timeout=6)
+        first.iloc[0, 0] = 999
+        assert app.safe_history("COST", period="1mo", interval="1d", timeout=6).iloc[0, 0] == 10
+        assert ticker.history.call_count == 1
+        app.safe_history("COST", period="1y", interval="1d", timeout=6)
+        app.safe_history("COST", period="1mo", interval="1wk", timeout=6)
+        app.safe_history("COST", period="1mo", interval="1d", timeout=6, auto_adjust=True)
+        assert ticker.history.call_count == 4
+        assert len(app.YAHOO_HISTORY_CACHE) == 3
+
+
+def test_history_cache_expires_and_rate_limit_blocks_other_symbols_and_fallback():
+    from unittest.mock import Mock
+    ticker = Mock()
+    ticker.history.side_effect = [pd.DataFrame({"Close": [10.0]}), RuntimeError("429")]
+    with patch.object(app.time, "time", return_value=1000) as clock, patch.object(app.yf, "Ticker", return_value=ticker), patch.object(app, "urlopen") as fallback:
+        app.safe_history("COST", period="1mo")
+        clock.return_value = 1299
+        app.safe_history("COST", period="1mo")
+        assert ticker.history.call_count == 1
+        clock.return_value = 1301
+        with pytest.raises(RuntimeError):
+            app.safe_history("COST", period="1mo")
+        with pytest.raises(RuntimeError, match="deferred"):
+            app.safe_history("MSFT", period="max")
+        with pytest.raises(RuntimeError, match="deferred"):
+            app.fetch_yahoo_income_history("MSFT")
+        assert ticker.history.call_count == 2
+        fallback.assert_not_called()
+
+
+@pytest.mark.parametrize("agent", ["Googlebot", "bingbot"])
+def test_search_crawlers_keep_normal_refresh_access(agent):
+    from unittest.mock import Mock
+    ticker = Mock()
+    ticker.history.return_value = pd.DataFrame({"Close": [10.0]})
+    with app.app.test_request_context("/stock/COST", headers={"User-Agent": agent}), patch.object(app.yf, "Ticker", return_value=ticker):
+        assert app.safe_history("COST", period="1mo").iloc[0, 0] == 10
+        ticker.history.assert_called_once()
+
+
+def test_semrush_can_read_cached_history_but_cannot_refresh_any_yahoo_entry_point():
+    from unittest.mock import Mock
+    ticker = Mock()
+    ticker.history.return_value = pd.DataFrame({"Close": [10.0]})
+    with patch.object(app.yf, "Ticker", return_value=ticker):
+        app.safe_history("COST", period="1mo")
+    with app.app.test_request_context("/stock/COST", headers={"User-Agent": "SemrushBot/7"}), patch.object(app.yf, "Ticker") as provider, patch.object(app, "urlopen") as fallback:
+        assert app.safe_history("COST", period="1mo").iloc[0, 0] == 10
+        assert app.get_dividend_context("COST")["return_outlook"]["metric"] == "Unavailable"
+        with pytest.raises(RuntimeError):
+            app.safe_history("COST", period="max")
+        with pytest.raises(RuntimeError):
+            app.fetch_yahoo_income_history("COST")
+        provider.assert_not_called()
+        fallback.assert_not_called()

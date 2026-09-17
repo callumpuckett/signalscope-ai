@@ -2634,6 +2634,37 @@ DIVIDEND_CONTEXT_UNAVAILABLE_CACHE_TTL_SECONDS = 300
 DIVIDEND_CONTEXT_CACHE = {}
 INCOME_HISTORY_CACHE_TTL_SECONDS = 300
 INCOME_HISTORY_CACHE = {}
+# One reentrant lock coordinates refreshes across the existing Yahoo entry points.
+YAHOO_REFRESH_LOCK = threading.RLock()
+YAHOO_COOLDOWN_UNTIL = 0.0
+YAHOO_RETRY_SECONDS = 300
+YAHOO_HISTORY_CACHE = {}
+YAHOO_HISTORY_CACHE_LIMIT = 256
+
+
+def yahoo_refresh_allowed():
+    return time.time() >= YAHOO_COOLDOWN_UNTIL and not (
+        has_request_context() and "semrushbot" in request.headers.get("User-Agent", "").lower()
+    )
+
+
+def record_yahoo_failure(exc):
+    global YAHOO_COOLDOWN_UNTIL
+    if type(exc).__name__ == "YFRateLimitError" or provider_failure_kind(exc) == "rate-limit":
+        YAHOO_COOLDOWN_UNTIL = max(YAHOO_COOLDOWN_UNTIL, time.time() + YAHOO_RETRY_SECONDS)
+
+
+def eligible_return_outlook(outlook, now=None):
+    """Only reuse validated pairs while their ORIGINAL quote remains within seven days."""
+    now = time.time() if now is None else now
+    outlook = outlook or {}
+    quoted_at = fundamental_number(outlook.get("quote_timestamp"))
+    if outlook.get("cases") and quoted_at is not None and 0 <= now - quoted_at <= 7 * 86400:
+        result = copy.deepcopy(outlook)
+        result["cached"] = True
+        return result
+    return build_return_outlook({})
+
 
 TRACKED_STOCK_UNIVERSE = [
     "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "PLTR", "SPCX", "AVGO", "AMD", "NFLX",
@@ -3381,6 +3412,9 @@ def build_return_outlook(info, now=None):
     )
     if reliable:
         result.update(
+            quote_timestamp=quoted_at,
+            retrieved_at=now,
+            retrieved_date=datetime.fromtimestamp(now, tz=timezone.utc).strftime("%d %b %Y %H:%M UTC"),
             metric=f"{(mean / price - 1) * 100:+.1f}%",
             reference=f"{currency} {price:,.2f}",
             price_date=datetime.fromtimestamp(quoted_at, tz=timezone.utc).strftime("%d %b %Y %H:%M UTC"),
@@ -3668,6 +3702,50 @@ def ensure_daily_opportunity_snapshot(now=None, recommendations=None, market_dat
     return stored, refreshed, created["value"]
 
 
+def persisted_opportunity_outlooks(state, now=None):
+    candidates = {}
+    for snapshot in (state or {}).get("snapshots", {}).values():
+        for row in snapshot.get("opportunities", []):
+            candidate = eligible_return_outlook(row.get("return_outlook"), now)
+            previous = candidates.get(row["ticker"], {})
+            if candidate.get("cases") and candidate.get("retrieved_at", 0) >= previous.get("retrieved_at", 0):
+                candidates[row["ticker"]] = candidate
+    return candidates
+
+
+def enrich_opportunity_outlooks(snapshot, state):
+    with YAHOO_REFRESH_LOCK:
+        now = time.time()
+        rows = snapshot.get("opportunities", [])
+        pending = [row for row in rows if not eligible_return_outlook(row.get("return_outlook"), now).get("cases")]
+        previous = persisted_opportunity_outlooks(state, now)
+        for row in rows:
+            if not eligible_return_outlook(row.get("return_outlook"), now).get("cases"):
+                if row["ticker"] in previous:
+                    row["return_outlook"] = previous[row["ticker"]]
+        if not pending or now < snapshot.get("outlook_retry_after", 0) or not yahoo_refresh_allowed():
+            return snapshot, state
+        snapshot["outlook_retry_after"] = now + YAHOO_RETRY_SECONDS
+        for row in pending:
+            result = opportunity_return_outlook(row["ticker"])
+            row["return_outlook"] = (result if result.get("cases") else previous.get(row["ticker"], result))
+
+        def save(data):
+            stored = data.get("snapshots", {}).get(snapshot["snapshot_date"])
+            if stored is None:
+                return False
+            stored["outlook_retry_after"] = snapshot["outlook_retry_after"]
+            by_ticker = {row["ticker"]: row for row in rows}
+            for row in stored.get("opportunities", []):
+                candidate = by_ticker.get(row["ticker"], {}).get("return_outlook")
+                if candidate and candidate.get("cases"):
+                    existing = row.get("return_outlook") or {}
+                    if candidate.get("retrieved_at", 0) >= existing.get("retrieved_at", 0):
+                        row["return_outlook"] = copy.deepcopy(candidate)
+        newsletter_storage_update("opportunity_radar", save)
+        return snapshot, state
+
+
 def get_opportunity_page_snapshot():
     """Reuse persisted daily data; keep request-specific mutations isolated."""
     global OPPORTUNITY_PAGE_CACHE
@@ -3675,9 +3753,12 @@ def get_opportunity_page_snapshot():
     snapshot_date = london_now.date().isoformat()
     cached = OPPORTUNITY_PAGE_CACHE
     if cached is not None and cached[0] == snapshot_date:
-        return copy.deepcopy(cached[1])
+        with YAHOO_REFRESH_LOCK:
+            enrich_opportunity_outlooks(*cached[1])
+            return copy.deepcopy(cached[1])
 
     snapshot, state, _ = ensure_daily_opportunity_snapshot(now=london_now)
+    snapshot, state = enrich_opportunity_outlooks(snapshot, state)
     persisted = state.get("snapshots", {}).get(snapshot_date)
     if persisted:
         cached = (snapshot_date, copy.deepcopy((persisted, state)))
@@ -4822,6 +4903,17 @@ def provider_failure_kind(exc):
 
 
 def fetch_yahoo_income_history(symbol):
+    with YAHOO_REFRESH_LOCK:
+        if not yahoo_refresh_allowed():
+            raise RuntimeError("Yahoo refresh deferred")
+        try:
+            return _fetch_yahoo_income_history(symbol)
+        except Exception as exc:
+            record_yahoo_failure(exc)
+            raise
+
+
+def _fetch_yahoo_income_history(symbol):
     query = urlencode({
         "range": "1y",
         "interval": "1d",
@@ -4900,18 +4992,47 @@ def fetch_yahoo_income_history(symbol):
 
 def get_dividend_context(symbol):
     cleaned_symbol = canonical_stock_symbol(symbol)
-    now = time.time()
-    cached = DIVIDEND_CONTEXT_CACHE.get(cleaned_symbol)
-    if cached:
-        cached_context = cached["context"]
-        cache_ttl = (
-            DIVIDEND_CONTEXT_UNAVAILABLE_CACHE_TTL_SECONDS
-            if income_status_from_context(cached_context) == INCOME_STATUS_UNAVAILABLE
-            else DIVIDEND_CONTEXT_CACHE_TTL_SECONDS
-        )
-        if now - cached["timestamp"] < cache_ttl:
-            return dict(cached_context)
+    with YAHOO_REFRESH_LOCK:
+        now = time.time()
+        cached = DIVIDEND_CONTEXT_CACHE.get(cleaned_symbol)
+        if cached:
+            context = copy.deepcopy(cached["context"])
+            context["return_outlook"] = eligible_return_outlook(context.get("return_outlook"), now)
+            ttl = (DIVIDEND_CONTEXT_UNAVAILABLE_CACHE_TTL_SECONDS
+                   if income_status_from_context(context) == INCOME_STATUS_UNAVAILABLE
+                   else DIVIDEND_CONTEXT_CACHE_TTL_SECONDS)
+            if (now - cached["timestamp"] < ttl
+                    or now < cached.get("retry_after", 0)
+                    or not yahoo_refresh_allowed()):
+                return context
+        else:
+            context = None
+        if not yahoo_refresh_allowed():
+            return _fetch_dividend_context(cleaned_symbol)
+        try:
+            fresh = _fetch_dividend_context(cleaned_symbol)
+        except Exception as exc:
+            record_yahoo_failure(exc)
+            if not cached:
+                raise
+            cached["retry_after"] = now + YAHOO_RETRY_SECONDS
+            return context
+        # A temporary/incomplete refresh must not erase a validated target/quote pair.
+        if context and not fresh["return_outlook"].get("cases"):
+            fresh["return_outlook"] = context["return_outlook"]
+            DIVIDEND_CONTEXT_CACHE[cleaned_symbol] = {
+                "timestamp": cached["timestamp"], "retry_after": now + YAHOO_RETRY_SECONDS,
+                "context": copy.deepcopy(fresh),
+            }
+            return fresh
+        DIVIDEND_CONTEXT_CACHE[cleaned_symbol] = {
+            "timestamp": now, "context": copy.deepcopy(fresh),
+        }
+        return fresh
 
+
+def _fetch_dividend_context(cleaned_symbol):
+    now = time.time()
     universe_item = next(
         (
             item for item in get_stock_universe()
@@ -4927,7 +5048,7 @@ def get_dividend_context(symbol):
     provider_response_received = False
     ticker_object = None
 
-    if yf is not None and cleaned_symbol:
+    if yf is not None and cleaned_symbol and yahoo_refresh_allowed():
         try:
             ticker_object = yf.Ticker(cleaned_symbol)
             get_info = getattr(ticker_object, "get_info", None)
@@ -4939,6 +5060,7 @@ def get_dividend_context(symbol):
             if provider_response_received:
                 info = provider_info
         except Exception as exc:
+            record_yahoo_failure(exc)
             app.logger.warning(
                 "Dividend metadata unavailable for %s: %s (%s).",
                 cleaned_symbol,
@@ -4973,40 +5095,17 @@ def get_dividend_context(symbol):
         )
     )
     history_evidence_received = False
-    if needs_history_evidence:
+    if needs_history_evidence and yahoo_refresh_allowed():
         income_history = cached_income_history(cleaned_symbol, now=now)
         if income_history is None and ticker_object is not None:
             try:
-                income_history = ticker_object.history(
-                    period="1y",
-                    auto_adjust=False,
-                    actions=True,
-                    timeout=6,
-                )
+                income_history = safe_history(cleaned_symbol, _ticker_object=ticker_object, period="1y", auto_adjust=False,
+                                              actions=True, timeout=6)
                 cache_income_history(cleaned_symbol, income_history)
-            except TypeError:
-                try:
-                    income_history = ticker_object.history(
-                        period="1y",
-                        auto_adjust=False,
-                        actions=True,
-                    )
-                    cache_income_history(cleaned_symbol, income_history)
-                except Exception as exc:
-                    app.logger.warning(
-                        "Income history unavailable for %s: %s (%s).",
-                        cleaned_symbol,
-                        type(exc).__name__,
-                        provider_failure_kind(exc),
-                    )
-                    income_history = None
             except Exception as exc:
-                app.logger.warning(
-                    "Income history unavailable for %s: %s (%s).",
-                    cleaned_symbol,
-                    type(exc).__name__,
-                    provider_failure_kind(exc),
-                )
+                record_yahoo_failure(exc)
+                app.logger.warning("Income history unavailable for %s: %s (%s).",
+                                   cleaned_symbol, type(exc).__name__, provider_failure_kind(exc))
                 income_history = None
         market_price_available = any(
             (fundamental_number(info.get(field)) or 0) > 0
@@ -5017,7 +5116,7 @@ def get_dividend_context(symbol):
             or not str(info.get("currency") or "").strip()
             or not market_price_available
         )
-        if income_history is None or needs_chart_metadata:
+        if (income_history is None or needs_chart_metadata) and yahoo_refresh_allowed():
             try:
                 chart_history, chart_info = fetch_yahoo_income_history(cleaned_symbol)
                 if income_history is None or needs_chart_metadata:
@@ -5206,11 +5305,6 @@ def get_dividend_context(symbol):
             else "Source data is currently unavailable or incomplete from yfinance."
         ),
     }
-    DIVIDEND_CONTEXT_CACHE[cleaned_symbol] = {
-        "timestamp": now,
-        "context": dict(context),
-    }
-
     return context
 
 
@@ -6256,16 +6350,17 @@ opportunities_html = """
 .opportunity .identity{min-width:0}.opportunity h3{overflow-wrap:anywhere}.opportunity .score{padding:12px 18px;border-radius:15px;background:rgba(148,163,184,.06)}.score-label{display:block;font-size:11px;color:#91a3b4;letter-spacing:.06em;text-transform:uppercase}.score-note{display:block;font-size:11px;color:#91a3b4;font-weight:400}.signal-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px 20px;margin-top:16px;color:#b7c5d1;font-size:13px}.upside-headline{margin:24px 0;padding:20px 0;border-top:1px solid rgba(148,163,184,.16)}.upside-value{display:block;font-size:clamp(36px,6vw,54px);line-height:1.15;margin:8px 0;color:#eef4f8;overflow-wrap:anywhere}.upside-headline p{margin:6px 0}.outlook-panel{padding:22px;border:1px solid rgba(74,222,163,.2);border-radius:20px;background:rgba(74,222,163,.04);margin-bottom:20px}.scenario-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:20px 0}.scenario{min-width:0}.scenario-label,.scenario-target{display:block;color:#91a3b4;font-size:13px}.scenario-value{display:block;font-size:clamp(22px,3vw,32px);margin:7px 0;overflow-wrap:anywhere}.scenario-target{overflow-wrap:anywhere}.thesis{margin:18px 0 0;padding-top:16px;border-top:1px solid rgba(148,163,184,.16)}.thesis h4{margin:0 0 8px}.thesis p{margin:0;font-size:14px}.research-detail{border-top:1px solid rgba(148,163,184,.16)}.research-detail summary{min-height:48px;padding:14px 0;cursor:pointer;color:#eef5fa;font-weight:900;line-height:1.35}.research-detail summary:focus-visible{outline:3px solid rgba(105,201,242,.72);outline-offset:2px}.research-body{padding:0 0 16px;font-size:14px;overflow-wrap:anywhere}.research-body p:first-child{margin-top:0}.research-body p:last-child{margin-bottom:0}.research-rows{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 24px;margin:16px 0}.research-rows div{min-width:0;color:#b7c5d1}.research-rows strong{color:#eef4f8}.methodology summary{color:#91a3b4;font-size:13px}.free-outlook-list{display:grid;gap:16px}.outlook-panel .eyebrow{margin:0}.scenario-unavailable{font-size:18px}@media(max-width:520px){.opportunity{padding:20px 16px}.outlook-panel{padding:18px 12px}.scenario-grid{gap:8px}.scenario-value{font-size:22px}.scenario-unavailable{font-size:14px}.scenario-target{font-size:11px}.research-rows{grid-template-columns:1fr}.identity{flex-wrap:wrap}.opportunity .score{padding:10px 12px}}
 </style></head><body>{{ stockradar_header_navigation('app') | safe }}<main class="wrap">
 <a class="back" href="/">← Back to StockRadar</a><section class="hero"><div class="eyebrow">Premium daily research ranking</div><h1>StockRadar Opportunities</h1><p class="method">Five research opportunities ranked once per day by a transparent, deterministic 100-point framework. The score combines signal, conviction, momentum, fundamentals, risk and valuation context. Plain-English explanations describe the result; they do not select the stocks.</p><p class="notice"><strong>Educational research only.</strong> Rankings are prompts for further investigation, not personalised advice or instructions to trade.</p></section>
-{% macro return_metric(outlook) %}<div class="upside-headline"><span class="eyebrow">12M Upside</span><strong class="upside-value">{{ outlook.metric }}</strong><p class="muted">{% if outlook.cases %}Analyst consensus · {{ outlook.analyst_count }} analysts · Yahoo Finance{% else %}Reliable analyst target or recent price unavailable{% endif %}</p><p class="muted">Potential price upside, not a guaranteed return.</p></div>{% endmacro %}
-{% macro return_source(outlook) %}<details class="research-detail methodology"><summary>How is 12M Upside calculated?</summary><div class="research-body"><p class="muted">Potential price upside = (Yahoo Finance analyst mean target / reference price − 1) × 100. Excludes dividends, fees and FX; not a guaranteed return.{% if outlook.cases %} Reference price: {{ outlook.reference }} · {{ outlook.price_date }} · {{ outlook.analyst_count }} analysts. Targets accessed through yfinance; individual target dates and the exact horizon are not supplied, so 12M is indicative.{% else %} Reliable comparable analyst targets or a recent price are unavailable.{% endif %}</p><p class="muted">Analyst mean, high and low targets are base, bull and downside references, not probability-weighted StockRadar forecasts. The low target is not a loss floor and may be above today’s price.</p>{% if premium %}<p class="muted">Company fundamentals and earnings dates: Yahoo Finance via yfinance. Conditional observations from available figures, not a comprehensive company thesis.</p>{% endif %}</div></details>{% endmacro %}
+{% macro return_metric(outlook) %}{% if outlook.cases %}<div class="upside-headline"><span class="eyebrow">12M Upside</span><strong class="upside-value">{{ outlook.metric }}</strong><p class="muted">Analyst consensus · {{ outlook.analyst_count }} analysts · Yahoo Finance</p><p class="muted">Potential price upside, not a guaranteed return.</p>{% if outlook.cached %}<p class="muted">Cached / delayed · reference quote {{ outlook.price_date }}</p>{% endif %}</div>{% else %}<div class="upside-headline"><strong>12M Upside unavailable</strong><p class="muted">Not enough reliable analyst-target data.</p></div>{% endif %}{% endmacro %}
+{% macro return_source(outlook) %}<details class="research-detail methodology"><summary>How is 12M Upside calculated?</summary><div class="research-body"><p class="muted">Potential price upside = (Yahoo Finance analyst mean target / reference price − 1) × 100. Excludes dividends, fees and FX; not a guaranteed return.{% if outlook.cases %} Reference price: {{ outlook.reference }} · {{ outlook.price_date }} · {{ outlook.analyst_count }} analysts. Retrieved {{ outlook.retrieved_date }}. Targets accessed through yfinance; individual target dates and the exact horizon are not supplied, so 12M is indicative.{% else %} Reliable comparable analyst targets or a recent price are unavailable.{% endif %}</p><p class="muted">Analyst mean, high and low targets are base, bull and downside references, not probability-weighted StockRadar forecasts. The low target is not a loss floor and may be above today’s price.</p>{% if premium %}<p class="muted">Company fundamentals and earnings dates: Yahoo Finance via yfinance. Conditional observations from available figures, not a comprehensive company thesis.</p>{% endif %}</div></details>{% endmacro %}
 {% macro opportunity_header(item, ranked=false) %}<div class="topline"><div class="identity">{% if ranked %}<span class="rank">{{ item.rank }}</span>{% endif %}<h3>{{ item.label }}</h3></div><div class="score"><span class="score-label">Decision Score</span>{{ item.opportunity_score|int }}<small>/100</small><span class="score-note">Opportunity ranking</span></div></div><div class="signal-row"><span class="signal">{{ item.signal }}</span><span>Risk: <strong>{{ item.risk }}</strong></span><span>Momentum: <strong>{{ item.momentum }}</strong></span>{% if ranked %}<span class="status {{ item.status|lower }}">{{ item.status }}</span>{% endif %}</div>{% endmacro %}
 {% if premium %}<section class="grid" aria-label="Today's ranked opportunities">{% for item in snapshot.opportunities %}<article class="opportunity">{{ opportunity_header(item, true) }}
 {{ return_metric(item.return_outlook) }}
-<section class="outlook-panel" aria-label="Return Outlook"><h4 class="eyebrow">Premium · Return Outlook</h4><div class="scenario-grid">{% for label, short_label in [('Base case', 'Base'), ('Bull case', 'Bull'), ('Downside case', 'Downside')] %}<div class="scenario" aria-label="{{ label }}"><span class="scenario-label">{{ short_label }}</span>{% if item.return_outlook.cases.get(label) %}{% set parts = item.return_outlook.cases[label].rsplit(' (', 1) %}<strong class="scenario-value">{{ parts[1].rstrip(')') }}</strong><span class="scenario-target">{{ parts[0] }}</span>{% else %}<strong class="scenario-value scenario-unavailable">Unavailable</strong><span class="scenario-target">No reliable target reference</span>{% endif %}</div>{% endfor %}</div><p class="muted">Analyst target references; not guaranteed outcomes.</p><div class="thesis"><h4>What Has To Go Right?</h4><p>{% if item.return_outlook.drivers and item.return_outlook.cases %}{% for driver in item.return_outlook.drivers %}{{ driver.split(';', 1)[0] }}{% if not loop.last %}; {% else %}.{% endif %}{% endfor %} These fundamentals need to persist and the share price needs to reach the analyst mean target. Neither is assured.{% else %}{{ item.return_outlook.go_right }}{% endif %}</p></div></section>
+{% if item.return_outlook.cases %}<section class="outlook-panel" aria-label="Return Outlook"><h4 class="eyebrow">Premium · Return Outlook</h4><div class="scenario-grid">{% for label, short_label in [('Base case', 'Base'), ('Bull case', 'Bull'), ('Downside case', 'Downside')] %}<div class="scenario" aria-label="{{ label }}"><span class="scenario-label">{{ short_label }}</span>{% if item.return_outlook.cases.get(label) %}{% set parts = item.return_outlook.cases[label].rsplit(' (', 1) %}<strong class="scenario-value">{{ parts[1].rstrip(')') }}</strong><span class="scenario-target">{{ parts[0] }}</span>{% else %}<strong class="scenario-value scenario-unavailable">Unavailable</strong><span class="scenario-target">No reliable target reference</span>{% endif %}</div>{% endfor %}</div><p class="muted">Analyst target references; not guaranteed outcomes.</p><div class="thesis"><h4>What Has To Go Right?</h4><p>{% if item.return_outlook.drivers and item.return_outlook.cases %}{% for driver in item.return_outlook.drivers %}{{ driver.split(';', 1)[0] }}{% if not loop.last %}; {% else %}.{% endif %}{% endfor %} These fundamentals need to persist and the share price needs to reach the analyst mean target. Neither is assured.{% else %}{{ item.return_outlook.go_right }}{% endif %}</p></div></section>
 <details class="research-detail"><summary>Why it could rise</summary><div class="research-body">{% if item.return_outlook.drivers %}<ul>{% for driver in item.return_outlook.drivers %}<li>{{ driver }}</li>{% endfor %}</ul>{% endif %}{% if item.return_outlook.drivers|length < 2 %}<p class="muted">Insufficient evidence for two company-specific upside drivers.</p>{% endif %}</div></details>
 <details class="research-detail"><summary>What could go wrong</summary><div class="research-body"><p>{{ item.return_outlook.risk }}</p></div></details>
 <details class="research-detail"><summary>What to watch</summary><div class="research-body"><p>{{ item.return_outlook.catalyst }}</p></div></details>
 <details class="research-detail"><summary>Valuation</summary><div class="research-body"><p>{{ item.return_outlook.valuation }}</p></div></details>
+{% endif %}
 <details class="research-detail"><summary>Detailed research</summary><div class="research-body"><p><strong>Current price:</strong> {% if item.current_price is not none %}{{ item.current_price_label }} <span class="muted">(latest available chart close)</span>{% elif item.return_outlook.cases %}{{ item.return_outlook.reference }} <span class="muted">(Yahoo Finance reference quote · {{ item.return_outlook.price_date }})</span>{% else %}Unavailable{% endif %}</p><div class="research-rows"><div>Daily score change: <strong>{% if item.score_change > 0 %}+{% endif %}{{ item.score_change }}</strong></div><div>Rank movement: <strong>{% if item.rank_change > 0 %}+{% endif %}{{ item.rank_change }}</strong></div><div>Conviction: <strong>{{ item.conviction }}</strong></div></div><h4>Decision score breakdown · Opportunity ranking</h4><div class="research-rows">{% for label, value, maximum in [('Signal', item.signal_score, 25), ('Conviction', item.conviction_score, 25), ('Momentum', item.momentum_score, 20), ('Fundamentals', item.fundamentals_score, 15), ('Risk quality', item.risk_score, 10), ('Valuation', item.valuation_score, 5)] %}<div>{{ label }}: <strong>{{ value }}/{{ maximum }}</strong></div>{% endfor %}</div><p><strong>Fundamentals:</strong> {{ item.fundamentals }} · <strong>Valuation/context:</strong> {{ item.valuation_context }}</p><p><strong>Positives:</strong> {{ item.explanation.positives }}</p><p><strong>Risks:</strong> {{ item.explanation.risks }}</p><p><strong>What to monitor:</strong> {{ item.explanation.monitor }}</p><div class="history"><svg viewBox="0 0 180 54" role="img" aria-label="Historical Opportunity Score for {{ item.ticker }}"><polyline points="{{ item.history_points }}"/></svg><span class="muted">{{ item.history|length }} daily snapshot{% if item.history|length != 1 %}s{% endif %} · last 30 retained for charting</span></div></div></details>
 {{ return_source(item.return_outlook) }}</article>{% endfor %}</section>
 {% if snapshot.exited %}<section class="panel"><h2>Exited today</h2><p>{% for item in snapshot.exited %}<span class="status exited">EXITED</span> {{ item.label }}{% if not loop.last %} · {% endif %}{% endfor %}</p></section>{% endif %}
@@ -6297,10 +6392,20 @@ def opportunities():
             item["history_points"] = opportunity_history_points(item["history"])
     else:
         snapshot = build_opportunity_snapshot(get_recommendations(), market_data_provider=lambda ticker: {})
+        # Reuse existing persisted pairs without creating a daily ranking for Free requests.
+        try:
+            state = (OPPORTUNITY_PAGE_CACHE[1][1] if OPPORTUNITY_PAGE_CACHE is not None
+                     else newsletter_storage_load("opportunity_radar"))
+            saved_outlooks = persisted_opportunity_outlooks(state)
+        except Exception:
+            saved_outlooks = {}
     # Enrich a request-local copy; do not change persisted rankings or history.
     snapshot = dict(snapshot, opportunities=[dict(item) for item in snapshot.get("opportunities", [])])
     for item in snapshot["opportunities"][:None if premium else 3]:
-        item["return_outlook"] = opportunity_return_outlook(item["ticker"])
+        item["return_outlook"] = (
+            eligible_return_outlook(item.get("return_outlook")) if premium
+            else saved_outlooks.get(item["ticker"]) or opportunity_return_outlook(item["ticker"])
+        )
     response = render_template_string(opportunities_html, premium=premium, snapshot=snapshot)
     return response
 
@@ -6812,18 +6917,40 @@ def portfolio_fit():
     return render_template_string(portfolio_html, holdings_text=holdings_text, result=result)
 
 
-def safe_history(ticker, **kwargs):
-    if yf is None:
-        raise RuntimeError("yfinance is not installed")
-
-    stock = yf.Ticker(ticker)
+def safe_history(ticker, _ticker_object=None, **kwargs):
+    ticker = canonical_stock_symbol(ticker)
     kwargs.setdefault("auto_adjust", False)
-
-    try:
-        return stock.history(**kwargs)
-    except TypeError:
-        kwargs.pop("timeout", None)
-        return stock.history(**kwargs)
+    # Keep all supplied parameters (range, interval, actions, adjustment, etc.) distinct.
+    key = (ticker, tuple(sorted((name, repr(value)) for name, value in kwargs.items())))
+    with YAHOO_REFRESH_LOCK:
+        now = time.time()
+        cached = YAHOO_HISTORY_CACHE.get(key)
+        if cached and now - cached["timestamp"] < YAHOO_RETRY_SECONDS:
+            if cached.get("history") is not None:
+                return cached["history"].copy(deep=True)
+            raise RuntimeError("Yahoo history temporarily unavailable")
+        if not yahoo_refresh_allowed():
+            raise RuntimeError("Yahoo refresh deferred")
+        try:
+            if yf is None:
+                raise RuntimeError("yfinance is not installed")
+            stock = _ticker_object if _ticker_object is not None else yf.Ticker(ticker)
+            try:
+                history = stock.history(**kwargs)
+            except TypeError:
+                kwargs.pop("timeout", None)
+                history = stock.history(**kwargs)
+            if history is None or history.empty:
+                raise ValueError("Yahoo history empty")
+        except Exception as exc:
+            record_yahoo_failure(exc)
+            history = None
+            raise
+        finally:
+            if len(YAHOO_HISTORY_CACHE) >= YAHOO_HISTORY_CACHE_LIMIT and key not in YAHOO_HISTORY_CACHE:
+                YAHOO_HISTORY_CACHE.pop(next(iter(YAHOO_HISTORY_CACHE)))
+            YAHOO_HISTORY_CACHE[key] = {"timestamp": now, "history": history.copy(deep=True) if history is not None else None}
+        return history.copy(deep=True)
 
 
 def extract_history_price_series(history, symbol):
@@ -12225,7 +12352,8 @@ def start_newsletter_auto_send_scheduler():
 def opportunity_snapshot_loop():
     while True:
         try:
-            snapshot, _, created = ensure_daily_opportunity_snapshot()
+            snapshot, state, created = ensure_daily_opportunity_snapshot()
+            enrich_opportunity_outlooks(snapshot, state)
             if created:
                 app.logger.info(
                     "Opportunity Radar snapshot created: date=%s rows=%s",

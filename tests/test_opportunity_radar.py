@@ -1,8 +1,18 @@
+import pytest
 from datetime import datetime, timezone
 from unittest.mock import patch
 
 import app
 import newsletter_storage
+
+@pytest.fixture(autouse=True)
+def isolate_yahoo_refresh_state(monkeypatch):
+    monkeypatch.setattr(app, "YAHOO_COOLDOWN_UNTIL", 0.0)
+    monkeypatch.setattr(app, "YAHOO_HISTORY_CACHE", {})
+    monkeypatch.setattr(app, "DIVIDEND_CONTEXT_CACHE", {})
+    monkeypatch.setattr(app, "INCOME_HISTORY_CACHE", {})
+    monkeypatch.setattr(app, "OPPORTUNITY_PAGE_CACHE", None)
+
 
 
 def recommendation(ticker, signal="BUY", confidence="80%", reason="Strong quality momentum"):
@@ -153,19 +163,21 @@ def test_alert_events_include_top_five_exits():
     assert alert_state["events"][0]["reasons"] == ["exited Top 5"]
 
 
-def test_free_preview_is_locked_and_does_not_touch_opportunity_storage():
+def test_free_preview_is_locked_and_only_reads_existing_opportunity_storage():
     with (
         patch.object(app, "premium_has_access", return_value=False),
         patch.object(app, "get_dividend_context", return_value={}),
         patch.object(app, "get_recommendations", return_value=[recommendation("MSFT")]),
-        patch.object(app, "newsletter_storage_load") as storage_load,
+        patch.object(app, "newsletter_storage_load", return_value={}) as storage_load,
+        patch.object(app, "newsletter_storage_update") as storage_update,
     ):
         response = app.app.test_client().get("/opportunities")
 
     assert response.status_code == 200
     assert b"Premium preview" in response.data
     assert b"Get StockRadar Weekly free" in response.data
-    storage_load.assert_not_called()
+    storage_load.assert_called_once_with("opportunity_radar")
+    storage_update.assert_not_called()
 
 
 def test_premium_page_shows_full_ranking_history_and_deferred_alerts():
@@ -460,7 +472,10 @@ def test_return_outlook_rejects_unreliable_or_ambiguous_data():
 def test_return_outlook_free_metric_and_server_side_premium_gate():
     outlook = app.build_return_outlook(outlook_info(), now=1_789_646_400)
     snapshot = app.build_opportunity_snapshot([recommendation("MSFT")], market_data_provider=no_market_data)
+    snapshot["opportunities"][0]["return_outlook"] = outlook
     with (
+        patch.object(app.time, "time", return_value=1_789_646_400),
+        patch.object(app, "newsletter_storage_load", return_value={}),
         patch.object(app, "get_recommendations", return_value=[recommendation("MSFT")]),
         patch.object(app, "get_dividend_context", return_value={"return_outlook": outlook}),
         patch.object(app, "get_opportunity_page_snapshot", return_value=(snapshot, {"snapshots": {}})),
@@ -476,7 +491,7 @@ def test_return_outlook_free_metric_and_server_side_premium_gate():
     assert "Revenue growth reported at 12.0%" in premium
     for heading in ("Base case", "Bull case", "Downside case", "What Has To Go Right?", "<summary>Valuation</summary>"):
         assert heading in premium
-    assert "return_outlook" not in snapshot["opportunities"][0]
+    assert snapshot["opportunities"][0]["return_outlook"] == outlook
 
 
 def test_return_outlook_provider_failure_is_unavailable():
@@ -506,7 +521,10 @@ def render_outlook_preview(outlook, market=None, premium=True):
     snapshot = app.build_opportunity_snapshot(
         [recommendation("COST")], market_data_provider=lambda _: market or no_market_data("COST"),
     )
+    snapshot["opportunities"][0]["return_outlook"] = outlook
     with (
+        patch.object(app.time, "time", return_value=1_789_646_400),
+        patch.object(app, "newsletter_storage_load", return_value={}),
         patch.object(app, "get_recommendations", return_value=[recommendation("COST")]),
         patch.object(app, "get_opportunity_page_snapshot", return_value=(snapshot, {"snapshots": {}})),
         patch.object(app, "opportunity_return_outlook", return_value=outlook),
@@ -551,5 +569,128 @@ def test_current_price_uses_validated_reference_only_when_chart_price_missing():
     assert 'Yahoo Finance reference quote ·' not in chart
     missing = render_outlook_preview(app.build_return_outlook({}))
     assert 'Current price:</strong> Unavailable' in missing
-    assert missing.count('No reliable target reference') == 3
+    assert 'No reliable target reference' not in missing
+    assert 'class="scenario-grid"' not in missing
+    assert 'class="upside-value">Unavailable' not in missing
+    assert '<summary>Why it could rise</summary>' not in missing
+    assert '12M Upside unavailable' in missing
     assert 'nan%' not in missing
+
+
+def test_daily_snapshot_enrichment_persists_and_survives_process_cache_restart():
+    import copy
+
+    now = 1_789_646_400
+    stamp = datetime.fromtimestamp(now, timezone.utc)
+    snapshot = app.build_opportunity_snapshot([recommendation("COST")], now=stamp, market_data_provider=no_market_data)
+    state = {"snapshots": {snapshot["snapshot_date"]: snapshot}, "latest_snapshot_date": snapshot["snapshot_date"]}
+    stored = copy.deepcopy(state)
+    outlook = app.build_return_outlook(outlook_info(), now=now)
+    def update(_store, updater):
+        updater(stored)
+        return True
+    with (
+        patch.object(app.time, "time", return_value=now),
+        patch.object(app, "newsletter_london_now", return_value=stamp),
+        patch.object(app, "newsletter_storage_load", side_effect=lambda _: copy.deepcopy(stored)),
+        patch.object(app, "newsletter_storage_update", side_effect=update),
+        patch.object(app, "opportunity_return_outlook", return_value=outlook) as provider,
+    ):
+        enriched, _ = app.get_opportunity_page_snapshot()
+        assert enriched["opportunities"][0]["return_outlook"]["metric"] == "+20.0%"
+        assert stored["snapshots"][snapshot["snapshot_date"]]["opportunities"][0]["return_outlook"]["retrieved_at"] == now
+        app.OPPORTUNITY_PAGE_CACHE = None
+        app.DIVIDEND_CONTEXT_CACHE.clear()
+        restored, _ = app.get_opportunity_page_snapshot()
+        assert restored["opportunities"][0]["return_outlook"] == outlook
+        provider.assert_called_once_with("COST")
+        assert restored["opportunities"][0]["opportunity_score"] == snapshot["opportunities"][0]["opportunity_score"]
+
+
+def test_missing_outlook_enrichment_retries_at_most_every_five_minutes_even_after_restart():
+    import copy
+
+    now = 1_789_646_400
+    stamp = datetime.fromtimestamp(now, timezone.utc)
+    snapshot = app.build_opportunity_snapshot([recommendation("COST")], now=stamp, market_data_provider=no_market_data)
+    stored = {"snapshots": {snapshot["snapshot_date"]: snapshot}}
+    def update(_store, updater):
+        updater(stored)
+        return True
+    with (
+        patch.object(app.time, "time", return_value=now) as clock,
+        patch.object(app, "newsletter_london_now", return_value=stamp),
+        patch.object(app, "newsletter_storage_load", side_effect=lambda _: copy.deepcopy(stored)),
+        patch.object(app, "newsletter_storage_update", side_effect=update),
+        patch.object(app, "opportunity_return_outlook", return_value=app.build_return_outlook({})) as provider,
+    ):
+        app.get_opportunity_page_snapshot()
+        app.get_opportunity_page_snapshot()
+        app.OPPORTUNITY_PAGE_CACHE = None
+        app.get_opportunity_page_snapshot()
+        provider.assert_called_once()
+        clock.return_value = now + 301
+        app.get_opportunity_page_snapshot()
+        assert provider.call_count == 2
+
+
+def test_persisted_prior_day_outlook_is_available_during_cooldown_but_not_after_age_limit():
+    now = 1_789_646_400
+    prior = app.build_opportunity_snapshot([recommendation("COST")], now=datetime.fromtimestamp(now, timezone.utc), market_data_provider=no_market_data)
+    prior["opportunities"][0]["return_outlook"] = app.build_return_outlook(outlook_info(), now=now)
+    current = app.build_opportunity_snapshot([recommendation("COST")], now=datetime.fromtimestamp(now + 86400, timezone.utc), market_data_provider=no_market_data)
+    with patch.object(app.time, "time", return_value=now + 86400), patch.object(app, "YAHOO_COOLDOWN_UNTIL", now + 86400 + 300), patch.object(app, "opportunity_return_outlook") as provider:
+        app.enrich_opportunity_outlooks(current, {"snapshots": {prior["snapshot_date"]: prior}})
+        saved = current["opportunities"][0]["return_outlook"]
+        assert saved["metric"] == "+20.0%"
+        assert saved["quote_timestamp"] == now
+        provider.assert_not_called()
+    assert app.eligible_return_outlook(saved, now=now + 7 * 86400 + 1)["metric"] == "Unavailable"
+
+
+def test_unavailable_ui_is_compact_and_valid_cache_is_labelled_without_timestamp_changes():
+    for premium in (False, True):
+        absent = render_outlook_preview(app.build_return_outlook({}), premium=premium)
+        assert '12M Upside unavailable' in absent
+        assert 'class="upside-value">Unavailable' not in absent
+        assert 'class="scenario-grid"' not in absent
+        assert '<summary>What could go wrong</summary>' not in absent
+        assert '<summary>What to watch</summary>' not in absent
+        assert 'Insufficient evidence' not in absent
+    outlook = app.build_return_outlook(outlook_info(), now=1_789_646_400)
+    page = render_outlook_preview(outlook)
+    assert f'Cached / delayed · reference quote {outlook["price_date"]}' in page
+    assert 'class="scenario-grid"' in page
+    assert 'What Has To Go Right?' in page
+    assert '<summary>How is 12M Upside calculated?</summary>' in page
+
+
+def test_free_preview_reuses_persisted_outlook_after_restart_without_provider_calls():
+    now = 1_789_646_400
+    outlook = app.build_return_outlook(outlook_info(), now=now)
+    saved = {"snapshots": {"2026-09-17": {"opportunities": [{"ticker": "COST", "return_outlook": outlook}]}}}
+    with (
+        patch.object(app.time, "time", return_value=now),
+        patch.object(app, "get_recommendations", return_value=[recommendation("COST")]),
+        patch.object(app, "premium_has_access", return_value=False),
+        patch.object(app, "newsletter_storage_load", return_value=saved),
+        patch.object(app, "newsletter_storage_update") as update,
+        patch.object(app, "opportunity_return_outlook") as provider,
+    ):
+        page = app.app.test_client().get("/opportunities").get_data(as_text=True)
+    assert '+20.0%' in page and 'Cached / delayed' in page
+    assert 'USD 150.00' not in page
+    provider.assert_not_called()
+    update.assert_not_called()
+
+
+def test_new_daily_snapshot_attempts_fresh_outlook_before_using_prior_pair():
+    now = 1_789_646_400
+    old = app.build_return_outlook(outlook_info(), now=now)
+    fresh = app.build_return_outlook(outlook_info(regularMarketTime=now+86400, targetMeanPrice=125), now=now+86400)
+    current = app.build_opportunity_snapshot([recommendation("COST")], now=datetime.fromtimestamp(now+86400, timezone.utc), market_data_provider=no_market_data)
+    state = {"snapshots": {"previous": {"opportunities": [{"ticker": "COST", "return_outlook": old}]}, current["snapshot_date"]: current}}
+    with patch.object(app.time, "time", return_value=now+86400), patch.object(app, "opportunity_return_outlook", return_value=fresh) as provider, patch.object(app, "newsletter_storage_update", side_effect=lambda _, fn: fn(state)):
+        app.enrich_opportunity_outlooks(current, state)
+    provider.assert_called_once_with("COST")
+    assert current["opportunities"][0]["return_outlook"]["metric"] == "+25.0%"

@@ -7,6 +7,15 @@ import pytest
 
 import app
 
+@pytest.fixture(autouse=True)
+def isolate_yahoo_refresh_state(monkeypatch):
+    monkeypatch.setattr(app, "YAHOO_COOLDOWN_UNTIL", 0.0)
+    monkeypatch.setattr(app, "YAHOO_HISTORY_CACHE", {})
+    monkeypatch.setattr(app, "DIVIDEND_CONTEXT_CACHE", {})
+    monkeypatch.setattr(app, "INCOME_HISTORY_CACHE", {})
+    monkeypatch.setattr(app, "OPPORTUNITY_PAGE_CACHE", None)
+
+
 
 @pytest.fixture(autouse=True)
 def disable_live_yahoo_chart_requests(monkeypatch):
@@ -355,7 +364,7 @@ def test_direct_yahoo_chart_fallback_restores_distribution_after_yfinance_failur
     response.__enter__.return_value = response
 
     with (
-        patch.object(app.yf, "Ticker", side_effect=RuntimeError("rate limited")),
+        patch.object(app.yf, "Ticker", side_effect=RuntimeError("metadata temporarily unavailable")),
         patch.object(app, "urlopen", return_value=response),
     ):
         context = app.get_dividend_context("VUSA.L")
@@ -387,7 +396,7 @@ def test_direct_yahoo_chart_fallback_can_confirm_no_dividend_without_metadata():
     response.__enter__.return_value = response
 
     with (
-        patch.object(app.yf, "Ticker", side_effect=RuntimeError("rate limited")),
+        patch.object(app.yf, "Ticker", side_effect=RuntimeError("metadata temporarily unavailable")),
         patch.object(app, "urlopen", return_value=response),
     ):
         context = app.get_dividend_context("TSLA")
@@ -490,3 +499,83 @@ def test_yfinance_failure_does_not_remove_etf_distribution_snapshot():
     assert b"Distribution snapshot" in response.data
     assert b"Distribution data is temporarily unavailable" in response.data
     assert b"No regular cash distribution found" not in response.data
+
+
+def valid_outlook_metadata(now):
+    return {
+        "quoteType": "EQUITY", "currency": "USD", "financialCurrency": "USD",
+        "regularMarketPrice": 892.47, "regularMarketTime": now,
+        "targetMeanPrice": 1069.2, "targetHighPrice": 1315, "targetLowPrice": 740,
+        "numberOfAnalystOpinions": 35, "dividendYield": .5,
+        "forwardAnnualDividendRate": 4,
+    }
+
+
+@pytest.mark.parametrize("failure", [RuntimeError("429 Too Many Requests"), TimeoutError("timeout")])
+def test_successful_outlook_survives_failed_refresh_with_original_timestamps(failure):
+    now = 1_789_646_400
+    ticker = MagicMock()
+    ticker.get_info.side_effect = [valid_outlook_metadata(now), failure]
+    ticker.history.side_effect = failure
+    with (
+        patch.object(app.time, "time", return_value=now) as clock,
+        patch.object(app.yf, "Ticker", return_value=ticker),
+        patch.object(app, "urlopen", side_effect=failure) as fallback,
+    ):
+        first = app.get_dividend_context("COST")["return_outlook"]
+        clock.return_value = now + 3601
+        second = app.get_dividend_context("COST")["return_outlook"]
+        assert second["metric"] == first["metric"] == "+19.8%"
+        assert second["quote_timestamp"] == second["retrieved_at"] == now
+        assert second["cached"] is True
+        assert app.DIVIDEND_CONTEXT_CACHE["COST"]["timestamp"] == now
+        if "429" in str(failure):
+            ticker.history.assert_not_called()
+            fallback.assert_not_called()
+            app.get_dividend_context("MSFT")
+            assert ticker.get_info.call_count == 2
+        clock.return_value = now + 7 * 86400 + 1
+        assert app.get_dividend_context("COST")["return_outlook"]["metric"] == "Unavailable"
+
+
+def test_cached_outlook_age_is_checked_even_before_context_ttl_expires():
+    now = 1_789_646_400
+    outlook = app.build_return_outlook(valid_outlook_metadata(now), now=now)
+    app.DIVIDEND_CONTEXT_CACHE["COST"] = {
+        "timestamp": now + 7 * 86400,
+        "context": {"income_status": app.INCOME_STATUS_AVAILABLE, "return_outlook": outlook},
+    }
+    with patch.object(app.time, "time", return_value=now + 7 * 86400 + 1), patch.object(app.yf, "Ticker") as provider:
+        assert app.get_dividend_context("COST")["return_outlook"]["metric"] == "Unavailable"
+        provider.assert_not_called()
+
+
+def test_explicit_rate_limit_cooldown_expires_and_allows_recovery():
+    now = 1_789_646_400
+    ticker = MagicMock()
+    ticker.get_info.side_effect = [RuntimeError("429"), valid_outlook_metadata(now)]
+    with patch.object(app.time, "time", return_value=now) as clock, patch.object(app.yf, "Ticker", return_value=ticker):
+        assert app.get_dividend_context("COST")["return_outlook"]["metric"] == "Unavailable"
+        clock.return_value = now + 299
+        app.get_dividend_context("MSFT")
+        assert ticker.get_info.call_count == 1
+        clock.return_value = now + 301
+        assert app.get_dividend_context("COST")["return_outlook"]["metric"] == "+19.8%"
+        assert ticker.get_info.call_count == 2
+
+
+def test_simultaneous_metadata_requests_share_one_refresh():
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+
+    now = app.time.time()
+    start = threading.Barrier(2)
+    ticker = MagicMock()
+    ticker.get_info.return_value = valid_outlook_metadata(now)
+    def fetch():
+        start.wait(timeout=3)
+        return app.get_dividend_context("COST")["return_outlook"]["metric"]
+    with patch.object(app.yf, "Ticker", return_value=ticker), ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: fetch(), range(2)))
+    assert results == ["+19.8%", "+19.8%"]
+    ticker.get_info.assert_called_once()
