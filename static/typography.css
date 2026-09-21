@@ -1,0 +1,31 @@
+/* Shared dark-theme copy hierarchy; headings and semantic accents retain
+   their existing near-white and signal colours. */
+:root {
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #a8b8c8;
+  --text: var(--text-primary);
+  --muted: var(--text-secondary);
+}
+
+p, li {
+  color: var(--text-secondary);
+}
+
+.muted, .note, .menu-help, .nav-section-label,
+.search-hint, .reminder, .disclaimer, .identity-note,
+.score-label, .score-note, .score small,
+.scenario-label, .scenario-target, .snapshot-freshness,
+.methodology summary, .dividend-metric span {
+  color: var(--text-muted);
+}
+
+.smart-search input::placeholder {
+  color: var(--text-muted);
+}
+
+.signal-row, .research-rows div, .snapshot-freshness time,
+.hero-card .hero-subtitle, .hero-search-panel > p,
+.free-report-explanation, .free-report-next, .product-step span {
+  color: var(--text-secondary);
+}
