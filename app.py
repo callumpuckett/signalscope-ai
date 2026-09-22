@@ -2639,6 +2639,8 @@ INCOME_HISTORY_CACHE_TTL_SECONDS = 300
 INCOME_HISTORY_CACHE = {}
 # One reentrant lock coordinates refreshes across the existing Yahoo entry points.
 YAHOO_REFRESH_LOCK = threading.RLock()
+# Cache reads/copies never hold the provider lock while another ticker refreshes.
+YAHOO_CACHE_LOCK = threading.RLock()
 YAHOO_COOLDOWN_UNTIL = 0.0
 YAHOO_RETRY_SECONDS = 300
 YAHOO_HISTORY_CACHE = {}
@@ -5035,25 +5037,35 @@ def _fetch_yahoo_income_history(symbol):
     return history, provider_info
 
 
+def _cached_dividend_context(symbol, outlook_refresh_date, now):
+    with YAHOO_CACHE_LOCK:
+        cached = DIVIDEND_CONTEXT_CACHE.get(symbol)
+        if not cached:
+            return None, None, False
+        context = copy.deepcopy(cached["context"])
+        context["return_outlook"] = eligible_return_outlook(context.get("return_outlook"), now)
+        ttl = (DIVIDEND_CONTEXT_UNAVAILABLE_CACHE_TTL_SECONDS
+               if income_status_from_context(context) == INCOME_STATUS_UNAVAILABLE
+               else DIVIDEND_CONTEXT_CACHE_TTL_SECONDS)
+        daily_complete = (context["return_outlook"].get("cases")
+                          and outlook_retrieval_date(context["return_outlook"]) == outlook_refresh_date)
+        reusable = ((daily_complete if outlook_refresh_date else now - cached["timestamp"] < ttl)
+                    or now < cached.get("retry_after", 0)
+                    or not yahoo_refresh_allowed())
+        return cached, context, reusable
+
+
 def get_dividend_context(symbol, *, outlook_refresh_date=None):
     cleaned_symbol = canonical_stock_symbol(symbol)
+    _, context, reusable = _cached_dividend_context(cleaned_symbol, outlook_refresh_date, time.time())
+    if reusable:
+        return context
     with YAHOO_REFRESH_LOCK:
         now = time.time()
-        cached = DIVIDEND_CONTEXT_CACHE.get(cleaned_symbol)
-        if cached:
-            context = copy.deepcopy(cached["context"])
-            context["return_outlook"] = eligible_return_outlook(context.get("return_outlook"), now)
-            ttl = (DIVIDEND_CONTEXT_UNAVAILABLE_CACHE_TTL_SECONDS
-                   if income_status_from_context(context) == INCOME_STATUS_UNAVAILABLE
-                   else DIVIDEND_CONTEXT_CACHE_TTL_SECONDS)
-            daily_complete = (context["return_outlook"].get("cases")
-                              and outlook_retrieval_date(context["return_outlook"]) == outlook_refresh_date)
-            if ((daily_complete if outlook_refresh_date else now - cached["timestamp"] < ttl)
-                    or now < cached.get("retry_after", 0)
-                    or not yahoo_refresh_allowed()):
-                return context
-        else:
-            context = None
+        # Another request may have filled the cache while we waited for the provider.
+        cached, context, reusable = _cached_dividend_context(cleaned_symbol, outlook_refresh_date, now)
+        if reusable:
+            return context
         if not yahoo_refresh_allowed():
             return _fetch_dividend_context(cleaned_symbol)
         try:
@@ -5062,19 +5074,22 @@ def get_dividend_context(symbol, *, outlook_refresh_date=None):
             record_yahoo_failure(exc)
             if not cached:
                 raise
-            cached["retry_after"] = now + YAHOO_RETRY_SECONDS
+            with YAHOO_CACHE_LOCK:
+                DIVIDEND_CONTEXT_CACHE[cleaned_symbol] = {**cached, "retry_after": now + YAHOO_RETRY_SECONDS}
             return context
         # A temporary/incomplete refresh must not erase a validated target/quote pair.
         if context and not fresh["return_outlook"].get("cases"):
             fresh["return_outlook"] = context["return_outlook"]
-            DIVIDEND_CONTEXT_CACHE[cleaned_symbol] = {
-                "timestamp": cached["timestamp"], "retry_after": now + YAHOO_RETRY_SECONDS,
-                "context": copy.deepcopy(fresh),
-            }
+            with YAHOO_CACHE_LOCK:
+                DIVIDEND_CONTEXT_CACHE[cleaned_symbol] = {
+                    "timestamp": cached["timestamp"], "retry_after": now + YAHOO_RETRY_SECONDS,
+                    "context": copy.deepcopy(fresh),
+                }
             return fresh
-        DIVIDEND_CONTEXT_CACHE[cleaned_symbol] = {
-            "timestamp": now, "context": copy.deepcopy(fresh),
-        }
+        with YAHOO_CACHE_LOCK:
+            DIVIDEND_CONTEXT_CACHE[cleaned_symbol] = {
+                "timestamp": now, "context": copy.deepcopy(fresh),
+            }
         return fresh
 
 
@@ -6972,18 +6987,29 @@ def portfolio_fit():
     return render_template_string(portfolio_html, holdings_text=holdings_text, result=result)
 
 
-def safe_history(ticker, _ticker_object=None, **kwargs):
-    ticker = canonical_stock_symbol(ticker)
-    kwargs.setdefault("auto_adjust", False)
-    # Keep all supplied parameters (range, interval, actions, adjustment, etc.) distinct.
-    key = (ticker, tuple(sorted((name, repr(value)) for name, value in kwargs.items())))
-    with YAHOO_REFRESH_LOCK:
-        now = time.time()
+def _cached_yahoo_history(key, now):
+    with YAHOO_CACHE_LOCK:
         cached = YAHOO_HISTORY_CACHE.get(key)
         if cached and now - cached["timestamp"] < YAHOO_RETRY_SECONDS:
             if cached.get("history") is not None:
                 return cached["history"].copy(deep=True)
             raise RuntimeError("Yahoo history temporarily unavailable")
+    return None
+
+
+def safe_history(ticker, _ticker_object=None, **kwargs):
+    ticker = canonical_stock_symbol(ticker)
+    kwargs.setdefault("auto_adjust", False)
+    # Keep all supplied parameters (range, interval, actions, adjustment, etc.) distinct.
+    key = (ticker, tuple(sorted((name, repr(value)) for name, value in kwargs.items())))
+    cached_history = _cached_yahoo_history(key, time.time())
+    if cached_history is not None:
+        return cached_history
+    with YAHOO_REFRESH_LOCK:
+        now = time.time()
+        cached_history = _cached_yahoo_history(key, now)
+        if cached_history is not None:
+            return cached_history
         if not yahoo_refresh_allowed():
             raise yahoo_deferred_error()
         try:
@@ -7002,9 +7028,10 @@ def safe_history(ticker, _ticker_object=None, **kwargs):
             history = None
             raise
         finally:
-            if len(YAHOO_HISTORY_CACHE) >= YAHOO_HISTORY_CACHE_LIMIT and key not in YAHOO_HISTORY_CACHE:
-                YAHOO_HISTORY_CACHE.pop(next(iter(YAHOO_HISTORY_CACHE)))
-            YAHOO_HISTORY_CACHE[key] = {"timestamp": now, "history": history.copy(deep=True) if history is not None else None}
+            with YAHOO_CACHE_LOCK:
+                if len(YAHOO_HISTORY_CACHE) >= YAHOO_HISTORY_CACHE_LIMIT and key not in YAHOO_HISTORY_CACHE:
+                    YAHOO_HISTORY_CACHE.pop(next(iter(YAHOO_HISTORY_CACHE)))
+                YAHOO_HISTORY_CACHE[key] = {"timestamp": now, "history": history.copy(deep=True) if history is not None else None}
         return history.copy(deep=True)
 
 
@@ -12759,12 +12786,8 @@ function copyNewsletter(){
 """
 
 
-def prepare_dashboard_data():
-    recommendations = get_recommendations()
-    buy_rows, hold_rows, sell_rows, conviction_rows = split_rows(recommendations)
-    buy_count, hold_count, sell_count, high_conviction_count = calculate_counts(recommendations)
-
-    market_snapshot = [
+def build_dashboard_market_snapshots():
+    return [
         fetch_symbol_snapshot("^GSPC", "S&P 500", "US Index"),
         fetch_symbol_snapshot("^IXIC", "Nasdaq Composite", "US Index"),
         fetch_symbol_snapshot("SPY", "SPDR S&P 500 ETF", "US ETF"),
@@ -12772,6 +12795,14 @@ def prepare_dashboard_data():
         fetch_symbol_snapshot("^FTSE", "FTSE 100", "UK Index"),
         fetch_symbol_snapshot("BP.L", "BP", "UK Stock"),
     ]
+
+
+def prepare_dashboard_data(*, include_market_snapshots=True):
+    recommendations = get_recommendations()
+    buy_rows, hold_rows, sell_rows, conviction_rows = split_rows(recommendations)
+    buy_count, hold_count, sell_count, high_conviction_count = calculate_counts(recommendations)
+
+    market_snapshot = build_dashboard_market_snapshots() if include_market_snapshots else None
 
     impact_radar = get_market_impact_radar()
     live_headlines = safe_build_live_headlines(recommendations, impact_radar) or []
@@ -12826,7 +12857,7 @@ def prepare_dashboard_data():
         "newsapi_configured": bool(NEWSAPI_KEY),
     }
 
-def get_cached_dashboard_data(force_refresh=False):
+def get_cached_dashboard_data(force_refresh=False, *, include_market_snapshots=True):
     with DASHBOARD_CACHE_LOCK:
         now = time.time()
         cached_data = DASHBOARD_CACHE.get("data")
@@ -12838,9 +12869,13 @@ def get_cached_dashboard_data(force_refresh=False):
             and cached_data.get("market_status")
             and now - cached_timestamp < DASHBOARD_CACHE_TTL_SECONDS
         ):
+            if include_market_snapshots and cached_data.get("market_snapshot") is None:
+                # Complete the same cache generation without extending news/data freshness.
+                cached_data = {**cached_data, "market_snapshot": build_dashboard_market_snapshots()}
+                DASHBOARD_CACHE["data"] = cached_data
             return cached_data.copy()
 
-        fresh_data = prepare_dashboard_data()
+        fresh_data = prepare_dashboard_data(include_market_snapshots=include_market_snapshots)
         if not isinstance(fresh_data, dict):
             fresh_data = {}
 
@@ -15298,10 +15333,13 @@ def dashboard():
     force_refresh = request.args.get("refresh") == "1"
     if force_refresh and not force_refresh_authorized():
         return Response("Forced refresh is restricted.", status=403, mimetype="text/plain")
-    data = get_cached_dashboard_data(force_refresh=force_refresh) or {}
+    include_market_snapshots = bool(request.args.get("tab"))
+    data = get_cached_dashboard_data(
+        force_refresh=force_refresh, include_market_snapshots=include_market_snapshots,
+    ) or {}
 
     if not isinstance(data, dict) or not data.get("market_status"):
-        data = prepare_dashboard_data() or {}
+        data = prepare_dashboard_data(include_market_snapshots=include_market_snapshots) or {}
 
     if not isinstance(data, dict):
         data = {}
@@ -15360,10 +15398,10 @@ def api_market_news():
     force_refresh = request.args.get("refresh") == "1"
     if force_refresh and not force_refresh_authorized():
         return jsonify({"error": "Forced refresh is restricted."}), 403
-    data = get_cached_dashboard_data(force_refresh=force_refresh) or {}
+    data = get_cached_dashboard_data(force_refresh=force_refresh, include_market_snapshots=False) or {}
 
     if not isinstance(data, dict) or not data.get("market_status"):
-        data = prepare_dashboard_data() or {}
+        data = prepare_dashboard_data(include_market_snapshots=False) or {}
 
     if not isinstance(data, dict):
         data = {}
