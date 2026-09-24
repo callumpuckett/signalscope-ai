@@ -212,3 +212,46 @@ def test_zero_outlook_keeps_investment_unchanged(outlook):
     result = app.what_if_illustration(outlook, Decimal('1000'))
     assert result['value'] == '£1,000'
     assert result['change'] == '+£0'
+
+
+@pytest.mark.parametrize('query', ['Microsoft', 'MSFT', '0QYP.L'])
+def test_what_if_prefers_supported_tracked_company_listing(page, monkeypatch, query):
+    rows = [app.normalise_universe_row({'ticker': ticker, 'name': 'Microsoft Corporation'})
+            for ticker in ['0QYP.L', 'MSFT']]
+    monkeypatch.setattr(app, 'get_stock_universe', lambda: rows)
+    html = page[0].get('/what-if', query_string={'q': query}).get_data(as_text=True)
+    assert html.count('/what-if?symbol=MSFT') == 1
+    assert '/what-if?symbol=0QYP.L' not in html
+    assert [row['ticker'] for row in app.search_stock_universe('Microsoft')] == ['0QYP.L', 'MSFT']
+    page[1].assert_not_called()
+
+
+def test_what_if_keeps_distinct_names_and_share_classes(monkeypatch):
+    rows = [app.normalise_universe_row({'ticker': ticker, 'name': name}) for ticker, name in [
+        ('AAA', 'Example Class A'), ('BBB', 'Example Class B'), ('CCC', 'Example Other'),
+        ('DDD', 'Only Alternate'),
+    ]]
+    monkeypatch.setattr(app, 'get_stock_universe', lambda: rows)
+    assert [row['ticker'] for row in app.what_if_search_stocks('Example')] == ['AAA', 'BBB', 'CCC']
+    assert app.what_if_search_stocks('Only')[0]['ticker'] == 'DDD'
+
+
+@pytest.mark.parametrize('amount', ['250', '500', '1000', 'custom'])
+def test_custom_input_initial_visibility_and_validation_state(page, monkeypatch, amount):
+    from html.parser import HTMLParser
+    class Fields(HTMLParser):
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            if attrs.get('class') == 'custom-amount-field':
+                self.wrapper = attrs
+            if attrs.get('id') == 'custom-amount':
+                self.input = attrs
+    premium(monkeypatch)
+    html = page[0].get('/what-if', query_string={
+        'symbol': 'MSFT', 'amount': amount, 'custom_amount': '1234.56',
+    }).get_data(as_text=True)
+    fields = Fields()
+    fields.feed(html)
+    assert ('hidden' in fields.wrapper) == (amount != 'custom')
+    assert ('disabled' in fields.input) == (amount != 'custom')
+    assert fields.input['value'] == '1234.56'

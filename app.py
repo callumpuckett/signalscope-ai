@@ -6065,6 +6065,29 @@ def compare_direct(symbol_a, symbol_b):
     return render_compare_page(cleaned_a, cleaned_b)
 
 
+def what_if_search_stocks(query, limit=12):
+    """Collapse same-company listings only on What If?, preferring tracked symbols."""
+    universe = get_stock_universe()
+    preferred = {}
+    tracked = set(TRACKED_STOCK_UNIVERSE)
+    def company_key(item):
+        return " ".join(str(item.get("name") or item["ticker"]).casefold().split())
+    for item in universe:
+        key = company_key(item)
+        previous = preferred.get(key)
+        if previous is None or (item["ticker"] in tracked and previous["ticker"] not in tracked):
+            preferred[key] = item
+    results, seen = [], set()
+    for item in search_stock_universe(query, limit=len(universe)):
+        key = company_key(item)
+        if key not in seen:
+            results.append(preferred[key])
+            seen.add(key)
+            if len(results) >= limit:
+                break
+    return results
+
+
 def what_if_return_outlook(symbol):
     """Reuse validated existing data without refreshing the Opportunities page."""
     _, context, reusable = _cached_dividend_context(symbol, None, time.time())
@@ -6138,10 +6161,26 @@ WHAT_IF_HTML = """
 {% for choice, label in [('250','£250'),('500','£500'),('1000','£1,000'),('custom','Custom')] %}
 <label><input type="radio" name="amount" value="{{ choice }}" {% if amount_choice == choice %}checked{% endif %}> {{ label }}</label>
 {% endfor %}</div></fieldset>
+<div class="custom-amount-field" {% if amount_choice != 'custom' %}hidden{% endif %}>
 <label for="custom-amount">Custom amount (£)</label>
-<input id="custom-amount" type="number" name="custom_amount" min="0.01" max="1000000000" step="0.01" value="{{ custom_amount }}" inputmode="decimal" placeholder="Enter an amount">
+<input id="custom-amount" type="number" name="custom_amount" min="0.01" max="1000000000" step="0.01" value="{{ custom_amount }}" inputmode="decimal" placeholder="Enter an amount" {% if amount_choice != 'custom' %}disabled{% endif %}>
+</div>
 <button type="submit">Update illustration</button>
 </form>
+<script>
+(function(){
+    const form=document.querySelector('.amount-form');
+    const field=form.querySelector('.custom-amount-field');
+    const input=field.querySelector('input');
+    function updateCustomAmount(){
+        const custom=form.querySelector('input[name="amount"][value="custom"]').checked;
+        field.hidden=!custom;
+        input.disabled=!custom;
+    }
+    form.addEventListener('change',updateCustomAmount);
+    updateCustomAmount();
+})();
+</script>
 {% endif %}
 {% if amount_error %}<p role="alert">{{ amount_error }}</p>
 {% elif result %}
@@ -6170,7 +6209,7 @@ def what_if():
     premium = premium_has_access()
     query = request.args.get("q", "").strip()[:100]
     raw_symbol = request.args.get("symbol", "").strip()[:100]
-    matches = search_stock_universe(query) if query else []
+    matches = what_if_search_stocks(query) if query else []
     symbol = ""
     selection_error = ""
     if raw_symbol:
