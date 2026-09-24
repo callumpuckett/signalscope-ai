@@ -315,8 +315,12 @@ def test_sparse_cache_does_not_fetch_or_invent_examples(page, example_cache, mon
     })
     page[1].return_value = app.build_return_outlook({})
     html = page[0].get('/what-if?symbol=SPCX').get_data(as_text=True)
-    assert html.count('href="/what-if?symbol=') == count
+    assert html.count('href="/what-if?symbol=') == max(count, 1)
     assert ('Try a stock with available outlook data:' in html) == bool(count)
+    assert ('Try Microsoft (MSFT) →' in html) == (count == 0)
+    if count == 0:
+        assert 'href="/what-if?symbol=MSFT">Try Microsoft (MSFT) →</a>' in html
+    page[1].assert_called_once_with('SPCX')
 
 
 def test_available_and_unselected_pages_do_not_scan_examples(page, monkeypatch):
@@ -329,3 +333,17 @@ def test_available_and_unselected_pages_do_not_scan_examples(page, monkeypatch):
 
 def test_examples_exclude_the_selected_stock(example_cache):
     assert [item['ticker'] for item in app.what_if_available_examples('MSFT')] == ['AAPL', 'COST', 'NVDA']
+
+
+def test_microsoft_fallback_uses_normal_outlook_validation(page, example_cache, monkeypatch, outlook):
+    monkeypatch.setattr(app, 'DIVIDEND_CONTEXT_CACHE', {})
+    client, provider = page
+    provider.return_value = app.build_return_outlook({})
+    html = client.get('/what-if?symbol=MSFT').get_data(as_text=True)
+    assert 'What If? isn’t currently available for this stock' in html
+    assert 'class="illustrative-value"' not in html
+    provider.assert_called_once_with('MSFT')
+    provider.return_value = {**outlook, 'metric': '-14.6%'}
+    html = client.get('/what-if?symbol=MSFT').get_data(as_text=True)
+    assert '£854' in html and '−£146 (-14.6%)' in html
+    assert 'Try Microsoft (MSFT) →' not in html

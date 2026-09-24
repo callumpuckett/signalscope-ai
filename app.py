@@ -6231,7 +6231,7 @@ WHAT_IF_HTML = """
 {% if available_examples %}<p>Try a stock with available outlook data:</p>
 <ul class="stock-matches" aria-label="Try one of these">{% for item in available_examples %}
 <li><a href="{{ url_for('what_if', symbol=item.ticker) }}">{{ item.name }}</a></li>
-{% endfor %}</ul>{% endif %}</div>{% endif %}
+{% endfor %}</ul>{% else %}<p><a href="{{ url_for('what_if', symbol='MSFT') }}">Try Microsoft (MSFT) →</a></p>{% endif %}</div>{% endif %}
 <p class="disclosure">Illustrative only. Analyst targets are not forecasts or guarantees, and actual returns may differ. Dividends are excluded.</p>
 </section>
 {% endif %}
