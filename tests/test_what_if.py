@@ -104,7 +104,7 @@ def test_unavailable_outlook_does_not_manufacture_a_value(page, outlook, invalid
     else:
         outlook['metric'] = 'NaN%'
     html = page[0].get('/what-if?symbol=MSFT').get_data(as_text=True)
-    assert 'Return Outlook unavailable' in html
+    assert 'What If? isn’t currently available for this stock' in html
     assert 'class="illustrative-value"' not in html
     assert 'Unlock What If?' not in html
 
@@ -255,3 +255,77 @@ def test_custom_input_initial_visibility_and_validation_state(page, monkeypatch,
     assert ('hidden' in fields.wrapper) == (amount != 'custom')
     assert ('disabled' in fields.input) == (amount != 'custom')
     assert fields.input['value'] == '1234.56'
+
+
+@pytest.fixture
+def example_cache(monkeypatch, outlook):
+    rows = [app.normalise_universe_row({'ticker': ticker, 'name': name}) for ticker, name in [
+        ('SPCX', 'SpaceX'), ('MSFT', 'Microsoft'), ('AAPL', 'Apple'), ('COST', 'Costco'), ('NVDA', 'Nvidia'),
+        ('OLD', 'Expired'), ('BAD', 'Invalid'), ('0QYP.L', 'Microsoft'),
+    ]]
+    monkeypatch.setattr(app, 'get_stock_universe', lambda: rows)
+    expired = {**outlook, 'quote_timestamp': time.time() - 8 * 86400}
+    invalid = {**outlook, 'metric': 'NaN%'}
+    cache = {ticker: {'context': {'return_outlook': value}} for ticker, value in [
+        ('OLD', expired), ('BAD', invalid), ('UNKNOWN', outlook), ('MSFT', outlook),
+        ('0QYP.L', outlook), ('AAPL', outlook), ('COST', outlook), ('NVDA', outlook),
+    ]}
+    monkeypatch.setattr(app, 'DIVIDEND_CONTEXT_CACHE', cache)
+    monkeypatch.setattr(app, 'OPPORTUNITY_PAGE_CACHE', None)
+    for name in ['newsletter_storage_load', 'get_dividend_context', 'opportunity_return_outlook', 'get_opportunity_page_snapshot']:
+        monkeypatch.setattr(app, name, Mock(side_effect=AssertionError('Examples must not fetch data')))
+    return cache
+
+
+def test_unavailable_examples_use_valid_cached_supported_unique_companies(page, example_cache):
+    client, provider = page
+    provider.return_value = app.build_return_outlook({})
+    before = copy.deepcopy(example_cache)
+    html = client.get('/what-if?symbol=SPCX').get_data(as_text=True)
+    assert 'StockRadar won’t estimate a result.' in html
+    assert 'Try a stock with available outlook data:' in html
+    for ticker in ['MSFT', 'AAPL', 'COST']:
+        assert f'/what-if?symbol={ticker}' in html
+    for ticker in ['OLD', 'BAD', 'UNKNOWN', '0QYP.L', 'SPCX', 'NVDA']:
+        assert f'href="/what-if?symbol={ticker}"' not in html
+    assert 'class="illustrative-value"' not in html
+    assert example_cache == before
+    provider.assert_called_once_with('SPCX')
+    # Selecting an example uses the unchanged symbol route.
+    provider.return_value = example_cache['MSFT']['context']['return_outlook']
+    assert '£1,146' in client.get('/what-if?symbol=MSFT').get_data(as_text=True)
+    assert provider.call_args.args == ('MSFT',)
+
+
+def test_examples_can_reuse_already_loaded_opportunities(example_cache, monkeypatch, outlook):
+    monkeypatch.setattr(app, 'DIVIDEND_CONTEXT_CACHE', {})
+    state = {'snapshots': {'today': {'opportunities': [
+        {'ticker': ticker, 'return_outlook': outlook} for ticker in ['MSFT', 'AAPL', 'COST']
+    ]}}}
+    before = copy.deepcopy(state)
+    monkeypatch.setattr(app, 'OPPORTUNITY_PAGE_CACHE', ('today', ({}, state)))
+    assert [item['ticker'] for item in app.what_if_available_examples('SPCX')] == ['MSFT', 'AAPL', 'COST']
+    assert state == before
+
+
+@pytest.mark.parametrize('count', [0, 1, 2])
+def test_sparse_cache_does_not_fetch_or_invent_examples(page, example_cache, monkeypatch, count):
+    monkeypatch.setattr(app, 'DIVIDEND_CONTEXT_CACHE', {
+        ticker: example_cache[ticker] for ticker in ['MSFT', 'AAPL'][:count]
+    })
+    page[1].return_value = app.build_return_outlook({})
+    html = page[0].get('/what-if?symbol=SPCX').get_data(as_text=True)
+    assert html.count('href="/what-if?symbol=') == count
+    assert ('Try a stock with available outlook data:' in html) == bool(count)
+
+
+def test_available_and_unselected_pages_do_not_scan_examples(page, monkeypatch):
+    examples = Mock(side_effect=AssertionError('Only unavailable results need examples'))
+    monkeypatch.setattr(app, 'what_if_available_examples', examples)
+    assert page[0].get('/what-if').status_code == 200
+    assert page[0].get('/what-if?symbol=MSFT').status_code == 200
+    examples.assert_not_called()
+
+
+def test_examples_exclude_the_selected_stock(example_cache):
+    assert [item['ticker'] for item in app.what_if_available_examples('MSFT')] == ['AAPL', 'COST', 'NVDA']

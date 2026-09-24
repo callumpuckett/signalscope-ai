@@ -6128,6 +6128,37 @@ def what_if_illustration(outlook, amount):
     }
 
 
+def what_if_available_examples(excluded_symbol):
+    """Suggest only supported stocks already backed by usable in-memory outlooks."""
+    with YAHOO_CACHE_LOCK:
+        candidates = {
+            ticker: copy.deepcopy(entry.get("context", {}).get("return_outlook"))
+            for ticker, entry in DIVIDEND_CONTEXT_CACHE.items()
+        }
+    cached_page = OPPORTUNITY_PAGE_CACHE
+    if cached_page is not None:
+        for ticker, outlook in persisted_opportunity_outlooks(cached_page[1][1]).items():
+            if not what_if_illustration(candidates.get(ticker), Decimal("1000")):
+                candidates[ticker] = outlook
+    supported = {item["ticker"]: item for item in get_stock_universe()}
+    examples, seen = [], set()
+    excluded = supported.get(excluded_symbol)
+    if excluded:
+        seen.add(" ".join(excluded["name"].casefold().split()))
+    for ticker, outlook in candidates.items():
+        item = supported.get(ticker)
+        if ticker == excluded_symbol or not item:
+            continue
+        company = " ".join(item["name"].casefold().split())
+        if company in seen or not what_if_illustration(outlook, Decimal("1000")):
+            continue
+        examples.append(item)
+        seen.add(company)
+        if len(examples) == 3:
+            break
+    return examples
+
+
 WHAT_IF_HTML = """
 <!DOCTYPE html>
 <html lang="en"><head><meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -6195,7 +6226,12 @@ WHAT_IF_HTML = """
 <p class="muted">Reference price dated {{ outlook.price_date }}. Excludes fees and currency movements.</p>
 {% if premium %}<p><a href="/opportunities">How Return Outlook works →</a></p>
 {% else %}<div class="upgrade-prompt"><p>Want to explore different investment amounts?</p><a class="button" href="/upgrade">Unlock What If? with StockRadar Premium →</a></div>{% endif %}
-{% else %}<div class="unavailable" role="status"><h3>Return Outlook unavailable</h3><p>A validated analyst-target outlook is not currently available for this stock. Try another supported stock.</p></div>{% endif %}
+{% else %}<div class="unavailable" role="status"><h3>What If? isn’t currently available for this stock</h3>
+<p>A validated analyst-target outlook isn’t currently available, so StockRadar won’t estimate a result.</p>
+{% if available_examples %}<p>Try a stock with available outlook data:</p>
+<ul class="stock-matches" aria-label="Try one of these">{% for item in available_examples %}
+<li><a href="{{ url_for('what_if', symbol=item.ticker) }}">{{ item.name }}</a></li>
+{% endfor %}</ul>{% endif %}</div>{% endif %}
 <p class="disclosure">Illustrative only. Analyst targets are not forecasts or guarantees, and actual returns may differ. Dividends are excluded.</p>
 </section>
 {% endif %}
@@ -6238,10 +6274,11 @@ def what_if():
             amount_error = "Enter an amount from £0.01 to £1,000,000,000, with up to two decimal places."
     outlook = what_if_return_outlook(symbol) if symbol and not amount_error else {}
     result = what_if_illustration(outlook, amount) if outlook else None
+    available_examples = what_if_available_examples(symbol) if symbol and not amount_error and result is None else []
     return render_template_string(
         WHAT_IF_HTML, premium=premium, query=query, matches=matches, symbol=symbol,
         selection_error=selection_error, amount_choice=amount_choice, custom_amount=custom_amount,
-        amount_error=amount_error, outlook=outlook, result=result,
+        amount_error=amount_error, outlook=outlook, result=result, available_examples=available_examples,
     )
 
 
