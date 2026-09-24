@@ -1,0 +1,214 @@
+import copy
+import time
+from decimal import Decimal
+from unittest.mock import Mock
+
+import pytest
+import app
+
+
+@pytest.fixture
+def outlook():
+    now = time.time()
+    return app.build_return_outlook({
+        'quoteType': 'EQUITY', 'currency': 'USD', 'regularMarketPrice': 100,
+        'regularMarketTime': now, 'targetMeanPrice': 114.6,
+        'targetLowPrice': 80, 'targetHighPrice': 150, 'numberOfAnalystOpinions': 12,
+    }, now=now)
+
+
+@pytest.fixture
+def page(monkeypatch, outlook):
+    monkeypatch.setattr(app, 'get_stock_universe', lambda: [
+        {'ticker': 'MSFT', 'name': 'Microsoft Corporation', 'search_text': 'msft microsoft corporation'},
+        {'ticker': 'AAPL', 'name': 'Apple Inc.', 'search_text': 'aapl apple inc.'},
+    ])
+    monkeypatch.setattr(app, 'premium_entitlement_record', lambda **kwargs: None)
+    provider = Mock(return_value=outlook)
+    monkeypatch.setattr(app, 'what_if_return_outlook', provider)
+    return app.app.test_client(), provider
+
+
+def premium(monkeypatch):
+    monkeypatch.setattr(app, 'premium_entitlement_record', lambda **kwargs: {'premium_active': True, 'entitlement_version': 1})
+
+
+def test_page_search_selection_and_unavailable_symbol(page):
+    client, provider = page
+    response = client.get('/what-if')
+    assert response.status_code == 200
+    assert b'What could your investment look like?' in response.data
+    provider.assert_not_called()
+    found = client.get('/what-if?q=Microsoft').get_data(as_text=True)
+    assert '/what-if?symbol=MSFT' in found
+    provider.assert_not_called()
+    assert b'No matching stocks found' in client.get('/what-if?q=does-not-exist').data
+    assert b'Choose a supported stock' in client.get('/what-if?symbol=INVALID').data
+    provider.assert_not_called()
+    response = client.get('/what-if?symbol=MSFT')
+    assert response.status_code == 200
+    provider.assert_called_once_with('MSFT')
+    assert '£1,146' in response.get_data(as_text=True)
+
+
+@pytest.mark.parametrize('query', ['', '&amount=250', '&amount=custom&custom_amount=9999'])
+def test_free_always_gets_full_thousand_pound_result_before_upgrade(page, query):
+    client, _ = page
+    html = client.get('/what-if?symbol=MSFT' + query).get_data(as_text=True)
+    assert '£1,000 <span>today' in html
+    assert '£1,146' in html and '+£146 (+14.6%)' in html
+    assert html.index('£1,146') < html.index('Want to explore different investment amounts?')
+    assert 'name="amount"' not in html
+    assert 'name="custom_amount"' not in html
+    assert 'Analyst targets are not forecasts or guarantees' in html
+    assert 'Dividends are excluded.' in html
+
+
+@pytest.mark.parametrize(('amount', 'expected'), [('250', '£286.50'), ('500', '£573'), ('1000', '£1,146'), ('custom&custom_amount=1234.56', '£1,414.81')])
+def test_premium_amount_controls_and_calculation(page, monkeypatch, amount, expected):
+    premium(monkeypatch)
+    html = page[0].get('/what-if?symbol=MSFT&amount=' + amount).get_data(as_text=True)
+    for value in ['250', '500', '1000', 'custom']:
+        assert f'value="{value}"' in html
+    assert expected in html
+    assert 'How Return Outlook works' in html
+    assert 'Unlock What If?' not in html
+
+
+@pytest.mark.parametrize('raw', ['0', '-1', 'NaN', 'Infinity', '1e3', '1.001', '1000000001', '', '<script>'])
+def test_invalid_premium_amount_makes_no_provider_request(page, monkeypatch, raw):
+    premium(monkeypatch)
+    response = page[0].get('/what-if', query_string={'symbol': 'MSFT', 'amount': 'custom', 'custom_amount': raw})
+    assert b'role="alert"' in response.data
+    assert b'class="illustrative-value"' not in response.data
+    page[1].assert_not_called()
+
+
+def test_negative_outlook_uses_existing_percentage_and_no_invented_scenarios(page, outlook):
+    outlook['metric'] = '-14.6%'
+    html = page[0].get('/what-if?symbol=MSFT').get_data(as_text=True)
+    assert '£854' in html
+    assert '−£146 (-14.6%)' in html
+    assert 'transformation negative' in html
+    assert 'Bull case' not in html and 'Downside case' not in html
+
+
+@pytest.mark.parametrize('invalid', ['empty', 'expired', 'future', 'malformed'])
+def test_unavailable_outlook_does_not_manufacture_a_value(page, outlook, invalid):
+    if invalid == 'empty':
+        outlook['cases'] = {}
+    elif invalid == 'expired':
+        outlook['quote_timestamp'] = time.time() - 8 * 86400
+    elif invalid == 'future':
+        outlook['quote_timestamp'] = time.time() + 86400
+    else:
+        outlook['metric'] = 'NaN%'
+    html = page[0].get('/what-if?symbol=MSFT').get_data(as_text=True)
+    assert 'Return Outlook unavailable' in html
+    assert 'class="illustrative-value"' not in html
+    assert 'Unlock What If?' not in html
+
+
+@pytest.mark.parametrize('location', ['public', 'dashboard', 'app'])
+def test_navigation_reuses_existing_mobile_header(location):
+    with app.app.test_request_context('/what-if'):
+        html = app.stockradar_header_navigation(location)
+    assert html.count('href="/what-if"') == 1
+    assert 'What If?' in html
+    assert 'data-stockradar-menu-toggle' in html
+    assert 'aria-expanded="false"' in html
+    assert 'data-stockradar-menu' in html
+
+
+@pytest.fixture
+def cache_sources(monkeypatch):
+    monkeypatch.setattr(app, 'DIVIDEND_CONTEXT_CACHE', {})
+    monkeypatch.setattr(app, 'YAHOO_COOLDOWN_UNTIL', 0)
+    monkeypatch.setattr(app, 'OPPORTUNITY_PAGE_CACHE', None)
+    storage = Mock(return_value={})
+    provider = Mock(return_value=app.build_return_outlook({}))
+    monkeypatch.setattr(app, 'newsletter_storage_load', storage)
+    monkeypatch.setattr(app, 'opportunity_return_outlook', provider)
+    return storage, provider
+
+
+def test_cached_context_reused_for_all_amounts_without_new_fetch(cache_sources, outlook):
+    storage, provider = cache_sources
+    app.DIVIDEND_CONTEXT_CACHE['MSFT'] = {'timestamp': time.time(), 'context': {
+        'income_status': app.INCOME_STATUS_AVAILABLE, 'return_outlook': copy.deepcopy(outlook),
+    }}
+    for amount in ['250', '500', '1000', '1234.56']:
+        cached = app.what_if_return_outlook('MSFT')
+        assert app.what_if_illustration(cached, Decimal(amount))
+        assert cached['quote_timestamp'] == outlook['quote_timestamp']
+    provider.assert_not_called()
+    storage.assert_not_called()
+
+
+@pytest.mark.parametrize('memory', [False, True])
+def test_saved_opportunity_outlook_reused_without_enrichment_or_provider(cache_sources, outlook, monkeypatch, memory):
+    storage, provider = cache_sources
+    snapshot = {'opportunities': [{'ticker': 'MSFT', 'return_outlook': outlook}]}
+    state = {'snapshots': {'2026-09-24': snapshot}}
+    if memory:
+        monkeypatch.setattr(app, 'OPPORTUNITY_PAGE_CACHE', ('2026-09-24', (snapshot, state)))
+    else:
+        storage.return_value = state
+    assert app.what_if_return_outlook('MSFT')['metric'] == '+14.6%'
+    provider.assert_not_called()
+    if memory:
+        storage.assert_not_called()
+    else:
+        storage.assert_called_once_with('opportunity_radar')
+
+
+def test_missing_data_uses_existing_outlook_fetch_once(cache_sources):
+    storage, provider = cache_sources
+    assert not app.what_if_return_outlook('MSFT')['cases']
+    provider.assert_called_once_with('MSFT')
+
+
+def test_unavailable_cache_honours_retry_without_provider(cache_sources):
+    _, provider = cache_sources
+    app.DIVIDEND_CONTEXT_CACHE['MSFT'] = {'timestamp': time.time(), 'context': {
+        'income_status': app.INCOME_STATUS_UNAVAILABLE, 'return_outlook': app.build_return_outlook({}),
+    }}
+    assert not app.what_if_return_outlook('MSFT')['cases']
+    provider.assert_not_called()
+
+
+def test_amount_changes_share_existing_yahoo_metadata_cache(monkeypatch, outlook):
+    premium(monkeypatch)
+    monkeypatch.setattr(app, 'DIVIDEND_CONTEXT_CACHE', {})
+    monkeypatch.setattr(app, 'OPPORTUNITY_PAGE_CACHE', None)
+    monkeypatch.setattr(app, 'YAHOO_COOLDOWN_UNTIL', 0)
+    monkeypatch.setattr(app, 'newsletter_storage_load', Mock(return_value={}))
+    refresh = Mock(return_value={'income_status': app.INCOME_STATUS_AVAILABLE, 'return_outlook': outlook})
+    monkeypatch.setattr(app, '_fetch_dividend_context', refresh)
+    client = app.app.test_client()
+    for amount in ('250', '500', '1000', 'custom&custom_amount=750'):
+        assert client.get('/what-if?symbol=MSFT&amount=' + amount).status_code == 200
+    refresh.assert_called_once_with('MSFT')
+
+
+def test_expired_saved_outlook_uses_existing_refresh(cache_sources, outlook):
+    storage, provider = cache_sources
+    outlook['quote_timestamp'] = time.time() - 8 * 86400
+    storage.return_value = {'snapshots': {'old': {'opportunities': [{'ticker': 'MSFT', 'return_outlook': outlook}]}}}
+    app.what_if_return_outlook('MSFT')
+    provider.assert_called_once_with('MSFT')
+
+
+def test_public_header_keeps_what_if_among_desktop_tabs(monkeypatch):
+    monkeypatch.setattr(app, 'premium_entitlement_record', lambda **kwargs: None)
+    with app.app.test_request_context('/'):
+        html = app.stockradar_header_navigation('public')
+    assert 'class="public-header-inner"' in html
+    assert 'href="/what-if"' in html
+
+
+def test_zero_outlook_keeps_investment_unchanged(outlook):
+    outlook['metric'] = '+0.0%'
+    result = app.what_if_illustration(outlook, Decimal('1000'))
+    assert result['value'] == '£1,000'
+    assert result['change'] == '+£0'

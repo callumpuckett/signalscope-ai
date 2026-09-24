@@ -248,6 +248,15 @@ STOCKRADAR_NAVIGATION_ITEMS = (
         "public_class": "public-nav-primary",
     },
     {
+        "id": "what-if",
+        "section": "Main Menu",
+        "label": "What If?",
+        "href": "/what-if",
+        "icon": "💭",
+        "locations": ("public", "dashboard", "app"),
+        "access": "all",
+    },
+    {
         "id": "overview",
         "section": "Main Menu",
         "label": "Overview",
@@ -586,7 +595,7 @@ STOCKRADAR_HEADER_NAVIGATION_TEMPLATE = """
 {% endif %}
 <style id="stockradar-primary-navigation-styles">
 .public-header{box-sizing:border-box;position:relative;z-index:11000;width:100%;padding:3px max(24px,env(safe-area-inset-right));background:rgba(7,17,24,.96);border-bottom:1px solid rgba(148,163,184,.12);backdrop-filter:blur(18px);}
-.public-header-inner{position:relative;display:grid;grid-template-columns:310px minmax(0,1fr) auto;align-items:center;gap:18px;width:min(1180px,100%);margin:0 auto;}
+.public-header-inner{position:relative;display:grid;grid-template-columns:310px minmax(0,1fr) auto;align-items:center;gap:18px;width:min(1280px,100%);margin:0 auto;}
 .public-header .logo{display:block;width:310px;max-width:310px;margin:0;flex:0 0 auto;text-decoration:none;}
 .public-header .logo-img{display:block;width:100%;max-width:310px;max-height:none;height:auto;object-fit:contain;image-rendering:auto;}
 .public-header .logo-fallback{display:none;font-size:25px;font-weight:950;background:linear-gradient(135deg,#fff,#00ffaa,#ffb86b);-webkit-background-clip:text;color:transparent;}
@@ -604,7 +613,7 @@ STOCKRADAR_HEADER_NAVIGATION_TEMPLATE = """
 .public-header-inner.nav-density-high.nav-menu-open .public-nav-links{display:grid;}
 .public-header-inner.nav-density-high .public-nav-link,.public-header-inner.nav-density-high .public-nav-logout-form{width:100%;}
 .public-header-inner.nav-density-high .public-nav-link{justify-content:flex-start;padding:12px 14px;white-space:normal;text-align:left;}
-@media(max-width:1100px){
+@media(max-width:1320px){
     .public-header-inner{grid-template-columns:310px minmax(0,1fr) auto;}
     .stockradar-menu-toggle{display:inline-flex;grid-column:3;}
     .public-nav-links{display:none;position:absolute;top:calc(100% + 10px);right:0;left:auto;z-index:11001;width:min(420px,calc(100vw - 48px));max-height:calc(100dvh - 112px);grid-template-columns:1fr;gap:6px;padding:10px;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;border:1px solid rgba(148,163,184,.22);border-radius:18px;background:#0b1521;box-shadow:0 24px 70px rgba(0,0,0,.58);}
@@ -627,7 +636,7 @@ STOCKRADAR_HEADER_NAVIGATION_TEMPLATE = """
     .public-header{padding-top:max(12px,env(safe-area-inset-top));}
     .public-nav-links{padding-bottom:max(10px,env(safe-area-inset-bottom));}
 }
-@media(min-width:1101px){.public-header-inner:not(.nav-density-high) .public-nav-links{display:flex!important;}.public-header-inner:not(.nav-density-high) .public-nav-links[aria-hidden="true"]{display:flex!important;}}
+@media(min-width:1321px){.public-header-inner:not(.nav-density-high) .public-nav-links{display:flex!important;}.public-header-inner:not(.nav-density-high) .public-nav-links[aria-hidden="true"]{display:flex!important;}}
 </style>
 <header class="public-header">
     <div class="public-header-inner{% if navigation_density_high %} nav-density-high{% endif %}" data-stockradar-navigation="true">
@@ -659,7 +668,7 @@ def stockradar_header_navigation(location="public"):
     return render_template_string(
         STOCKRADAR_HEADER_NAVIGATION_TEMPLATE,
         navigation_sections=navigation_sections,
-        navigation_density_high=navigation_item_count > 7,
+        navigation_density_high=navigation_item_count > 8,
         navigation_script=stockradar_navigation_script(),
     )
 
@@ -6054,6 +6063,147 @@ def compare_direct(symbol_a, symbol_b):
     if cleaned_a != symbol_a.strip().upper() or cleaned_b != symbol_b.strip().upper():
         return redirect(url_for("compare_direct", symbol_a=cleaned_a, symbol_b=cleaned_b))
     return render_compare_page(cleaned_a, cleaned_b)
+
+
+def what_if_return_outlook(symbol):
+    """Reuse validated existing data without refreshing the Opportunities page."""
+    _, context, reusable = _cached_dividend_context(symbol, None, time.time())
+    if context and context.get("return_outlook", {}).get("cases"):
+        return context["return_outlook"]
+    cached_page = OPPORTUNITY_PAGE_CACHE
+    state = cached_page[1][1] if cached_page is not None else newsletter_storage_load("opportunity_radar")
+    saved = persisted_opportunity_outlooks(state).get(symbol)
+    if saved:
+        return saved
+    # Honour negative-cache TTL, retries and provider-wide cooldown as usual.
+    if reusable:
+        return context.get("return_outlook") or build_return_outlook({})
+    return opportunity_return_outlook(symbol)
+
+
+def what_if_illustration(outlook, amount):
+    outlook = eligible_return_outlook(outlook)
+    if not outlook.get("cases"):
+        return None
+    metric = str(outlook.get("metric", ""))
+    if not re.fullmatch(r"[+-]?\d+(?:\.\d+)?%", metric):
+        return None
+    try:
+        percentage = Decimal(metric[:-1])
+        if not percentage.is_finite() or percentage < -100:
+            return None
+        change = (amount * percentage / 100).quantize(Decimal("0.01"))
+        value = amount + change
+    except InvalidOperation:
+        return None
+    def pounds(number):
+        return "£" + money(number).removesuffix(".00")
+    return {
+        "amount": pounds(amount), "value": pounds(value), "percentage": metric,
+        "change": ("−" if change < 0 else "+") + pounds(abs(change)),
+        "direction": "negative" if percentage < 0 else "positive",
+    }
+
+
+WHAT_IF_HTML = """
+<!DOCTYPE html>
+<html lang="en"><head><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>What If? — StockRadar</title>
+{{ company_identity_assets() }}
+<link rel="stylesheet" href="{{ url_for('static', filename='what_if.css') }}">
+</head><body>
+{{ stockradar_header_navigation('public') | safe }}
+<main class="what-if-wrap">
+<section class="card">
+<p class="kicker">What If?</p>
+<h1>What could your investment look like?</h1>
+<p>Choose a stock. See what its analyst-target outlook could mean for your money.</p>
+<form method="get" action="{{ url_for('what_if') }}" class="stock-search">
+<label for="what-if-search">Search a stock</label>
+<div class="search-row"><input id="what-if-search" type="search" name="q" value="{{ query }}" maxlength="100" placeholder="Company name or ticker, e.g. Microsoft or MSFT" required>
+<button type="submit">Search</button></div>
+</form>
+{% if matches %}<ul class="stock-matches" aria-label="Matching stocks">{% for item in matches %}
+<li><a href="{{ url_for('what_if', symbol=item.ticker) }}">{{ stock_identity(item.ticker, item.name, 'compact') }} <span>{{ item.ticker }} →</span></a></li>
+{% endfor %}</ul>{% endif %}
+{% if selection_error %}<p role="status">{{ selection_error }}</p>{% endif %}
+</section>
+{% if symbol %}
+<section class="card" aria-label="Investment illustration">
+<h2>{{ stock_identity(symbol, stock_display_label(symbol), 'compact') }}</h2>
+{% if premium %}
+<form method="get" action="{{ url_for('what_if') }}" class="amount-form">
+<input type="hidden" name="symbol" value="{{ symbol }}">
+<fieldset><legend>Investment amount</legend><div class="amount-options">
+{% for choice, label in [('250','£250'),('500','£500'),('1000','£1,000'),('custom','Custom')] %}
+<label><input type="radio" name="amount" value="{{ choice }}" {% if amount_choice == choice %}checked{% endif %}> {{ label }}</label>
+{% endfor %}</div></fieldset>
+<label for="custom-amount">Custom amount (£)</label>
+<input id="custom-amount" type="number" name="custom_amount" min="0.01" max="1000000000" step="0.01" value="{{ custom_amount }}" inputmode="decimal" placeholder="Enter an amount">
+<button type="submit">Update illustration</button>
+</form>
+{% endif %}
+{% if amount_error %}<p role="alert">{{ amount_error }}</p>
+{% elif result %}
+<div class="transformation {{ result.direction }}" aria-label="Illustrative investment value">
+<p class="today">{{ result.amount }} <span>today</span></p>
+<div class="arrow" aria-hidden="true">↓</div>
+<p class="value-label">Illustrative value</p>
+<p class="illustrative-value">{{ result.value }}</p>
+<p class="potential-change">{{ result.change }} ({{ result.percentage }})</p>
+</div>
+<p class="outlook-source">Based on the current 12-month analyst-target outlook.</p>
+<p class="muted">Reference price dated {{ outlook.price_date }}. Excludes fees and currency movements.</p>
+{% if premium %}<p><a href="/opportunities">How Return Outlook works →</a></p>
+{% else %}<div class="upgrade-prompt"><p>Want to explore different investment amounts?</p><a class="button" href="/upgrade">Unlock What If? with StockRadar Premium →</a></div>{% endif %}
+{% else %}<div class="unavailable" role="status"><h3>Return Outlook unavailable</h3><p>A validated analyst-target outlook is not currently available for this stock. Try another supported stock.</p></div>{% endif %}
+<p class="disclosure">Illustrative only. Analyst targets are not forecasts or guarantees, and actual returns may differ. Dividends are excluded.</p>
+</section>
+{% endif %}
+{{ disclaimer_footer() | safe }}
+</main></body></html>
+"""
+
+
+@app.route("/what-if")
+def what_if():
+    premium = premium_has_access()
+    query = request.args.get("q", "").strip()[:100]
+    raw_symbol = request.args.get("symbol", "").strip()[:100]
+    matches = search_stock_universe(query) if query else []
+    symbol = ""
+    selection_error = ""
+    if raw_symbol:
+        candidate = canonical_stock_symbol(raw_symbol)
+        if any(item["ticker"] == candidate for item in get_stock_universe()):
+            symbol = candidate
+        else:
+            selection_error = "Choose a supported stock using the search above."
+    elif query and not matches:
+        selection_error = "No matching stocks found. Try a company name or ticker."
+
+    amount_choice, amount, amount_error = "1000", Decimal("1000"), ""
+    custom_amount = request.args.get("custom_amount", "")[:32] if premium else ""
+    if premium:
+        amount_choice = request.args.get("amount", "1000")
+        raw_amount = custom_amount if amount_choice == "custom" else amount_choice
+        try:
+            if amount_choice not in {"250", "500", "1000", "custom"}:
+                raise ValueError
+            if not re.fullmatch(r"\d{1,10}(?:\.\d{1,2})?", raw_amount):
+                raise ValueError
+            amount = Decimal(raw_amount)
+            if not Decimal("0.01") <= amount <= Decimal("1000000000"):
+                raise ValueError
+        except (ValueError, InvalidOperation):
+            amount_error = "Enter an amount from £0.01 to £1,000,000,000, with up to two decimal places."
+    outlook = what_if_return_outlook(symbol) if symbol and not amount_error else {}
+    result = what_if_illustration(outlook, amount) if outlook else None
+    return render_template_string(
+        WHAT_IF_HTML, premium=premium, query=query, matches=matches, symbol=symbol,
+        selection_error=selection_error, amount_choice=amount_choice, custom_amount=custom_amount,
+        amount_error=amount_error, outlook=outlook, result=result,
+    )
 
 
 @app.route("/universe")
