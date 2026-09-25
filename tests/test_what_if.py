@@ -94,7 +94,7 @@ def test_negative_outlook_uses_existing_percentage_and_no_invented_scenarios(pag
 
 
 @pytest.mark.parametrize('invalid', ['empty', 'expired', 'future', 'malformed'])
-def test_unavailable_outlook_does_not_manufacture_a_value(page, outlook, invalid):
+def test_unavailable_outlook_switches_to_labelled_hypothetical_mode(page, outlook, invalid):
     if invalid == 'empty':
         outlook['cases'] = {}
     elif invalid == 'expired':
@@ -104,9 +104,10 @@ def test_unavailable_outlook_does_not_manufacture_a_value(page, outlook, invalid
     else:
         outlook['metric'] = 'NaN%'
     html = page[0].get('/what-if?symbol=MSFT').get_data(as_text=True)
-    assert 'What If? isn’t currently available for this stock' in html
-    assert 'class="illustrative-value"' not in html
-    assert 'Unlock What If?' not in html
+    assert 'Explore a hypothetical scenario' in html
+    assert '£1,100' in html
+    assert 'not an analyst target, StockRadar forecast or guarantee' in html
+    assert 'Based on the current 12-month analyst-target outlook.' not in html
 
 
 @pytest.mark.parametrize('location', ['public', 'dashboard', 'app'])
@@ -257,93 +258,85 @@ def test_custom_input_initial_visibility_and_validation_state(page, monkeypatch,
     assert fields.input['value'] == '1234.56'
 
 
-@pytest.fixture
-def example_cache(monkeypatch, outlook):
-    rows = [app.normalise_universe_row({'ticker': ticker, 'name': name}) for ticker, name in [
-        ('SPCX', 'SpaceX'), ('MSFT', 'Microsoft'), ('AAPL', 'Apple'), ('COST', 'Costco'), ('NVDA', 'Nvidia'),
-        ('OLD', 'Expired'), ('BAD', 'Invalid'), ('0QYP.L', 'Microsoft'),
-    ]]
-    monkeypatch.setattr(app, 'get_stock_universe', lambda: rows)
-    expired = {**outlook, 'quote_timestamp': time.time() - 8 * 86400}
-    invalid = {**outlook, 'metric': 'NaN%'}
-    cache = {ticker: {'context': {'return_outlook': value}} for ticker, value in [
-        ('OLD', expired), ('BAD', invalid), ('UNKNOWN', outlook), ('MSFT', outlook),
-        ('0QYP.L', outlook), ('AAPL', outlook), ('COST', outlook), ('NVDA', outlook),
-    ]}
+
+
+@pytest.mark.parametrize(('scenario', 'custom', 'value', 'change'), [
+    ('-10', '', '£900', '−£100 (-10%)'), ('5', '', '£1,050', '+£50 (+5%)'),
+    ('10', '', '£1,100', '+£100 (+10%)'), ('20', '', '£1,200', '+£200 (+20%)'),
+    ('custom', '12.5', '£1,125', '+£125 (+12.5%)'),
+    ('custom', '-100', '£0', '−£1,000 (-100%)'), ('custom', '0', '£1,000', '+£0 (+0%)'),
+])
+def test_free_hypothetical_scenarios(page, scenario, custom, value, change):
+    page[1].return_value = app.build_return_outlook({})
+    before = copy.deepcopy(page[1].return_value)
+    html = page[0].get('/what-if', query_string={
+        'symbol': 'MSFT', 'scenario': scenario, 'custom_percentage': custom, 'amount': '250',
+    }).get_data(as_text=True)
+    assert value in html and change in html
+    assert '£1,000 <span>today' in html
+    assert 'Explore a hypothetical scenario' in html
+    assert 'This is a user-selected illustration, not an analyst target, StockRadar forecast or guarantee of future returns.' in html
+    assert 'name="amount"' not in html
+    assert 'Try Microsoft' not in html and 'Try a stock with available outlook data:' not in html
+    assert 'Reference price dated' not in html
+    assert page[1].return_value == before
+    page[1].assert_called_once_with('MSFT')
+
+
+@pytest.mark.parametrize(('amount', 'custom', 'value'), [
+    ('250', '', '£275'), ('500', '', '£550'), ('1000', '', '£1,100'),
+    ('custom', '1234.56', '£1,358.02'),
+])
+def test_premium_hypothetical_preserves_amount_controls(page, monkeypatch, amount, custom, value):
+    premium(monkeypatch)
+    page[1].return_value = app.build_return_outlook({})
+    html = page[0].get('/what-if', query_string={
+        'symbol': 'MSFT', 'amount': amount, 'custom_amount': custom, 'scenario': '10',
+    }).get_data(as_text=True)
+    assert value in html
+    assert 'name="amount"' in html and 'name="scenario"' in html
+    assert 'Unlock What If?' not in html
+
+
+@pytest.mark.parametrize('raw', ['-100.01', '1000001', 'NaN', 'Infinity', '1e3', '', '1.001', '<script>'])
+def test_invalid_hypothetical_percentage_is_not_calculated(page, raw):
+    page[1].return_value = app.build_return_outlook({})
+    html = page[0].get('/what-if', query_string={
+        'symbol': 'MSFT', 'scenario': 'custom', 'custom_percentage': raw,
+    }).get_data(as_text=True)
+    assert 'role="alert"' in html
+    assert 'class="illustrative-value"' not in html
+    assert 'Explore a hypothetical scenario' in html
+
+
+def test_analyst_mode_ignores_hypothetical_parameters(page, outlook):
+    before = copy.deepcopy(outlook)
+    html = page[0].get('/what-if?symbol=MSFT&scenario=custom&custom_percentage=999').get_data(as_text=True)
+    assert '£1,146' in html and '+£146 (+14.6%)' in html
+    assert 'Based on the current 12-month analyst-target outlook.' in html
+    assert 'name="scenario"' not in html and 'Explore a hypothetical scenario' not in html
+    assert outlook == before
+
+
+def test_hypothetical_does_not_write_cache_storage_or_request_extra_data(monkeypatch):
+    monkeypatch.setattr(app, 'premium_entitlement_record', lambda **kwargs: None)
+    now = time.time()
+    cache = {'SPCX': {'timestamp': now, 'context': {
+        'income_status': app.INCOME_STATUS_UNAVAILABLE, 'return_outlook': app.build_return_outlook({}),
+    }}}
     monkeypatch.setattr(app, 'DIVIDEND_CONTEXT_CACHE', cache)
     monkeypatch.setattr(app, 'OPPORTUNITY_PAGE_CACHE', None)
-    for name in ['newsletter_storage_load', 'get_dividend_context', 'opportunity_return_outlook', 'get_opportunity_page_snapshot']:
-        monkeypatch.setattr(app, name, Mock(side_effect=AssertionError('Examples must not fetch data')))
-    return cache
-
-
-def test_unavailable_examples_use_valid_cached_supported_unique_companies(page, example_cache):
-    client, provider = page
-    provider.return_value = app.build_return_outlook({})
-    before = copy.deepcopy(example_cache)
-    html = client.get('/what-if?symbol=SPCX').get_data(as_text=True)
-    assert 'StockRadar won’t estimate a result.' in html
-    assert 'Try a stock with available outlook data:' in html
-    for ticker in ['MSFT', 'AAPL', 'COST']:
-        assert f'/what-if?symbol={ticker}' in html
-    for ticker in ['OLD', 'BAD', 'UNKNOWN', '0QYP.L', 'SPCX', 'NVDA']:
-        assert f'href="/what-if?symbol={ticker}"' not in html
-    assert 'class="illustrative-value"' not in html
-    assert example_cache == before
-    provider.assert_called_once_with('SPCX')
-    # Selecting an example uses the unchanged symbol route.
-    provider.return_value = example_cache['MSFT']['context']['return_outlook']
-    assert '£1,146' in client.get('/what-if?symbol=MSFT').get_data(as_text=True)
-    assert provider.call_args.args == ('MSFT',)
-
-
-def test_examples_can_reuse_already_loaded_opportunities(example_cache, monkeypatch, outlook):
-    monkeypatch.setattr(app, 'DIVIDEND_CONTEXT_CACHE', {})
-    state = {'snapshots': {'today': {'opportunities': [
-        {'ticker': ticker, 'return_outlook': outlook} for ticker in ['MSFT', 'AAPL', 'COST']
-    ]}}}
-    before = copy.deepcopy(state)
-    monkeypatch.setattr(app, 'OPPORTUNITY_PAGE_CACHE', ('today', ({}, state)))
-    assert [item['ticker'] for item in app.what_if_available_examples('SPCX')] == ['MSFT', 'AAPL', 'COST']
-    assert state == before
-
-
-@pytest.mark.parametrize('count', [0, 1, 2])
-def test_sparse_cache_does_not_fetch_or_invent_examples(page, example_cache, monkeypatch, count):
-    monkeypatch.setattr(app, 'DIVIDEND_CONTEXT_CACHE', {
-        ticker: example_cache[ticker] for ticker in ['MSFT', 'AAPL'][:count]
-    })
-    page[1].return_value = app.build_return_outlook({})
-    html = page[0].get('/what-if?symbol=SPCX').get_data(as_text=True)
-    assert html.count('href="/what-if?symbol=') == max(count, 1)
-    assert ('Try a stock with available outlook data:' in html) == bool(count)
-    assert ('Try Microsoft (MSFT) →' in html) == (count == 0)
-    if count == 0:
-        assert 'href="/what-if?symbol=MSFT">Try Microsoft (MSFT) →</a>' in html
-    page[1].assert_called_once_with('SPCX')
-
-
-def test_available_and_unselected_pages_do_not_scan_examples(page, monkeypatch):
-    examples = Mock(side_effect=AssertionError('Only unavailable results need examples'))
-    monkeypatch.setattr(app, 'what_if_available_examples', examples)
-    assert page[0].get('/what-if').status_code == 200
-    assert page[0].get('/what-if?symbol=MSFT').status_code == 200
-    examples.assert_not_called()
-
-
-def test_examples_exclude_the_selected_stock(example_cache):
-    assert [item['ticker'] for item in app.what_if_available_examples('MSFT')] == ['AAPL', 'COST', 'NVDA']
-
-
-def test_microsoft_fallback_uses_normal_outlook_validation(page, example_cache, monkeypatch, outlook):
-    monkeypatch.setattr(app, 'DIVIDEND_CONTEXT_CACHE', {})
-    client, provider = page
-    provider.return_value = app.build_return_outlook({})
-    html = client.get('/what-if?symbol=MSFT').get_data(as_text=True)
-    assert 'What If? isn’t currently available for this stock' in html
-    assert 'class="illustrative-value"' not in html
-    provider.assert_called_once_with('MSFT')
-    provider.return_value = {**outlook, 'metric': '-14.6%'}
-    html = client.get('/what-if?symbol=MSFT').get_data(as_text=True)
-    assert '£854' in html and '−£146 (-14.6%)' in html
-    assert 'Try Microsoft (MSFT) →' not in html
+    monkeypatch.setattr(app, 'newsletter_storage_load', Mock(return_value={}))
+    provider = Mock(side_effect=AssertionError('No provider call for cached unavailable data'))
+    write = Mock(side_effect=AssertionError('Hypothetical values must not be stored'))
+    monkeypatch.setattr(app, '_fetch_dividend_context', provider)
+    monkeypatch.setattr(app, 'newsletter_storage_update', write)
+    before = copy.deepcopy(cache)
+    client = app.app.test_client()
+    for scenario in ['-10', '5', '10', '20']:
+        html = client.get('/what-if?symbol=SPCX&scenario=' + scenario).get_data(as_text=True)
+        assert 'Explore a hypothetical scenario' in html
+        assert 'class="illustrative-value"' in html
+    assert cache == before
+    provider.assert_not_called()
+    write.assert_not_called()

@@ -6128,35 +6128,18 @@ def what_if_illustration(outlook, amount):
     }
 
 
-def what_if_available_examples(excluded_symbol):
-    """Suggest only supported stocks already backed by usable in-memory outlooks."""
-    with YAHOO_CACHE_LOCK:
-        candidates = {
-            ticker: copy.deepcopy(entry.get("context", {}).get("return_outlook"))
-            for ticker, entry in DIVIDEND_CONTEXT_CACHE.items()
-        }
-    cached_page = OPPORTUNITY_PAGE_CACHE
-    if cached_page is not None:
-        for ticker, outlook in persisted_opportunity_outlooks(cached_page[1][1]).items():
-            if not what_if_illustration(candidates.get(ticker), Decimal("1000")):
-                candidates[ticker] = outlook
-    supported = {item["ticker"]: item for item in get_stock_universe()}
-    examples, seen = [], set()
-    excluded = supported.get(excluded_symbol)
-    if excluded:
-        seen.add(" ".join(excluded["name"].casefold().split()))
-    for ticker, outlook in candidates.items():
-        item = supported.get(ticker)
-        if ticker == excluded_symbol or not item:
-            continue
-        company = " ".join(item["name"].casefold().split())
-        if company in seen or not what_if_illustration(outlook, Decimal("1000")):
-            continue
-        examples.append(item)
-        seen.add(company)
-        if len(examples) == 3:
-            break
-    return examples
+def what_if_hypothetical_illustration(amount, percentage):
+    """Pure user-selected arithmetic; never creates or updates an outlook record."""
+    change = (amount * percentage / 100).quantize(Decimal("0.01"))
+    value = amount + change
+    def pounds(number):
+        return "£" + money(number).removesuffix(".00")
+    return {
+        "amount": pounds(amount), "value": pounds(value),
+        "percentage": f"{percentage:+f}".rstrip("0").rstrip(".") + "%" if percentage.as_tuple().exponent < 0 else f"{percentage:+f}%",
+        "change": ("−" if change < 0 else "+") + pounds(abs(change)),
+        "direction": "negative" if percentage < 0 else "positive",
+    }
 
 
 WHAT_IF_HTML = """
@@ -6171,7 +6154,7 @@ WHAT_IF_HTML = """
 <section class="card">
 <p class="kicker">What If?</p>
 <h1>What could your investment look like?</h1>
-<p>Choose a stock. See what its analyst-target outlook could mean for your money.</p>
+<p>Choose a stock. See what an analyst-target outlook or a hypothetical return could mean for your money.</p>
 <form method="get" action="{{ url_for('what_if') }}" class="stock-search">
 <label for="what-if-search">Search a stock</label>
 <div class="search-row"><input id="what-if-search" type="search" name="q" value="{{ query }}" maxlength="100" placeholder="Company name or ticker, e.g. Microsoft or MSFT" required>
@@ -6185,35 +6168,49 @@ WHAT_IF_HTML = """
 {% if symbol %}
 <section class="card" aria-label="Investment illustration">
 <h2>{{ stock_identity(symbol, stock_display_label(symbol), 'compact') }}</h2>
-{% if premium %}
+{% if hypothetical %}<h3>Explore a hypothetical scenario</h3>
+<p>No validated analyst-target outlook is currently available for this stock, so choose a hypothetical return to explore what it would mean for your investment.</p>{% endif %}
+{% if premium or hypothetical %}
 <form method="get" action="{{ url_for('what_if') }}" class="amount-form">
 <input type="hidden" name="symbol" value="{{ symbol }}">
-<fieldset><legend>Investment amount</legend><div class="amount-options">
+{% if premium %}<fieldset><legend>Investment amount</legend><div class="amount-options">
 {% for choice, label in [('250','£250'),('500','£500'),('1000','£1,000'),('custom','Custom')] %}
 <label><input type="radio" name="amount" value="{{ choice }}" {% if amount_choice == choice %}checked{% endif %}> {{ label }}</label>
 {% endfor %}</div></fieldset>
 <div class="custom-amount-field" {% if amount_choice != 'custom' %}hidden{% endif %}>
 <label for="custom-amount">Custom amount (£)</label>
 <input id="custom-amount" type="number" name="custom_amount" min="0.01" max="1000000000" step="0.01" value="{{ custom_amount }}" inputmode="decimal" placeholder="Enter an amount" {% if amount_choice != 'custom' %}disabled{% endif %}>
+</div>{% endif %}
+{% if hypothetical %}
+<fieldset><legend>Hypothetical return</legend><div class="amount-options">
+{% for choice, label in [('-10','-10%'),('5','+5%'),('10','+10%'),('20','+20%'),('custom','Custom %')] %}
+<label><input type="radio" name="scenario" value="{{ choice }}" {% if scenario_choice == choice %}checked{% endif %}> {{ label }}</label>
+{% endfor %}</div></fieldset>
+<div class="custom-scenario-field" {% if scenario_choice != 'custom' %}hidden{% endif %}>
+<label for="custom-scenario">Custom hypothetical return (%)</label>
+<input id="custom-scenario" type="number" name="custom_percentage" min="-100" max="1000000" step="0.01" value="{{ custom_percentage }}" inputmode="decimal" {% if scenario_choice != 'custom' %}disabled{% endif %}>
 </div>
+{% endif %}
 <button type="submit">Update illustration</button>
 </form>
 <script>
 (function(){
     const form=document.querySelector('.amount-form');
-    const field=form.querySelector('.custom-amount-field');
-    const input=field.querySelector('input');
-    function updateCustomAmount(){
-        const custom=form.querySelector('input[name="amount"][value="custom"]').checked;
-        field.hidden=!custom;
-        input.disabled=!custom;
+    function updateCustomFields(){
+        [['amount','.custom-amount-field'],['scenario','.custom-scenario-field']].forEach(function(pair){
+            const field=form.querySelector(pair[1]);
+            if(!field){return;}
+            const custom=form.querySelector('input[name="'+pair[0]+'"][value="custom"]').checked;
+            field.hidden=!custom;
+            field.querySelector('input').disabled=!custom;
+        });
     }
-    form.addEventListener('change',updateCustomAmount);
-    updateCustomAmount();
+    form.addEventListener('change',updateCustomFields);
+    updateCustomFields();
 })();
 </script>
 {% endif %}
-{% if amount_error %}<p role="alert">{{ amount_error }}</p>
+{% if amount_error or scenario_error %}<p role="alert">{{ amount_error or scenario_error }}</p>
 {% elif result %}
 <div class="transformation {{ result.direction }}" aria-label="Illustrative investment value">
 <p class="today">{{ result.amount }} <span>today</span></p>
@@ -6222,17 +6219,14 @@ WHAT_IF_HTML = """
 <p class="illustrative-value">{{ result.value }}</p>
 <p class="potential-change">{{ result.change }} ({{ result.percentage }})</p>
 </div>
-<p class="outlook-source">Based on the current 12-month analyst-target outlook.</p>
-<p class="muted">Reference price dated {{ outlook.price_date }}. Excludes fees and currency movements.</p>
-{% if premium %}<p><a href="/opportunities">How Return Outlook works →</a></p>
+{% if hypothetical %}<p class="outlook-source">Based on your selected hypothetical return.</p>
+{% else %}<p class="outlook-source">Based on the current 12-month analyst-target outlook.</p>
+<p class="muted">Reference price dated {{ outlook.price_date }}. Excludes fees and currency movements.</p>{% endif %}
+{% if premium %}{% if not hypothetical %}<p><a href="/opportunities">How Return Outlook works →</a></p>{% endif %}
 {% else %}<div class="upgrade-prompt"><p>Want to explore different investment amounts?</p><a class="button" href="/upgrade">Unlock What If? with StockRadar Premium →</a></div>{% endif %}
-{% else %}<div class="unavailable" role="status"><h3>What If? isn’t currently available for this stock</h3>
-<p>A validated analyst-target outlook isn’t currently available, so StockRadar won’t estimate a result.</p>
-{% if available_examples %}<p>Try a stock with available outlook data:</p>
-<ul class="stock-matches" aria-label="Try one of these">{% for item in available_examples %}
-<li><a href="{{ url_for('what_if', symbol=item.ticker) }}">{{ item.name }}</a></li>
-{% endfor %}</ul>{% else %}<p><a href="{{ url_for('what_if', symbol='MSFT') }}">Try Microsoft (MSFT) →</a></p>{% endif %}</div>{% endif %}
-<p class="disclosure">Illustrative only. Analyst targets are not forecasts or guarantees, and actual returns may differ. Dividends are excluded.</p>
+{% endif %}
+{% if hypothetical %}<p class="disclosure">This is a user-selected illustration, not an analyst target, StockRadar forecast or guarantee of future returns.</p>
+{% else %}<p class="disclosure">Illustrative only. Analyst targets are not forecasts or guarantees, and actual returns may differ. Dividends are excluded.</p>{% endif %}
 </section>
 {% endif %}
 {{ disclaimer_footer() | safe }}
@@ -6274,11 +6268,28 @@ def what_if():
             amount_error = "Enter an amount from £0.01 to £1,000,000,000, with up to two decimal places."
     outlook = what_if_return_outlook(symbol) if symbol and not amount_error else {}
     result = what_if_illustration(outlook, amount) if outlook else None
-    available_examples = what_if_available_examples(symbol) if symbol and not amount_error and result is None else []
+    hypothetical = bool(symbol and not amount_error and result is None)
+    scenario_choice = request.args.get("scenario", "10")
+    custom_percentage = request.args.get("custom_percentage", "")[:32]
+    scenario_error = ""
+    if hypothetical:
+        raw_percentage = custom_percentage if scenario_choice == "custom" else scenario_choice
+        try:
+            if scenario_choice not in {"-10", "5", "10", "20", "custom"}:
+                raise ValueError
+            if not re.fullmatch(r"[+-]?\d{1,7}(?:\.\d{1,2})?", raw_percentage):
+                raise ValueError
+            percentage = Decimal(raw_percentage)
+            if not Decimal("-100") <= percentage <= Decimal("1000000"):
+                raise ValueError
+            result = what_if_hypothetical_illustration(amount, percentage)
+        except (ValueError, InvalidOperation):
+            scenario_error = "Enter a hypothetical return from -100% to +1,000,000%, with up to two decimal places."
     return render_template_string(
         WHAT_IF_HTML, premium=premium, query=query, matches=matches, symbol=symbol,
         selection_error=selection_error, amount_choice=amount_choice, custom_amount=custom_amount,
-        amount_error=amount_error, outlook=outlook, result=result, available_examples=available_examples,
+        amount_error=amount_error, outlook=outlook, result=result, hypothetical=hypothetical,
+        scenario_choice=scenario_choice, custom_percentage=custom_percentage, scenario_error=scenario_error,
     )
 
 
