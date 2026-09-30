@@ -9322,12 +9322,14 @@ def fetch_newsletter_market_point(ticker, cutoff_local):
             timeout=8,
         )
         prices = extract_history_price_series(history, ticker)
+        if prices.empty:
+            raise ValueError("newsletter_history_empty")
         candidates = []
         for index, value in prices.items():
             point_time = parse_newsletter_timestamp(
                 index.to_pydatetime() if hasattr(index, "to_pydatetime") else index
             )
-            if point_time and point_time <= cutoff_utc:
+            if point_time and point_time <= cutoff_utc and float(value) > 0:
                 candidates.append((point_time, float(value)))
         if not candidates:
             raise ValueError("no_price_at_or_before_cutoff")
@@ -9340,6 +9342,17 @@ def fetch_newsletter_market_point(ticker, cutoff_local):
             "error": "",
         }
     except Exception as error:
+        reason = "provider_error"
+        if isinstance(error, ValueError) and str(error) in {
+            "newsletter_history_empty", "Yahoo history empty",
+        }:
+            reason = "empty_response"
+        elif str(error) == "no_price_at_or_before_cutoff":
+            reason = "no_valid_observation_in_range"
+        app.logger.warning(
+            "event=newsletter_market_point_unavailable ticker=%s cutoff=%s reason=%s error_type=%s",
+            ticker, cutoff_utc.isoformat(), reason, type(error).__name__,
+        )
         return {
             "price": None,
             "price_timestamp": "",
@@ -9349,12 +9362,32 @@ def fetch_newsletter_market_point(ticker, cutoff_local):
         }
 
 
+def newsletter_market_point_is_valid(point, cutoff):
+    if not point or point.get("availability") == "unavailable":
+        return False
+    try:
+        price = float(point.get("price"))
+        observed_at = parse_newsletter_timestamp(point.get("price_timestamp"))
+        return (
+            math.isfinite(price) and price > 0
+            and observed_at is not None and observed_at <= cutoff
+        )
+    except (TypeError, ValueError):
+        return False
+
+
 def collect_newsletter_market_snapshot(cutoff_local, force_refresh=False):
     cutoff_utc = cutoff_local.astimezone(timezone.utc)
     snapshot_key = newsletter_snapshot_store_key(cutoff_utc)
     stored = load_newsletter_market_snapshots()
     existing = stored["snapshots"].get(snapshot_key)
-    if existing and not force_refresh:
+    existing_by_ticker = {
+        item["ticker"]: item for item in (existing or {}).get("instruments", [])
+    }
+    if existing and not force_refresh and all(
+        newsletter_market_point_is_valid(existing_by_ticker.get(ticker), cutoff_utc)
+        for ticker in NEWSLETTER_WEEKLY_TRACKED_TICKERS
+    ):
         return existing
 
     universe_lookup = {
@@ -9364,6 +9397,10 @@ def collect_newsletter_market_snapshot(cutoff_local, force_refresh=False):
     instruments = []
     errors = []
     for ticker in NEWSLETTER_WEEKLY_TRACKED_TICKERS:
+        cached = existing_by_ticker.get(ticker)
+        if not force_refresh and newsletter_market_point_is_valid(cached, cutoff_utc):
+            instruments.append(cached)
+            continue
         universe_item = universe_lookup.get(ticker, {})
         market_point = fetch_newsletter_market_point(ticker, cutoff_local)
         if market_point["error"]:
@@ -9387,44 +9424,65 @@ def collect_newsletter_market_snapshot(cutoff_local, force_refresh=False):
             "signal_source": "unavailable",
         })
 
-    fingerprint_payload = [
-        {
-            "ticker": item["ticker"],
-            "price": item["price"],
-            "price_timestamp": item["price_timestamp"],
-            "availability": item["availability"],
-        }
-        for item in instruments
-    ]
-    snapshot_id = "snapshot-" + hashlib.sha256(
-        json.dumps(
-            {
-                "cutoff": cutoff_utc.isoformat(),
-                "instruments": fingerprint_payload,
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
-    ).hexdigest()[:20]
-    snapshot = {
-        "snapshot_id": snapshot_id,
-        "cutoff_local": cutoff_local.isoformat(),
-        "cutoff_utc": cutoff_utc.isoformat(),
-        "collected_at": newsletter_storage_timestamp(),
-        "instruments": instruments,
-        "available_count": sum(
-            1 for item in instruments if item["availability"] != "unavailable"
-        ),
-        "errors": errors,
-    }
-    persisted = {"snapshot": snapshot}
+    persisted = {}
 
     def store_snapshot(data):
         snapshots = data.setdefault("snapshots", {})
-        if snapshot_key in snapshots and not force_refresh:
-            persisted["snapshot"] = snapshots[snapshot_key]
+        # Merge under the existing storage lock so a concurrent successful refresh
+        # cannot be replaced by this request's failed observations.
+        latest_by_ticker = {
+            item["ticker"]: item
+            for item in snapshots.get(snapshot_key, {}).get("instruments", [])
+        }
+        for index, item in enumerate(instruments):
+            cached = latest_by_ticker.get(item["ticker"])
+            if newsletter_market_point_is_valid(cached, cutoff_utc) and (
+                not force_refresh or not newsletter_market_point_is_valid(item, cutoff_utc)
+            ):
+                if not newsletter_market_point_is_valid(item, cutoff_utc):
+                    app.logger.warning(
+                        "event=newsletter_market_cache_fallback ticker=%s cutoff=%s",
+                        item["ticker"], cutoff_utc.isoformat(),
+                    )
+                instruments[index] = cached
+
+        latest = snapshots.get(snapshot_key)
+        if latest and instruments == latest.get("instruments"):
+            persisted["snapshot"] = latest
             return False
+
+        fingerprint_payload = [
+            {
+                "ticker": item["ticker"],
+                "price": item["price"],
+                "price_timestamp": item["price_timestamp"],
+                "availability": item["availability"],
+            }
+            for item in instruments
+        ]
+        snapshot_id = "snapshot-" + hashlib.sha256(
+            json.dumps(
+                {
+                    "cutoff": cutoff_utc.isoformat(),
+                    "instruments": fingerprint_payload,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()[:20]
+        snapshot = {
+            "snapshot_id": snapshot_id,
+            "cutoff_local": cutoff_local.isoformat(),
+            "cutoff_utc": cutoff_utc.isoformat(),
+            "collected_at": newsletter_storage_timestamp(),
+            "instruments": instruments,
+            "available_count": sum(
+                1 for item in instruments if newsletter_market_point_is_valid(item, cutoff_utc)
+            ),
+            "errors": errors,
+        }
         snapshots[snapshot_key] = snapshot
+        persisted["snapshot"] = snapshot
         return True
 
     if not newsletter_storage_update("market_snapshots", store_snapshot):
