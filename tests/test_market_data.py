@@ -148,8 +148,7 @@ def test_history_cache_expires_and_rate_limit_blocks_other_symbols_and_fallback(
         app.safe_history("COST", period="1mo")
         assert ticker.history.call_count == 1
         clock.return_value = 1301
-        with pytest.raises(RuntimeError):
-            app.safe_history("COST", period="1mo")
+        assert app.safe_history("COST", period="1mo").iloc[0, 0] == 10
         with pytest.raises(RuntimeError, match="deferred"):
             app.safe_history("MSFT", period="max")
         with pytest.raises(RuntimeError, match="deferred"):

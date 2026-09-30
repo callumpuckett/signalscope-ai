@@ -1,3 +1,4 @@
+import re
 import time
 from unittest.mock import Mock
 
@@ -73,7 +74,12 @@ def test_beginner_rejects_untrusted_payloads_without_reflection(
     page = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert payload not in page
+    # CSS may legitimately contain -1 (for example grid-column: 1/-1).
+    reflected_content = (
+        re.sub(r"<style\b[^>]*>.*?</style>", "", page, flags=re.S | re.I)
+        if payload == "-1" else page
+    )
+    assert payload not in reflected_content
     assert "role=\"alert\"" in page
     assert 'id="beginner-result"' not in page
 

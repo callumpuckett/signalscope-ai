@@ -7227,7 +7227,8 @@ def portfolio_fit():
 def _cached_yahoo_history(key, now):
     with YAHOO_CACHE_LOCK:
         cached = YAHOO_HISTORY_CACHE.get(key)
-        if cached and now - cached["timestamp"] < YAHOO_RETRY_SECONDS:
+        if cached and (now - cached["timestamp"] < YAHOO_RETRY_SECONDS
+                       or now < cached.get("retry_after", 0)):
             if cached.get("history") is not None:
                 return cached["history"].copy(deep=True)
             raise RuntimeError("Yahoo history temporarily unavailable")
@@ -7258,17 +7259,23 @@ def safe_history(ticker, _ticker_object=None, **kwargs):
             except TypeError:
                 kwargs.pop("timeout", None)
                 history = stock.history(**kwargs)
-            if history is None or history.empty:
+            if not (extract_history_price_series(history, ticker) > 0).any():
                 raise ValueError("Yahoo history empty")
         except Exception as exc:
             record_yahoo_failure(exc)
-            history = None
-            raise
-        finally:
             with YAHOO_CACHE_LOCK:
+                cached = YAHOO_HISTORY_CACHE.get(key)
+                if cached and cached.get("history") is not None:
+                    cached["retry_after"] = now + YAHOO_RETRY_SECONDS
+                    return cached["history"].copy(deep=True)
                 if len(YAHOO_HISTORY_CACHE) >= YAHOO_HISTORY_CACHE_LIMIT and key not in YAHOO_HISTORY_CACHE:
                     YAHOO_HISTORY_CACHE.pop(next(iter(YAHOO_HISTORY_CACHE)))
-                YAHOO_HISTORY_CACHE[key] = {"timestamp": now, "history": history.copy(deep=True) if history is not None else None}
+                YAHOO_HISTORY_CACHE[key] = {"timestamp": now, "history": None}
+            raise
+        with YAHOO_CACHE_LOCK:
+            if len(YAHOO_HISTORY_CACHE) >= YAHOO_HISTORY_CACHE_LIMIT and key not in YAHOO_HISTORY_CACHE:
+                YAHOO_HISTORY_CACHE.pop(next(iter(YAHOO_HISTORY_CACHE)))
+            YAHOO_HISTORY_CACHE[key] = {"timestamp": now, "history": history.copy(deep=True)}
         return history.copy(deep=True)
 
 
@@ -7321,6 +7328,8 @@ def normalize_history_points(history, symbol):
     points = []
 
     for index, value in prices.items():
+        if float(value) <= 0:
+            continue
         date_value = index.isoformat() if hasattr(index, "isoformat") else str(index)
         timestamp_ms = None
         try:
@@ -7601,12 +7610,33 @@ def fetch_symbol_snapshot(symbol, label, market):
         }
 
 
+def market_christmas_closure(day, market):
+    """Christmas closures only; this is not a complete exchange calendar."""
+    christmas = day.replace(month=12, day=25)
+    closures = {christmas}
+    if market == "US":
+        if christmas.weekday() == 5:
+            closures.add(christmas - timedelta(days=1))
+        elif christmas.weekday() == 6:
+            closures.add(christmas + timedelta(days=1))
+    else:
+        boxing_day = christmas + timedelta(days=1)
+        closures.add(boxing_day)
+        for holiday in (christmas, boxing_day):
+            if holiday.weekday() >= 5:
+                observed = holiday
+                while observed.weekday() >= 5 or observed in closures:
+                    observed += timedelta(days=1)
+                closures.add(observed)
+    return day in closures
+
+
 def market_status():
     london_now = datetime.now(ZoneInfo("Europe/London"))
     new_york_now = datetime.now(ZoneInfo("America/New_York"))
 
-    uk_open = london_now.weekday() < 5 and dt_time(8, 0) <= london_now.time() <= dt_time(16, 30)
-    us_open = new_york_now.weekday() < 5 and dt_time(9, 30) <= new_york_now.time() <= dt_time(16, 0)
+    uk_open = not market_christmas_closure(london_now.date(), "UK") and london_now.weekday() < 5 and dt_time(8, 0) <= london_now.time() <= dt_time(16, 30)
+    us_open = not market_christmas_closure(new_york_now.date(), "US") and new_york_now.weekday() < 5 and dt_time(9, 30) <= new_york_now.time() <= dt_time(16, 0)
 
     return {
         "uk_status": "OPEN" if uk_open else "CLOSED",
@@ -13173,6 +13203,19 @@ def get_cached_dashboard_data(force_refresh=False, *, include_market_snapshots=T
         fresh_data = prepare_dashboard_data(include_market_snapshots=include_market_snapshots)
         if not isinstance(fresh_data, dict):
             fresh_data = {}
+
+        if isinstance(cached_data, dict) and not any(
+            is_public_live_market_headline(item)
+            for item in fresh_data.get("live_headlines", [])
+        ):
+            cached_headlines = [
+                item for item in cached_data.get("live_headlines", [])
+                if is_public_live_market_headline(item)
+            ]
+            if cached_headlines:
+                fresh_data["live_headlines"] = cached_headlines
+                fresh_data["live_news_active"] = True
+                fresh_data["ticker_updated"] = cached_data.get("ticker_updated", "")
 
         DASHBOARD_CACHE["data"] = fresh_data.copy()
         DASHBOARD_CACHE["timestamp"] = now
