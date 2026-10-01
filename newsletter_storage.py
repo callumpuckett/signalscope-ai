@@ -1,4 +1,5 @@
 from performance_timing import measured, count, instrument_connection
+from postgres_connection_pool import PoolExhausted, TransactionConnectionPool
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import copy
@@ -416,15 +417,19 @@ class PostgresNewsletterStorage(NewsletterStorageBackend):
     durable = True
     migration_key = "phase21b-newsletter-json-v1"
 
-    def __init__(self, database_url, connector=None):
+    def __init__(self, database_url, connector=None, pool_connections=None):
         self.database_url = str(database_url or "").strip()
         self.connector = connector or (psycopg.connect if psycopg is not None else None)
         self.database_reachable = False
         self.database_schema_ready = False
         self.last_error = ""
+        # Production uses the pool. Injected test connectors retain their legacy
+        # lifecycle unless a pool-aware fixture explicitly opts in.
+        use_pool = connector is None if pool_connections is None else pool_connections
+        self.connection_pool = TransactionConnectionPool(self._new_connection) if use_pool else None
 
     @measured("db.connect")
-    def _connect(self):
+    def _new_connection(self):
         if not self.connector:
             self.last_error = "postgres_driver_unavailable"
             raise RuntimeError(self.last_error)
@@ -433,8 +438,29 @@ class PostgresNewsletterStorage(NewsletterStorageBackend):
             connection = self.connector(self.database_url, connect_timeout=5)
             self.database_reachable = True
             self.last_error = ""
-            return instrument_connection(connection)
+            return connection
         except Exception as error:
+            self.database_reachable = False
+            self.database_schema_ready = False
+            self.last_error = "database_unavailable"
+            raise RuntimeError(self.last_error) from error
+
+    def _connect(self, dedicated=False):
+        try:
+            connection = (
+                self.connection_pool.acquire()
+                if self.connection_pool is not None and not dedicated
+                else self._new_connection()
+            )
+            self.database_reachable = True
+            self.last_error = ""
+            return instrument_connection(connection)
+        except PoolExhausted:
+            self.last_error = "database_pool_exhausted"
+            raise
+        except Exception as error:
+            # Keep the existing database failure/fallback contract. Pool
+            # exhaustion remains distinct. Do not retry ambiguous writes.
             self.database_reachable = False
             self.database_schema_ready = False
             self.last_error = "database_unavailable"
@@ -804,6 +830,12 @@ class PostgresNewsletterStorage(NewsletterStorageBackend):
             self.database_schema_ready = True
             self.last_error = ""
             return True
+        except PoolExhausted:
+            # Shared limits must not switch to a fresh process-local counter
+            # merely because every pooled connection is currently borrowed.
+            if store_name == "rate_limits":
+                raise
+            return False
         except Exception:
             if connection is not None:
                 self._rollback(connection)
@@ -915,7 +947,9 @@ class PostgresNewsletterStorage(NewsletterStorageBackend):
         connection = None
         cursor = None
         try:
-            connection = self._connect()
+            # Session advisory locks outlive rollback; never return these sockets
+            # to the transaction pool, even if unlocking fails.
+            connection = self._connect(dedicated=True)
             cursor = connection.cursor()
             cursor.execute(
                 "SELECT pg_try_advisory_lock(hashtextextended(%s, 0))",

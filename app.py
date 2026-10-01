@@ -98,6 +98,7 @@ from newsletter_storage import (
     PostgresNewsletterStorage,
     select_backend_identifier,
 )
+from postgres_connection_pool import PoolExhausted
 from newsletter_artifact_store import (
     FilesystemPublishedArtifactStore,
     PublishedArtifactStoreConfigurationError,
@@ -2243,7 +2244,11 @@ def consume_rate_limit(scope, limit, window_seconds, now=None):
         and NEWSLETTER_STORAGE.durable
     )
     if used_shared_storage:
-        stored = NEWSLETTER_STORAGE.update_state("rate_limits", update_buckets)
+        try:
+            stored = NEWSLETTER_STORAGE.update_state("rate_limits", update_buckets)
+        except PoolExhausted:
+            count("security.rate_limit.pool_exhausted")
+            return {"allowed": False, "retry_after": 1}
         if stored:
             return outcome
 

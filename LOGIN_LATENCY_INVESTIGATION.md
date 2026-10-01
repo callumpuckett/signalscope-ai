@@ -110,3 +110,67 @@ Changed locally:
 - `LOGIN_LATENCY_INVESTIGATION.md`: this report and production measurement procedure.
 
 Validation: focused tests **145 passed**; security/PostgreSQL/Premium tests with instrumentation explicitly enabled **101 passed**; final full runnable suite **784 passed, the same five pre-existing failures**, 9.20 seconds. No existing failure was repaired. The production-smoke test module remains excluded because its Python Playwright dependency is unavailable. Python compilation, diff whitespace checks and parsing both rendered inline homepage scripts passed. A local browser confirmed pending-to-ready feed completion with no console errors. No commit, push or deployment was performed.
+
+## 9. Pooling-first implementation following production telemetry
+
+The subsequent production `/api/market-news` trace measured 2,898.138 ms server response, including 2,896.630 ms durable rate limiting, 1,033.054 ms connection establishment, 1,356.161 ms across the two ordinary SQL executions, 336.933 ms in the advisory-lock execution and 168.062 ms commit. Dashboard cache reading took 0.088 ms. These identify a database-backed rate-limit bottleneck for that request. SQL spans include network transport and execution; the advisory span can also include lock contention and implicit transaction startup. They do not independently establish database CPU time or network RTT. A production login POST trace is still required: login uses the same limiter, but its duration has not been measured here.
+
+The approved patch changes connection lifecycle only, with a fail-closed capacity safeguard:
+
+- `postgres_connection_pool.py` provides a synchronous standard-library pool: maximum **two transaction connections per worker**, **zero eager connections**, **five seconds maximum waiting for capacity**, and the existing **five-second new-connection timeout**. Waiting followed by new establishment can therefore take up to approximately ten seconds, before SQL execution; this is not a SQL/transaction deadline. There are no pool background threads, eager prewarming or health-check SQL round trips.
+- The application has one durable storage backend per process. Its normal PostgreSQL storage operations borrow a connection exclusively. Slot reservation happens before connecting outside the pool condition, so concurrent cold acquisitions cannot exceed the limit. Returned connections are reused by later requests or background storage operations in that same worker. Total transaction connection capacity is two times the worker count; existing dedicated newsletter send-lock connections remain additional to that bound.
+- Successful transactions retain the original explicit commit. Failed transactions retain the original rollback. On pool return, rollback runs again defensively; psycopg sends no SQL for rollback when already idle. Reuse requires an open, non-broken connection and idle transaction status. Reset failures or unusable connections are discarded and closed. Connection/write failures are not automatically retried because commit outcome could be ambiguous.
+- Known closed/broken idle connections are replaced before borrowing. An undetected network failure discovered during an operation follows the existing storage-error contract, and the broken connection is discarded on return; the next acquisition can create a replacement.
+- `register_at_fork` resets the child pool's condition, idle list and capacity accounting before child threads start. A PID guard also prevents inherited leases from executing operations. Inherited idle socket objects are retained without protocol use/close in the child, because closing a shared inherited PostgreSQL socket there could affect the parent. They never enter the child's pool; child acquisitions establish independent connections. The master can retain its startup connections under preload; do not treat this as two connections shared among workers.
+- Session-level newsletter advisory locks continue to use dedicated connections that are closed after release, including failed unlocks. They never enter the transaction pool. Existing transaction-level advisory locks and their whole-store read–modify–write sequence remain unchanged.
+- Injected legacy test connectors retain their original lifecycle by default; pool-aware doubles explicitly enable pooling. The ordinary production driver path enables pooling without a new environment setting.
+- Pool exhaustion is a distinct typed failure. For a durable rate-limit check it rejects with the existing 429 response shape and `Retry-After: 1`, allowing a later retry without consuming a bucket. It does **not** fall back to a fresh process-local counter. Ordinary threshold/window rejection outcomes are unchanged. Other database failures retain the previous outage handling. Other storage operations retain their existing unsuccessful-operation contract on exhaustion.
+
+No database functions, SQL consolidation, UPSERT redesign, rate-limit policy changes, template optimizations, authentication/session/CSRF changes, entitlement decisions or financial calculation changes were introduced. No dependency was added: the pool uses the standard library and the existing production psycopg driver. No commit, push or deployment has been performed for this patch.
+
+### Timing interpretation
+
+The existing opt-in `STOCKRADAR_TIMING_ENABLED=true` flag enables all these fixed-label spans and counters:
+
+| Marker | Meaning |
+|---|---|
+| `db.pool.acquire` | Total time obtaining a transaction connection, including waiting/new establishment if necessary |
+| `db.pool.wait` | Time waiting because both slots were borrowed |
+| `db.pool.created` | Count of successfully created pooled connections in this trace |
+| `db.pool.reused` | Count of reused pooled connections in this trace |
+| `db.connect`, `db.connections` | Actual new driver connection duration and attempt count, not warm pool acquisition |
+| `db.pool.release`, `db.pool.reset` | Returning a connection and ensuring transaction cleanliness |
+| `db.pool.discarded` | Connection removed from reuse |
+| `db.pool.exhausted`, `security.rate_limit.pool_exhausted` | Capacity timeout and protective rate-limit rejection |
+
+These are context-local to the request/startup/background operation that does the work, since connection creation is synchronous. A warm request can have `db.pool.reused: 1` and no `db.connect` span at all. A new worker's first request may already reuse a connection created during startup; use PID and startup traces to interpret it. Dedicated send-lock connections still report actual `db.connect` creation without pool acquisition. Inclusive stages nest: do not add `db.pool.acquire.ms` to its nested `db.connect.ms` when attributing total time.
+
+Timing logs contain only fixed operation labels, counts, durations, error counts, status, PID, worker age and independently generated diagnostic correlation IDs. They contain no passwords, cookies, session IDs, authentication tokens, connection strings, SQL/parameters, user identities or exception text.
+
+### Exact production verification procedure after review and authorized deployment
+
+1. Keep Render worker count and other settings unchanged. Enable `STOCKRADAR_TIMING_ENABLED=true`. Do not change database credentials, limits or transaction policy. Compare the same canonical host, client and flow with the previous measurements.
+2. In Render, filter records on `stockradar_timing`. Record PID and scope. Check startup's actual `db.connect` spans separately; startup may populate the pool before the first HTTP request.
+3. Enter credentials privately and perform one login. Record `POST /login`, its redirect and the redirected homepage `GET /`, with their `X-StockRadar-Trace` diagnostic IDs. Match each ID to its request log. Also capture the following `/api/market-news` request. Do not share cookies, request bodies, credentials or unredacted HAR files.
+4. For POST and API traces, compare `server_response_ms`, `security.durable_rate_limit`, `db.pool.acquire`, `db.pool.wait`, `db.connect`, pool counters, `db.advisory_lock`, `db.query` and `db.commit`. A normal accepted durable check must still execute **three explicit SQL calls** (lock, read, upsert) and commit. A denied threshold check omits the upsert as before.
+5. Repeat the API call and another login within the existing limits, comparing requests handled by the **same PID**. Warm reuse should show `db.pool.reused`, no new `db.connections` attempt, and no `db.connect` span. A different PID or discarded socket can legitimately show a new connection. Do not issue bursts or alter security limits to force a result.
+6. Observe a newly started worker when available. Match its startup/new-connection trace to later reuse; cold establishment and cold hosting time must not be confused with warm acquisition. Test deliberate pool exhaustion, broken connections and advisory-lock recovery in an isolated test database, not by interrupting production DB sessions.
+7. Measure production **POST /login** before making any login-latency claim. Compare browser TTFB/navigation time to WSGI duration; queueing, DNS/TLS, assets and browser rendering remain outside WSGI timing. Do not optimize the already identified template cost in this patch.
+
+**Estimated impact, not a measured result:** removing this sample's 1,033 ms connection establishment would reduce its roughly 2.9-second warm API response to approximately **1.87 seconds** if every other cost stayed unchanged. Cold establishment remains. Query, commit and whole-store lock contention remain, and improvement depends on worker reuse, pool demand and socket health. This patch does not establish that the six-second production login delay is fixed.
+
+### Regression coverage and limitations
+
+`tests/test_postgres_connection_pool.py` covers cold/warm acquisition, bounded parallel creation/exclusive borrowing, exhaustion/wakeup/recovery, fail-closed 429 on capacity exhaustion without local fallback, broken/closed/reset-failed connections, creation/commit failure, commit/rollback isolation, transaction advisory-lock release, dedicated session-lock cleanup, actual process forks with idle and active leases, two worker-like pools sharing durable rate-limit state, expiry/scope/429/Retry-After, login failure blocking, CSRF and unauthorized forced refresh. It exercises the real storage and rate-limit code with a transactional database double; it is not a live Aiven benchmark.
+
+`tests/test_postgres_pool_integration.py` additionally provides an opt-in **real PostgreSQL** test for concurrent limiting across two pools, rollback, advisory-lock release and clean reuse. Set `STOCKRADAR_TEST_DATABASE_URL` only to an explicitly designated disposable test database with schema creation permission, install the existing psycopg production dependency, and run `python3 -m pytest tests/test_postgres_pool_integration.py -q`. The test creates and removes a unique isolated schema; it never reads the production `DATABASE_URL`. This integration test was skipped locally because no test PostgreSQL service was configured; the local interpreter also lacks psycopg. Actual psycopg/Aiven behaviour remains a production/test-service verification step, rather than a claimed local measurement.
+
+Final patch validation:
+
+- Focused pool/storage/login/security/Turnstile/performance tests with `STOCKRADAR_TIMING_ENABLED=true`: **167 passed, 1 skipped**, 5.18 seconds.
+- Normal full command, `python3 -m pytest tests -q`: collection blocked by the existing missing Python `playwright` dependency in `tests/test_production_smoke_test.py`.
+- Full runnable suite, `python3 -m pytest tests --ignore=tests/test_production_smoke_test.py -q`: **805 passed, 1 skipped, the same 5 pre-existing failures**, 9.28 seconds. The skip is the explicit test-database integration test described above.
+- Unchanged failures: `test_refund_policy_uses_support_email_when_configured`, `test_feedback_uses_support_email_and_mail_subject`, `test_header_reserves_logo_column_and_mobile_overrides_dense_layout`, `test_homepage_explains_product_and_has_primary_calls_to_action`, and `test_opportunities_public_preview_metadata`. No unrelated fixes were made.
+- Python compilation and `git diff --check` passed.
+
+Patch files: `app.py` (capacity-failure rejection only), `newsletter_storage.py` (connection lifecycle), `postgres_connection_pool.py` (pool and opt-in timing spans), `tests/test_postgres_connection_pool.py`, `tests/test_postgres_pool_integration.py`, and this report. Existing `performance_timing.py` is unchanged; the new pool uses its existing opt-in timing API.
