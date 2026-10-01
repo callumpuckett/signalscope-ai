@@ -121,3 +121,51 @@ def test_invalid_refresh_preserves_last_good(cache, monkeypatch):
     assert app.DASHBOARD_CACHE['data'] == cache
     assert app.DASHBOARD_CACHE['timestamp'] == 1
     assert app.DASHBOARD_REFRESH_RETRY_AT > app.time.time()
+
+
+
+def test_cold_feed_reports_pending_instead_of_failed(monkeypatch):
+    monkeypatch.setattr(app, 'DASHBOARD_CACHE', {})
+    monkeypatch.setattr(app, 'DASHBOARD_REFRESH_PENDING', True)
+    client = app.app.test_client()
+    response = client.get('/')
+    assert response.status_code == 200
+    assert b'Market headlines are refreshing. Please check again shortly.' in response.data
+    assert b'data-refresh-pending="true"' in response.data
+    payload = client.get('/api/market-news').json
+    assert payload['refresh_pending'] is True
+    assert payload['items'] == []
+    assert payload['ticker_updated'] == ''
+    monkeypatch.setattr(app, 'DASHBOARD_REFRESH_PENDING', False)
+    monkeypatch.setattr(app, 'DASHBOARD_REFRESH_RETRY_AT', app.time.time() + 300)
+    assert client.get('/api/market-news').json['refresh_pending'] is False
+
+
+@pytest.mark.parametrize('empty_snapshots', [False, True])
+def test_failed_snapshot_and_news_observations_keep_good_data(cache, monkeypatch, empty_snapshots):
+    snapshot = {'symbol': 'SPY', 'price': '$100.00', 'change': '+1.00', 'direction': 'buy'}
+    headline = {'label': 'LIVE NEWS', 'article_url': 'https://example.com/verified', 'headline': 'Verified report'}
+    cache.update(market_snapshot=[snapshot], live_headlines=[headline], ticker_updated='12:00')
+    failed = {'symbol': 'SPY', 'price': '—', 'change': 'Data unavailable', 'direction': 'hold'}
+    monkeypatch.setattr(app, 'prepare_dashboard_data', Mock(return_value={
+        **cache, 'market_snapshot': [] if empty_snapshots else [failed],
+        'live_headlines': [], 'ticker_updated': '13:00',
+    }))
+    result = app.get_cached_dashboard_data(include_market_snapshots=True)
+    assert result['market_snapshot'] == [snapshot]
+    assert result['live_headlines'] == [headline]
+    assert result['ticker_updated'] == '12:00'
+
+
+def test_published_weekly_is_independent_of_dashboard_cache(monkeypatch):
+    # An already-published unavailable-data artifact stays the same on warm/cold dashboards.
+    artifact = {'html': '<html><body id="stockradar-primary-navigation-styles"><p>No verified positive weekly movers were available.</p><p>Verified weekly market tracker data was unavailable.</p></body></html>'}
+    monkeypatch.setattr(app, 'load_latest_published_newsletter_artifact', Mock(return_value=artifact))
+    prepare = Mock(side_effect=AssertionError('published artifact must not trigger market work'))
+    monkeypatch.setattr(app, 'get_cached_dashboard_data', prepare)
+    for dashboard_cache in [{}, {'data': {'live_headlines': [{'headline': 'good cached market data'}]}}]:
+        monkeypatch.setattr(app, 'DASHBOARD_CACHE', dashboard_cache)
+        response = app.app.test_client().get('/newsletter/latest')
+        assert response.status_code == 200
+        assert response.get_data(as_text=True) == artifact['html']
+    prepare.assert_not_called()

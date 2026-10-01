@@ -1,3 +1,5 @@
+import time as _startup_clock
+_APP_IMPORT_STARTED = _startup_clock.perf_counter()
 from flask import Flask, Response, render_template_string, redirect, url_for, request, session, jsonify, has_request_context, g, abort
 from datetime import datetime, time as dt_time, timedelta, timezone
 from difflib import SequenceMatcher
@@ -29,6 +31,12 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+
+from performance_timing import (
+    TimingMiddleware, TimedSessionInterface, measured, stage, count, operation,
+)
+
+render_template_string = measured("template.compile_render")(render_template_string)
 
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash
@@ -680,6 +688,7 @@ app.jinja_env.globals["stockradar_header_navigation"] = stockradar_header_naviga
 
 
 @app.after_request
+@measured("response.security_headers")
 def add_security_headers(response):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
@@ -1414,6 +1423,7 @@ LAST_NEWSLETTER_MARKET_STATUS = {
 }
 
 # --- Helper for fetching JSON from URL; TLS verification always remains enabled. ---
+@measured("provider.http_json")
 def fetch_url_json(url, timeout=8):
     request_obj = Request(url, headers={"User-Agent": "StockRadarAI/1.0"})
     with urlopen(request_obj, timeout=timeout) as response:
@@ -1484,6 +1494,7 @@ def subscription_status_is_active(status):
     return False
 
 
+@measured("premium.storage_read")
 def load_premium_entitlements():
     if NEWSLETTER_STORAGE is not None:
         try:
@@ -1677,6 +1688,7 @@ def update_premium_entitlement(
     return update_result["record"]
 
 
+@measured("premium.entitlement_lookup")
 def premium_entitlement_record(customer_id="", subscription_id="", email=""):
     customer_id = stripe_identifier(customer_id)
     subscription_id = stripe_identifier(subscription_id)
@@ -1969,6 +1981,7 @@ def stripe_subscription_entitlement_matches(subscription):
     )
 
 
+@measured("premium.legacy_revalidation")
 def revalidate_legacy_premium_session():
     subscription_id = stripe_identifier(
         session.get("stripe_subscription_id")
@@ -1982,10 +1995,11 @@ def revalidate_legacy_premium_session():
         return None
 
     try:
-        subscription = stripe.Subscription.retrieve(
-            subscription_id,
-            expand=["items.data.price.product"],
-        )
+        with stage("premium.stripe_subscription_retrieve"):
+            subscription = stripe.Subscription.retrieve(
+                subscription_id,
+                expand=["items.data.price.product"],
+            )
     except Exception:
         app.logger.warning("Legacy Premium session revalidation failed.")
         return None
@@ -2018,6 +2032,7 @@ def revalidate_legacy_premium_session():
     )
 
 
+@measured("premium.access_check")
 def premium_has_access():
     if owner_has_access():
         g.premium_access_result = True
@@ -2068,6 +2083,7 @@ def login_rate_limit_keys(email):
     return (("ip", login_client_ip()), ("identity", login_identity_key(email)))
 
 
+@measured("auth.failure_limit_read")
 def login_rate_limit_status(email, now=None):
     current_time = time.monotonic() if now is None else float(now)
     retry_after = 0
@@ -2102,24 +2118,29 @@ def record_login_failure(email, now=None):
                 record["blocked_until"] = current_time + LOGIN_RATE_LIMIT_BLOCK_SECONDS
 
 
+@measured("auth.failure_limit_reset")
 def reset_login_failures(email):
     with LOGIN_RATE_LIMIT_LOCK:
         for category, key in login_rate_limit_keys(email):
             LOGIN_RATE_LIMIT_STATE[category].pop(key, None)
 
 
+@measured("auth.credentials")
 def owner_credentials_valid(email, password):
-    email_matches = hmac.compare_digest(normalize_email(email), OWNER_EMAIL)
+    with stage("auth.configured_identity_check"):
+        email_matches = hmac.compare_digest(normalize_email(email), OWNER_EMAIL)
     if OWNER_PASSWORD_HASH:
         try:
-            password_matches = check_password_hash(OWNER_PASSWORD_HASH, password)
+            with stage("auth.password_verify"):
+                password_matches = check_password_hash(OWNER_PASSWORD_HASH, password)
         except (ValueError, TypeError):
             password_matches = False
     else:
-        password_matches = bool(OWNER_PASSWORD) and hmac.compare_digest(
-            str(password or ""),
-            OWNER_PASSWORD,
-        )
+        with stage("auth.password_verify"):
+            password_matches = bool(OWNER_PASSWORD) and hmac.compare_digest(
+                str(password or ""),
+                OWNER_PASSWORD,
+            )
     return email_matches and password_matches
 
 
@@ -2188,6 +2209,7 @@ def rate_limit_identity():
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+@measured("security.durable_rate_limit")
 def consume_rate_limit(scope, limit, window_seconds, now=None):
     current_time = time.time() if now is None else float(now)
     identity = rate_limit_identity()
@@ -2247,6 +2269,7 @@ def handle_request_too_large(_error):
 
 
 @app.before_request
+@measured("security.request_boundaries")
 def enforce_request_boundaries():
     endpoint_limits = {
         "newsletter": 8 * 1024,
@@ -2274,6 +2297,7 @@ def enforce_request_boundaries():
 
 
 @app.before_request
+@measured("security.origin")
 def validate_unsafe_request_origin():
     if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
         return None
@@ -2292,6 +2316,7 @@ csrf.init_app(app)
 
 
 @app.before_request
+@measured("security.endpoint_limit")
 def apply_endpoint_rate_limit():
     rule = RATE_LIMIT_RULES.get((request.endpoint or "", request.method))
     if (
@@ -2929,6 +2954,7 @@ def normalise_universe_row(row):
     }
 
 
+@measured("homepage.universe_read")
 def get_stock_universe(force_refresh=False):
     now = time.time()
 
@@ -3219,6 +3245,7 @@ def search_stock_universe(query, limit=12):
 
     return deduped
 
+@measured("homepage.recommendations_read")
 def get_recommendations():
     now = time.time()
 
@@ -3826,6 +3853,7 @@ def get_opportunity_page_snapshot():
     return snapshot, state
 
 
+@measured("homepage.preview")
 def build_homepage_free_report_preview(recommendations=None):
     """Build a free-only Microsoft preview from data already loaded for the homepage."""
     for item in recommendations or []:
@@ -4972,6 +5000,7 @@ def fetch_yahoo_income_history(symbol):
             raise
 
 
+@measured("provider.income_history_fallback")
 def _fetch_yahoo_income_history(symbol):
     query = urlencode({
         "range": "1y",
@@ -5067,6 +5096,7 @@ def _cached_dividend_context(symbol, outlook_refresh_date, now):
         return cached, context, reusable
 
 
+@measured("provider.metadata_cache_or_fetch")
 def get_dividend_context(symbol, *, outlook_refresh_date=None):
     cleaned_symbol = canonical_stock_symbol(symbol)
     _, context, reusable = _cached_dividend_context(cleaned_symbol, outlook_refresh_date, time.time())
@@ -7238,6 +7268,7 @@ def _cached_yahoo_history(key, now):
     return None
 
 
+@measured("provider.history_cache_or_fetch")
 def safe_history(ticker, _ticker_object=None, **kwargs):
     ticker = canonical_stock_symbol(ticker)
     kwargs.setdefault("auto_adjust", False)
@@ -10979,6 +11010,7 @@ def publish_newsletter_artifact(issue):
         raise NewsletterPublishedArtifactError("artifact_publish_failed") from error
 
 
+@measured("newsletter.published_artifact_read")
 def load_latest_published_newsletter_artifact():
     global NEWSLETTER_PUBLISHED_ARTIFACT_LAST_KNOWN_GOOD
     try:
@@ -13125,6 +13157,7 @@ def build_dashboard_market_snapshots():
     ]
 
 
+@measured("dashboard.prepare")
 def prepare_dashboard_data(*, include_market_snapshots=True, local_only=False):
     recommendations = get_recommendations()
     buy_rows, hold_rows, sell_rows, conviction_rows = split_rows(recommendations)
@@ -13185,6 +13218,7 @@ def prepare_dashboard_data(*, include_market_snapshots=True, local_only=False):
         "newsapi_configured": bool(NEWSAPI_KEY),
     }
 
+@measured("dashboard.cache_read")
 def get_cached_dashboard_data(force_refresh=False, *, include_market_snapshots=True, nonblocking=False):
     """HTTP navigation serves last-good data while one worker refreshes per process."""
     global DASHBOARD_REFRESH_PENDING
@@ -13194,6 +13228,7 @@ def get_cached_dashboard_data(force_refresh=False, *, include_market_snapshots=T
     due = (force_refresh or not isinstance(cached, dict)
            or time.time() - DASHBOARD_CACHE.get("timestamp", 0) >= DASHBOARD_CACHE_TTL_SECONDS
            or (include_market_snapshots and cached.get("market_snapshot") is None))
+    count("dashboard.cache.cold" if not isinstance(cached, dict) else ("dashboard.cache.due" if due else "dashboard.cache.warm"))
     if due:
         with DASHBOARD_REFRESH_SCHEDULE_LOCK:
             if not DASHBOARD_REFRESH_PENDING and time.time() >= DASHBOARD_REFRESH_RETRY_AT:
@@ -13210,6 +13245,11 @@ def get_cached_dashboard_data(force_refresh=False, *, include_market_snapshots=T
     if not isinstance(cached, dict):
         data["last_updated"] = ""
         data["ticker_updated"] = ""
+    data["market_news_refresh_pending"] = (
+        DASHBOARD_REFRESH_PENDING and not any(
+            is_public_live_market_headline(item) for item in data.get("live_headlines", [])
+        )
+    )
     data["market_status"] = market_status()
     data["market_snapshot_pending"] = include_market_snapshots and data.get("market_snapshot") is None
     # Templates iterate this field even while the first refresh is pending.
@@ -13218,6 +13258,7 @@ def get_cached_dashboard_data(force_refresh=False, *, include_market_snapshots=T
     return data
 
 
+@measured("dashboard.schedule_refresh")
 def _start_dashboard_refresh(force_refresh, include_market_snapshots):
     threading.Thread(
         target=_background_dashboard_refresh,
@@ -13230,7 +13271,9 @@ def _start_dashboard_refresh(force_refresh, include_market_snapshots):
 def _background_dashboard_refresh(*, force_refresh, include_market_snapshots):
     global DASHBOARD_REFRESH_PENDING, DASHBOARD_REFRESH_RETRY_AT
     try:
-        _refresh_dashboard_data(force_refresh, include_market_snapshots=include_market_snapshots)
+        with operation("background", "dashboard_refresh"):
+            with stage("dashboard.refresh"):
+                _refresh_dashboard_data(force_refresh, include_market_snapshots=include_market_snapshots)
     except Exception:
         # Do not publish an empty replacement or move the data's success timestamp.
         DASHBOARD_REFRESH_RETRY_AT = time.time() + max(1, DASHBOARD_CACHE_TTL_SECONDS)
@@ -13274,6 +13317,22 @@ def _refresh_dashboard_data(force_refresh=False, *, include_market_snapshots=Tru
                 fresh_data["live_headlines"] = cached_headlines
                 fresh_data["live_news_active"] = True
                 fresh_data["ticker_updated"] = cached_data.get("ticker_updated", "")
+
+        if include_market_snapshots and isinstance(cached_data, dict):
+            previous_snapshots = {
+                item["symbol"]: item for item in cached_data.get("market_snapshot") or []
+                if isinstance(item, dict) and item.get("symbol")
+                and item.get("price") not in {None, "", "—"}
+            }
+            snapshots = fresh_data.get("market_snapshot") or []
+            if not snapshots and previous_snapshots:
+                fresh_data["market_snapshot"] = list(previous_snapshots.values())
+            else:
+                fresh_data["market_snapshot"] = [
+                    previous_snapshots.get(item.get("symbol"), item)
+                    if item.get("price") in {None, "", "—"} else item
+                    for item in snapshots
+                ]
 
         DASHBOARD_CACHE["data"] = fresh_data.copy()
         DASHBOARD_CACHE["timestamp"] = now
@@ -13607,7 +13666,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
             <div class="live-alert-header">
                 <span class="live-dot"></span>
                 Market News
-<span id="marketNewsStatus" data-live-news-active="{{ 'true' if live_news_active else 'false' }}">Local time: loading{% if live_news_active %} • Live headlines{% else %} • Feed reconnecting{% endif %}</span>
+<span id="marketNewsStatus" data-live-news-active="{{ 'true' if live_news_active else 'false' }}" data-refresh-pending="{{ 'true' if market_news_refresh_pending else 'false' }}">Local time: loading{% if live_news_active %} • Live headlines{% elif market_news_refresh_pending %} • Refreshing headlines{% else %} • Feed reconnecting{% endif %}</span>
             </div>
             {% if live_headlines %}
             <div class="live-alert-track" id="marketNewsTrack" aria-live="polite" data-refresh-interval="{{ market_news_refresh_interval_ms }}">
@@ -13642,7 +13701,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
             </div>
             {% else %}
             <div class="live-alert-track" id="marketNewsTrack" aria-live="polite" data-refresh-interval="{{ market_news_refresh_interval_ms }}">
-                <div class="live-news-empty" id="marketNewsEmpty">Market headlines temporarily unavailable. StockRadar will refresh when the feed reconnects.</div>
+                <div class="live-news-empty" id="marketNewsEmpty">{% if market_news_refresh_pending %}Market headlines are refreshing. Please check again shortly.{% else %}Market headlines temporarily unavailable. StockRadar will refresh when the feed reconnects.{% endif %}</div>
             </div>
             {% endif %}
         </div>
@@ -14127,10 +14186,12 @@ function resetSignalFilters(){var tickerInput=document.getElementById('tickerFil
 function applySignalFilters(){var tickerInput=document.getElementById('tickerFilterInput');var sectorSelect=document.getElementById('sectorFilterSelect');var signalSelect=document.getElementById('signalFilterValue');var tickerQuery=tickerInput ? tickerInput.value.trim().toUpperCase() : '';var selectedSector=sectorSelect ? sectorSelect.value : 'ALL';var selectedSignal=signalSelect ? signalSelect.value : 'ALL';var rows=document.querySelectorAll('.signal-row');var visibleCount=0;rows.forEach(function(row){var rowTicker=(row.getAttribute('data-ticker')||'').toUpperCase();var rowSignal=row.getAttribute('data-signal')||'';var rowSector=row.getAttribute('data-sector')||'AI Watchlist';var tickerMatch=!tickerQuery || rowTicker.includes(tickerQuery);var signalMatch=selectedSignal==='ALL' || rowSignal===selectedSignal;var sectorMatch=selectedSector==='ALL' || rowSector===selectedSector;var shouldShow=tickerMatch && signalMatch && sectorMatch;row.classList.toggle('hidden-signal-row',!shouldShow);if(shouldShow){visibleCount+=1;}});var status=document.getElementById('signalFilterStatus');if(status){var signalText=selectedSignal==='ALL'?'all signals':selectedSignal+' signals';var sectorText=selectedSector==='ALL'?'all sectors':selectedSector;var tickerText=tickerQuery?(' matching '+tickerQuery):'';status.textContent='Showing '+visibleCount+' stocks for '+signalText+', '+sectorText+tickerText+'.';}}
 function makeMarketNewsItem(item,duplicate){var card=document.createElement('span');card.className='live-headline'+(duplicate?' ticker-duplicate':'');if(duplicate){card.setAttribute('aria-hidden','true');}var meta=document.createElement('span');meta.className='live-news-meta';meta.textContent=(item.source||'StockRadar Market Impact Feed')+' • '+(item.published_label||'Theme watch');card.appendChild(meta);var title=document.createElement('a');title.className='live-news-title';title.href=item.article_url||'/';title.textContent=item.headline||'Market headlines are reconnecting';if((item.article_url||'').indexOf('http')===0){title.target='_blank';title.rel='noopener noreferrer';}if(duplicate){title.tabIndex=-1;}card.appendChild(title);var allStockLinks=item.stock_links||[];var stockLinks=allStockLinks.slice(0,2);var stocks=document.createElement('span');stocks.className='live-headline-details market-news-stocks';var affected=document.createElement('span');affected.className='live-affected-label';affected.textContent='Affected:';stocks.appendChild(affected);if(stockLinks.length){stockLinks.forEach(function(stock){var link=document.createElement('a');link.className='live-stock-link '+(stock.signal_class||'hold');link.href=stock.url||'/';if(duplicate){link.tabIndex=-1;}var stockLabel=stock.display_label||stock.ticker||'SPY';if(window.StockRadarCompanyLogos){link.appendChild(window.StockRadarCompanyLogos.createIdentity(stock.ticker||'SPY',stockLabel,'compact'));}else{link.appendChild(document.createTextNode(stockLabel));}var action=document.createElement('span');action.className='live-stock-action';var actionText=stock.action_text||stock.signal||'HOLD';action.textContent=actionText.charAt(0).toUpperCase()+actionText.slice(1).toLowerCase();link.appendChild(action);stocks.appendChild(link);});var stockTotal=Math.max(parseInt(item.stock_links_total||allStockLinks.length,10),allStockLinks.length);if(stockTotal>2){var more=document.createElement('span');more.className='live-stock-more';more.textContent='+'+(stockTotal-2)+' more';stocks.appendChild(more);}}else{var marketWide=document.createElement('span');marketWide.className='live-market-wide';marketWide.textContent='Market-wide';stocks.appendChild(marketWide);}card.appendChild(stocks);var impact=document.createElement('span');impact.className='live-headline-details market-news-impact';var score=document.createElement('span');score.className='live-score';score.textContent='Impact '+(item.impact_score||'Pending');var direction=document.createElement('span');direction.className='live-meta';direction.textContent=item.direction||'Theme watch';impact.appendChild(score);impact.appendChild(direction);card.appendChild(impact);return card;}
 function browserLocalTimeLabel(date){var fallbackTimeZone='Europe/London';var browserTimeZone=fallbackTimeZone;try{browserTimeZone=Intl.DateTimeFormat().resolvedOptions().timeZone||fallbackTimeZone;}catch(error){browserTimeZone=fallbackTimeZone;}var options={hour:'2-digit',minute:'2-digit',timeZone:browserTimeZone,timeZoneName:'short'};try{return new Intl.DateTimeFormat(undefined,options).format(date||new Date());}catch(error){return new Intl.DateTimeFormat('en-GB',{hour:'2-digit',minute:'2-digit',timeZone:fallbackTimeZone,timeZoneName:'short'}).format(date||new Date());}}
-function updateMarketNewsStatus(liveActive){var status=document.getElementById('marketNewsStatus');if(!status){return;}if(typeof liveActive!=='boolean'){liveActive=status.getAttribute('data-live-news-active')==='true';}status.setAttribute('data-live-news-active',liveActive?'true':'false');status.textContent='Local time: '+browserLocalTimeLabel(new Date())+(liveActive?' • Live headlines':' • Feed reconnecting');}
-function renderMarketNews(items){var track=document.getElementById('marketNewsTrack');if(!track){return;}track.innerHTML='';if(!items||!items.length){var empty=document.createElement('div');empty.className='live-news-empty';empty.textContent='Market headlines temporarily unavailable. StockRadar will refresh when the feed reconnects.';track.appendChild(empty);return;}var loop=document.createElement('div');loop.className='live-alert-loop';for(var repeat=0;repeat<2;repeat+=1){items.forEach(function(item){loop.appendChild(makeMarketNewsItem(item,repeat===1));});}track.appendChild(loop);}
-function refreshMarketNews(){var track=document.getElementById('marketNewsTrack');if(!track){return;}fetch('/api/market-news',{headers:{'Accept':'application/json'},cache:'no-store'}).then(function(response){if(!response.ok){throw new Error('market news refresh failed');}return response.json();}).then(function(payload){if(payload&&Array.isArray(payload.items)&&payload.items.length){renderMarketNews(payload.items);updateMarketNewsStatus(!!payload.live_news_active);}else if(payload){updateMarketNewsStatus(!!payload.live_news_active);if(!track.querySelector('.live-headline')){renderMarketNews([]);}}else if(!track.querySelector('.live-headline')){renderMarketNews([]);}}).catch(function(){/* Keep existing headlines visible if refresh fails. */});}
+function updateMarketNewsStatus(liveActive,pending){var status=document.getElementById('marketNewsStatus');if(!status){return;}if(typeof liveActive!=='boolean'){liveActive=status.getAttribute('data-live-news-active')==='true';}if(typeof pending!=='boolean'){pending=status.getAttribute('data-refresh-pending')==='true';}status.setAttribute('data-refresh-pending',pending?'true':'false');status.setAttribute('data-live-news-active',liveActive?'true':'false');status.textContent='Local time: '+browserLocalTimeLabel(new Date())+(liveActive?' • Live headlines':pending?' • Refreshing headlines':' • Feed reconnecting');}
+function renderMarketNews(items,pending){var track=document.getElementById('marketNewsTrack');if(!track){return;}track.innerHTML='';if(!items||!items.length){var empty=document.createElement('div');empty.className='live-news-empty';empty.textContent=pending?'Market headlines are refreshing. Please check again shortly.':'Market headlines temporarily unavailable. StockRadar will refresh when the feed reconnects.';track.appendChild(empty);return;}var loop=document.createElement('div');loop.className='live-alert-loop';for(var repeat=0;repeat<2;repeat+=1){items.forEach(function(item){loop.appendChild(makeMarketNewsItem(item,repeat===1));});}track.appendChild(loop);}
+var marketNewsColdAttempts=0;
+function refreshMarketNews(coldStart){var track=document.getElementById('marketNewsTrack');if(!track){return;}var controller=coldStart?new AbortController():null;var timeout=controller?window.setTimeout(function(){controller.abort();},5000):null;fetch('/api/market-news',{headers:{'Accept':'application/json'},cache:'no-store',signal:controller?controller.signal:undefined}).then(function(response){if(!response.ok){throw new Error('market news refresh failed');}return response.json();}).then(function(payload){if(payload&&Array.isArray(payload.items)&&payload.items.length){renderMarketNews(payload.items);updateMarketNewsStatus(!!payload.live_news_active,!!payload.refresh_pending);}else if(payload){updateMarketNewsStatus(!!payload.live_news_active,!!payload.refresh_pending);if(!track.querySelector('.live-headline')){renderMarketNews([],!!payload.refresh_pending);}}else if(!track.querySelector('.live-headline')){renderMarketNews([]);}if(coldStart&&payload&&payload.refresh_pending&&++marketNewsColdAttempts<10){window.setTimeout(function(){refreshMarketNews(true);},3000);}}).catch(function(){/* Keep existing headlines visible if refresh fails. */}).finally(function(){if(timeout){window.clearTimeout(timeout);}});}
 function scheduleMarketNewsRefresh(){var track=document.getElementById('marketNewsTrack');if(!track){return;}var interval=parseInt(track.getAttribute('data-refresh-interval')||'300000',10);if(!interval||interval<60000){interval=300000;}window.setInterval(refreshMarketNews,interval);}
+(function(){var status=document.getElementById('marketNewsStatus');if(status&&status.getAttribute('data-refresh-pending')==='true'){window.setTimeout(function(){refreshMarketNews(true);},1000);}})();
 window.addEventListener('load',function(){var params=new URLSearchParams(window.location.search);var openPanel=params.get('open');if(openPanel){openPanelAndJump(openPanel);}if(window.location.pathname==='/ai-recommendations'){window.location.href='/?tab=watchlist';}applySignalFilters();updateMarketNewsStatus();scheduleMarketNewsRefresh();});
 </script>
 {{ newsletter_side_tab() | safe }}
@@ -15207,6 +15268,7 @@ def newsletter():
 
 
 @app.route("/newsletter/latest")
+@measured("route.newsletter_latest")
 def newsletter_latest():
     try:
         published = load_latest_published_newsletter_artifact()
@@ -15739,6 +15801,7 @@ def feedback():
 
 
 @app.route("/")
+@measured("route.homepage")
 def dashboard():
     active_tab = request.args.get("tab", "overview").strip().lower()
     quick_search_query = request.args.get("q", "").strip()
@@ -15833,6 +15896,7 @@ def api_market_news():
         "ticker_updated": data.get("ticker_updated") or "",
         "live_news_active": any(is_public_live_market_headline(item) for item in live_headlines),
         "refresh_interval_ms": MARKET_NEWS_REFRESH_INTERVAL_MS,
+        "refresh_pending": bool(data.get("market_news_refresh_pending")),
     })
 
 @app.route("/ai-recommendations")
@@ -16273,6 +16337,7 @@ def stripe_webhook():
 
 
 @app.route("/login", methods=["GET", "POST"])
+@measured("route.login")
 def login():
     login_error = None
     response_status = 200
@@ -16297,9 +16362,11 @@ def login():
             response_headers["Retry-After"] = str(max(1, retry_after))
         elif owner_login_configured() and owner_credentials_valid(email, password):
             reset_login_failures(email)
-            session.clear()
-            session["owner_logged_in"] = True
-            return redirect(url_for("dashboard"))
+            with stage("auth.session_create"):
+                session.clear()
+                session["owner_logged_in"] = True
+            with stage("response.redirect"):
+                return redirect(url_for("dashboard"))
         else:
             record_login_failure(email)
             retry_after = login_rate_limit_status(email)
@@ -16330,12 +16397,31 @@ def logout():
     return redirect(url_for("dashboard"))
 
 
-initialize_newsletter_published_artifact_store()
-initialize_newsletter_storage_backend()
-NEWSLETTER_STORAGE_MIGRATION_RESULT = migrate_selected_newsletter_storage()
-start_newsletter_startup_catch_up()
-start_newsletter_auto_send_scheduler()
-start_opportunity_snapshot_scheduler()
+app.make_response = measured("response.construct")(app.make_response)
+app.process_response = measured("response.headers_and_session")(app.process_response)
+app.preprocess_request = measured("request.security_hooks")(app.preprocess_request)
+app.session_interface = TimedSessionInterface(app.session_interface)
+app.wsgi_app = TimingMiddleware(app.wsgi_app)
+
+with operation("startup") as startup_timing:
+    if startup_timing is not None:
+        startup_timing["module_init_before_storage_ms"] = round(
+            (_startup_clock.perf_counter() - _APP_IMPORT_STARTED) * 1000, 3,
+        )
+    with stage("startup.artifact_store"):
+        initialize_newsletter_published_artifact_store()
+    with stage("startup.database_schema"):
+        initialize_newsletter_storage_backend()
+    with stage("startup.storage_migration"):
+        NEWSLETTER_STORAGE_MIGRATION_RESULT = migrate_selected_newsletter_storage()
+    with stage("startup.schedulers"):
+        start_newsletter_startup_catch_up()
+        start_newsletter_auto_send_scheduler()
+        start_opportunity_snapshot_scheduler()
+    if startup_timing is not None:
+        startup_timing["module_init_ms"] = round(
+            (_startup_clock.perf_counter() - _APP_IMPORT_STARTED) * 1000, 3,
+        )
 
 
 if __name__ == "__main__":

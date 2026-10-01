@@ -1,3 +1,4 @@
+from performance_timing import measured, count, instrument_connection
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import copy
@@ -422,15 +423,17 @@ class PostgresNewsletterStorage(NewsletterStorageBackend):
         self.database_schema_ready = False
         self.last_error = ""
 
+    @measured("db.connect")
     def _connect(self):
         if not self.connector:
             self.last_error = "postgres_driver_unavailable"
             raise RuntimeError(self.last_error)
         try:
+            count("db.connections")
             connection = self.connector(self.database_url, connect_timeout=5)
             self.database_reachable = True
             self.last_error = ""
-            return connection
+            return instrument_connection(connection)
         except Exception as error:
             self.database_reachable = False
             self.database_schema_ready = False
@@ -544,7 +547,10 @@ class PostgresNewsletterStorage(NewsletterStorageBackend):
             raise ValueError("unknown_newsletter_store")
         return data
 
+    @measured("db.load_state")
     def load_state(self, store_name):
+        if store_name in STORE_DEFAULTS:
+            count("db.store." + store_name)
         connection = None
         try:
             connection = self._connect()
@@ -778,7 +784,10 @@ class PostgresNewsletterStorage(NewsletterStorageBackend):
 
         return self.update_state(store_name, replace)
 
+    @measured("db.update_state")
     def update_state(self, store_name, updater):
+        if store_name in STORE_DEFAULTS:
+            count("db.store." + store_name)
         connection = None
         try:
             connection = self._connect()
