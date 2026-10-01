@@ -59,7 +59,7 @@ def test_free_report_preview_reuses_only_existing_free_fields():
             "The current HOLD signal is StockRadar's latest free research prompt for Microsoft."
         ),
         "research_next": (
-            "Open the live report to review the current signal, strength and chart context."
+            "Open the report to review the current signal, strength and chart context."
         ),
     }
     assert PREMIUM_SENTINEL not in str(preview)

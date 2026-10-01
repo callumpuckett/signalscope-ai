@@ -31,6 +31,10 @@ def dashboard_sources(monkeypatch):
     sources["snapshots"] = Mock(side_effect=lambda symbol, name, market: {"symbol": symbol, "name": name, "market": market})
     monkeypatch.setattr(app, "fetch_symbol_snapshot", sources["snapshots"])
     monkeypatch.setattr(app, "DASHBOARD_CACHE", {})
+    monkeypatch.setattr(app, "DASHBOARD_REFRESH_PENDING", False)
+    monkeypatch.setattr(app, "DASHBOARD_REFRESH_RETRY_AT", 0)
+    # Execute fast mocked refreshes deterministically; concurrency is tested separately.
+    monkeypatch.setattr(app, "_start_dashboard_refresh", lambda force_refresh, include_market_snapshots: app._background_dashboard_refresh(force_refresh=force_refresh, include_market_snapshots=include_market_snapshots))
     return sources
 
 
@@ -45,21 +49,24 @@ def test_public_routes_never_fetch_unused_snapshots(dashboard_sources, route, fa
             response = app.app.test_client().get(route)
     assert response.status_code == 200
     dashboard_sources["snapshots"].assert_not_called()
-    dashboard_sources["safe_build_live_headlines"].assert_called_once()
-    if route == "/api/market-news":
+    assert dashboard_sources["safe_build_live_headlines"].call_count == (0 if fallback else 1)
+    if route == "/api/market-news" and not fallback:
         assert response.json["live_news_active"] is True
         assert len(response.json["items"]) == 1
         assert response.json["items"][0]["headline"] == "Market update"
 
 
 @pytest.mark.parametrize("tab", ["overview", "signals", "radar", "watchlist"])
-def test_dashboard_surfaces_receive_all_six_snapshots(dashboard_sources, tab):
+def test_only_overview_requests_snapshots(dashboard_sources, tab):
     with patch.object(app, "render_template_string", return_value="dashboard") as render:
         assert app.app.test_client().get("/?tab=" + tab).status_code == 200
-    assert [row["symbol"] for row in render.call_args.kwargs["market_snapshot"]] == [
+    # First render is allowed to precede the refresh; revisit uses the completed cache.
+    with patch.object(app, "render_template_string", return_value="dashboard") as render:
+        assert app.app.test_client().get("/?tab=" + tab).status_code == 200
+    assert [row["symbol"] for row in render.call_args.kwargs["market_snapshot"]] == ([
         "^GSPC", "^IXIC", "SPY", "QQQ", "^FTSE", "BP.L",
-    ]
-    assert dashboard_sources["snapshots"].call_count == 6
+    ] if tab == "overview" else [])
+    assert dashboard_sources["snapshots"].call_count == (6 if tab == "overview" else 0)
 
 
 def test_partial_cache_upgrade_preserves_outputs_and_original_expiry(dashboard_sources):

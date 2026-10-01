@@ -1001,6 +1001,9 @@ DASHBOARD_CACHE = {
     "data": None,
 }
 DASHBOARD_CACHE_LOCK = threading.Lock()
+DASHBOARD_REFRESH_SCHEDULE_LOCK = threading.RLock()
+DASHBOARD_REFRESH_PENDING = False
+DASHBOARD_REFRESH_RETRY_AT = 0
 RECOMMENDATIONS_CACHE_TTL_SECONDS = int(os.environ.get("RECOMMENDATIONS_CACHE_TTL_SECONDS", "300"))
 RECOMMENDATIONS_CACHE = {
     "timestamp": 0,
@@ -3843,7 +3846,7 @@ def build_homepage_free_report_preview(recommendations=None):
                 f"The current {signal} signal is StockRadar's latest free research prompt for Microsoft."
             ),
             "research_next": (
-                "Open the live report to review the current signal, strength and chart context."
+                "Open the report to review the current signal, strength and chart context."
             ),
         }
 
@@ -13122,15 +13125,15 @@ def build_dashboard_market_snapshots():
     ]
 
 
-def prepare_dashboard_data(*, include_market_snapshots=True):
+def prepare_dashboard_data(*, include_market_snapshots=True, local_only=False):
     recommendations = get_recommendations()
     buy_rows, hold_rows, sell_rows, conviction_rows = split_rows(recommendations)
     buy_count, hold_count, sell_count, high_conviction_count = calculate_counts(recommendations)
 
-    market_snapshot = build_dashboard_market_snapshots() if include_market_snapshots else None
+    market_snapshot = build_dashboard_market_snapshots() if include_market_snapshots and not local_only else None
 
     impact_radar = get_market_impact_radar()
-    live_headlines = safe_build_live_headlines(recommendations, impact_radar) or []
+    live_headlines = [] if local_only else (safe_build_live_headlines(recommendations, impact_radar) or [])
 
     blocked_news_phrases = (
         "Market headlines are reconnecting",
@@ -13182,7 +13185,62 @@ def prepare_dashboard_data(*, include_market_snapshots=True):
         "newsapi_configured": bool(NEWSAPI_KEY),
     }
 
-def get_cached_dashboard_data(force_refresh=False, *, include_market_snapshots=True):
+def get_cached_dashboard_data(force_refresh=False, *, include_market_snapshots=True, nonblocking=False):
+    """HTTP navigation serves last-good data while one worker refreshes per process."""
+    global DASHBOARD_REFRESH_PENDING
+    if not nonblocking:
+        return _refresh_dashboard_data(force_refresh, include_market_snapshots=include_market_snapshots)
+    cached = DASHBOARD_CACHE.get("data")
+    due = (force_refresh or not isinstance(cached, dict)
+           or time.time() - DASHBOARD_CACHE.get("timestamp", 0) >= DASHBOARD_CACHE_TTL_SECONDS
+           or (include_market_snapshots and cached.get("market_snapshot") is None))
+    if due:
+        with DASHBOARD_REFRESH_SCHEDULE_LOCK:
+            if not DASHBOARD_REFRESH_PENDING and time.time() >= DASHBOARD_REFRESH_RETRY_AT:
+                DASHBOARD_REFRESH_PENDING = True
+                try:
+                    _start_dashboard_refresh(force_refresh, include_market_snapshots)
+                except Exception:
+                    DASHBOARD_REFRESH_PENDING = False
+                    app.logger.warning("Dashboard refresh could not be scheduled")
+    cached = DASHBOARD_CACHE.get("data")
+    data = dict(cached) if isinstance(cached, dict) else prepare_dashboard_data(
+        include_market_snapshots=False, local_only=True,
+    )
+    if not isinstance(cached, dict):
+        data["last_updated"] = ""
+        data["ticker_updated"] = ""
+    data["market_status"] = market_status()
+    data["market_snapshot_pending"] = include_market_snapshots and data.get("market_snapshot") is None
+    # Templates iterate this field even while the first refresh is pending.
+    if data.get("market_snapshot") is None:
+        data["market_snapshot"] = []
+    return data
+
+
+def _start_dashboard_refresh(force_refresh, include_market_snapshots):
+    threading.Thread(
+        target=_background_dashboard_refresh,
+        kwargs={"force_refresh": force_refresh,
+                "include_market_snapshots": include_market_snapshots},
+        name="stockradar-dashboard-refresh", daemon=True,
+    ).start()
+
+
+def _background_dashboard_refresh(*, force_refresh, include_market_snapshots):
+    global DASHBOARD_REFRESH_PENDING, DASHBOARD_REFRESH_RETRY_AT
+    try:
+        _refresh_dashboard_data(force_refresh, include_market_snapshots=include_market_snapshots)
+    except Exception:
+        # Do not publish an empty replacement or move the data's success timestamp.
+        DASHBOARD_REFRESH_RETRY_AT = time.time() + max(1, DASHBOARD_CACHE_TTL_SECONDS)
+        app.logger.warning("Dashboard refresh failed; retaining last-good data")
+    finally:
+        with DASHBOARD_REFRESH_SCHEDULE_LOCK:
+            DASHBOARD_REFRESH_PENDING = False
+
+
+def _refresh_dashboard_data(force_refresh=False, *, include_market_snapshots=True):
     with DASHBOARD_CACHE_LOCK:
         now = time.time()
         cached_data = DASHBOARD_CACHE.get("data")
@@ -13201,8 +13259,8 @@ def get_cached_dashboard_data(force_refresh=False, *, include_market_snapshots=T
             return cached_data.copy()
 
         fresh_data = prepare_dashboard_data(include_market_snapshots=include_market_snapshots)
-        if not isinstance(fresh_data, dict):
-            fresh_data = {}
+        if not isinstance(fresh_data, dict) or not fresh_data.get("market_status"):
+            raise RuntimeError("Dashboard refresh returned invalid data")
 
         if isinstance(cached_data, dict) and not any(
             is_public_live_market_headline(item)
@@ -13786,7 +13844,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
         </p>
     </div>
 
-    <div class="market-grid">
+    <div class="market-grid" data-snapshot-pending="{{ 'true' if market_snapshot_pending else 'false' }}">
         {% for item in market_snapshot %}
         <div class="market-card">
             <small>{{ item.market }}</small>
@@ -13966,7 +14024,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
     <div class="card" id="watchlist">
         <p style="color:#00ffaa;font-weight:900;text-transform:uppercase;letter-spacing:0.12em;margin:0 0 10px 0;">AI Recommendations Page</p>
         <h2>AI Recommendations</h2>
-        <p style="color:#94a3b8;line-height:1.7;">This section shows your AI recommendation table. Click any stock to open its live chart page.</p>
+        <p style="color:#94a3b8;line-height:1.7;">This section shows your AI recommendation table. Click any stock to open its price history page.</p>
         <table>
             <tr><th>Stock</th><th>Signal</th><th>Confidence</th><th>AI Reason</th></tr>
             {% for item in recommendations %}
@@ -14036,6 +14094,27 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 </div>
 
 <script>
+// Complete a cold Overview component without blocking the initial navigation.
+(function(){
+    var grid=document.querySelector('.market-grid[data-snapshot-pending="true"]');
+    if(!grid || !document.querySelector('#overview-section.active-section')){return;}
+    var attempts=0;
+    async function completeSnapshots(){
+        if(document.hidden || attempts++>=10){return;}
+        var controller=new AbortController();
+        var timeout=setTimeout(function(){controller.abort();},5000);
+        try{
+            var response=await fetch('/?tab=overview',{signal:controller.signal});
+            if(response.ok){
+                var page=new DOMParser().parseFromString(await response.text(),'text/html');
+                var ready=page.querySelector('.market-grid[data-snapshot-pending="false"]');
+                if(ready){grid.replaceWith(ready);return;}
+            }
+        }catch(error){}finally{clearTimeout(timeout);}
+        setTimeout(completeSnapshots,3000);
+    }
+    setTimeout(completeSnapshots,1000);
+})();
 function showDashboardSection(sectionId, button){var sections=document.querySelectorAll('.dashboard-section');sections.forEach(function(section){section.classList.remove('active-section');});var target=document.getElementById(sectionId);if(target){target.classList.add('active-section');target.scrollIntoView({behavior:'smooth',block:'start'});}var buttons=document.querySelectorAll('.tab-button');buttons.forEach(function(btn){btn.classList.remove('active-tab');});if(button){button.classList.add('active-tab');}}
 function togglePanel(panelId){var panel=document.getElementById(panelId);var button=document.querySelector('[aria-controls="'+panelId+'"]');if(panel.classList.contains('open')){panel.classList.remove('open');if(button){button.setAttribute('aria-expanded','false');}}else{panel.classList.add('open');if(button){button.setAttribute('aria-expanded','true');}panel.scrollIntoView({behavior:'smooth',block:'start'});}}
 function flashTarget(element){if(!element){return;}element.classList.remove('highlight-target');void element.offsetWidth;element.classList.add('highlight-target');}
@@ -14738,9 +14817,9 @@ stock_detail_html = """
 </head>
 <body>
 {{ stockradar_header_navigation('app') | safe }}
-<div class="card"><p><a href="/">← Back to Dashboard</a></p><h1>{{ stock_identity(symbol, stock_display_label(symbol), 'detail', false) }} <span>Stock Detail</span></h1><p style="color:#94a3b8;">Live chart view for {{ range_label }}. Use the buttons below to change timeframe.</p></div>
+<div class="card"><p><a href="/">← Back to Dashboard</a></p><h1>{{ stock_identity(symbol, stock_display_label(symbol), 'detail', false) }} <span>Stock Detail</span></h1><p style="color:#94a3b8;">Price history for {{ range_label }} (cached or delayed provider data). Use the buttons below to change timeframe.</p></div>
 
-	<div class="ai-grid"><div class="ai-card"><small>{% if has_premium_access %}Current Signal{% else %}Free Signal Preview{% endif %}</small><h2 class="{% if ai_context.signal == 'BUY' %}buy{% elif ai_context.signal == 'SELL' %}sell{% elif ai_context.signal == 'HOLD' %}hold{% endif %}">{{ ai_context.signal }}</h2><p>The headline signal shows what the scanner is flagging for {{ stock_display_label(symbol) }}.</p><span class="signal-badge">Live stock page: {{ stock_display_label(symbol) }}</span></div><div class="ai-card warning"><small>{% if has_premium_access %}Current Confidence{% else %}Free Confidence Preview{% endif %}</small><div class="confidence-large">{{ ai_context.confidence }}</div><div class="free-meter">{{ ai_context.confidence_meter }}</div><span class="free-strength">Signal strength: {{ ai_context.strength_label }}</span><p style="margin-top:12px;">The score and meter are a research prompt. Premium explains how to interpret them, what risk to check and what evidence matters next.</p></div><div class="ai-card risk"><small>{% if has_premium_access %}Premium Active{% else %}Premium Preview{% endif %}</small><h2>Decision context</h2>{% if has_premium_access %}<p>The Premium report below puts the simple answer first, followed by practical checks and optional supporting detail.</p><span class="signal-badge">Premium unlocked</span>{% else %}<p>Premium explains the decision layer behind {{ stock_display_label(symbol) }}: risk level, portfolio role, concentration warning and the next trigger to watch.</p><a class="signal-badge" href="/upgrade">Explore Premium</a>{% endif %}</div></div>
+	<div class="ai-grid"><div class="ai-card"><small>{% if has_premium_access %}Current Signal{% else %}Free Signal Preview{% endif %}</small><h2 class="{% if ai_context.signal == 'BUY' %}buy{% elif ai_context.signal == 'SELL' %}sell{% elif ai_context.signal == 'HOLD' %}hold{% endif %}">{{ ai_context.signal }}</h2><p>The headline signal shows what the scanner is flagging for {{ stock_display_label(symbol) }}.</p><span class="signal-badge">Stock research page: {{ stock_display_label(symbol) }}</span></div><div class="ai-card warning"><small>{% if has_premium_access %}Current Confidence{% else %}Free Confidence Preview{% endif %}</small><div class="confidence-large">{{ ai_context.confidence }}</div><div class="free-meter">{{ ai_context.confidence_meter }}</div><span class="free-strength">Signal strength: {{ ai_context.strength_label }}</span><p style="margin-top:12px;">The score and meter are a research prompt. Premium explains how to interpret them, what risk to check and what evidence matters next.</p></div><div class="ai-card risk"><small>{% if has_premium_access %}Premium Active{% else %}Premium Preview{% endif %}</small><h2>Decision context</h2>{% if has_premium_access %}<p>The Premium report below puts the simple answer first, followed by practical checks and optional supporting detail.</p><span class="signal-badge">Premium unlocked</span>{% else %}<p>Premium explains the decision layer behind {{ stock_display_label(symbol) }}: risk level, portfolio role, concentration warning and the next trigger to watch.</p><a class="signal-badge" href="/upgrade">Explore Premium</a>{% endif %}</div></div>
 
 {% set fundamentals = dividend_context.get('fundamentals', []) if dividend_context else [] %}
 {% if fundamentals %}
@@ -15671,13 +15750,13 @@ def dashboard():
     force_refresh = request.args.get("refresh") == "1"
     if force_refresh and not force_refresh_authorized():
         return Response("Forced refresh is restricted.", status=403, mimetype="text/plain")
-    include_market_snapshots = bool(request.args.get("tab"))
+    include_market_snapshots = bool(request.args.get("tab")) and active_tab == "overview"
     data = get_cached_dashboard_data(
-        force_refresh=force_refresh, include_market_snapshots=include_market_snapshots,
+        force_refresh=force_refresh, include_market_snapshots=include_market_snapshots, nonblocking=True,
     ) or {}
 
     if not isinstance(data, dict) or not data.get("market_status"):
-        data = prepare_dashboard_data(include_market_snapshots=include_market_snapshots) or {}
+        data = prepare_dashboard_data(include_market_snapshots=False, local_only=True) or {}
 
     if not isinstance(data, dict):
         data = {}
@@ -15736,10 +15815,10 @@ def api_market_news():
     force_refresh = request.args.get("refresh") == "1"
     if force_refresh and not force_refresh_authorized():
         return jsonify({"error": "Forced refresh is restricted."}), 403
-    data = get_cached_dashboard_data(force_refresh=force_refresh, include_market_snapshots=False) or {}
+    data = get_cached_dashboard_data(force_refresh=force_refresh, include_market_snapshots=False, nonblocking=True) or {}
 
     if not isinstance(data, dict) or not data.get("market_status"):
-        data = prepare_dashboard_data(include_market_snapshots=False) or {}
+        data = prepare_dashboard_data(include_market_snapshots=False, local_only=True) or {}
 
     if not isinstance(data, dict):
         data = {}
@@ -15751,7 +15830,7 @@ def api_market_news():
 
     return jsonify({
         "items": serialize_market_news_items(live_headlines, limit=MARKET_NEWS_TICKER_LIMIT),
-        "ticker_updated": data.get("ticker_updated") or datetime.now().strftime("%H:%M"),
+        "ticker_updated": data.get("ticker_updated") or "",
         "live_news_active": any(is_public_live_market_headline(item) for item in live_headlines),
         "refresh_interval_ms": MARKET_NEWS_REFRESH_INTERVAL_MS,
     })
