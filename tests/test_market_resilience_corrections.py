@@ -12,6 +12,36 @@ def frame(values):
     return pd.DataFrame({'Close': values}, index=pd.date_range('2026-09-01', periods=len(values)))
 
 
+def test_global_yahoo_cooldown_preserves_expired_history_and_recovers(monkeypatch):
+    monkeypatch.setattr(app, 'YAHOO_HISTORY_CACHE', {})
+    monkeypatch.setattr(app, 'YAHOO_COOLDOWN_UNTIL', 0)
+    monkeypatch.setattr(app, 'INCOME_HISTORY_CACHE', {})
+    settings = app.CHART_RANGES['1mo']
+    kwargs = {'period': settings['period'], 'interval': settings['interval'], 'timeout': 6}
+    ticker = Mock()
+    ticker.history.side_effect = [frame([100]), frame([105])]
+    with patch.object(app.yf, 'Ticker', return_value=ticker), patch.object(app.time, 'time', return_value=1000) as clock:
+        app.safe_history('MSFT', **kwargs)
+        clock.return_value = 1301
+        # Another Yahoo request has triggered the shared rate-limit cooldown.
+        monkeypatch.setattr(app, 'YAHOO_COOLDOWN_UNTIL', 1600)
+        retained = app.safe_history('MSFT', **kwargs)
+        assert retained.iloc[0, 0] == 100
+        retained.iloc[0, 0] = 999
+        chart = app.stock_history('MSFT', '1mo')
+        assert chart['ok'] is True
+        assert chart['prices'] == [100]
+        assert next(iter(app.YAHOO_HISTORY_CACHE.values()))['timestamp'] == 1000
+        ticker.history.assert_called_once()
+        with pytest.raises(app.YahooRefreshDeferred):
+            app.safe_history('AAPL', period='1mo')
+        ticker.history.assert_called_once()
+        clock.return_value = 1601
+        assert app.safe_history('MSFT', **kwargs).iloc[0, 0] == 105
+        assert ticker.history.call_count == 2
+        assert next(iter(app.YAHOO_HISTORY_CACHE.values()))['timestamp'] == 1601
+
+
 @pytest.mark.parametrize('failure', [RuntimeError('temporary'), pd.DataFrame(), frame([0, -1])])
 def test_expired_history_failure_retains_original_timestamp_and_retries(monkeypatch, failure):
     monkeypatch.setattr(app, 'YAHOO_HISTORY_CACHE', {})

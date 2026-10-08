@@ -7266,7 +7266,8 @@ def _cached_yahoo_history(key, now):
     with YAHOO_CACHE_LOCK:
         cached = YAHOO_HISTORY_CACHE.get(key)
         if cached and (now - cached["timestamp"] < YAHOO_RETRY_SECONDS
-                       or now < cached.get("retry_after", 0)):
+                       or now < cached.get("retry_after", 0)
+                       or (now < YAHOO_COOLDOWN_UNTIL and cached.get("history") is not None)):
             if cached.get("history") is not None:
                 return cached["history"].copy(deep=True)
             raise RuntimeError("Yahoo history temporarily unavailable")
