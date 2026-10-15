@@ -83,3 +83,49 @@ this baseline layout assertion is not a report regression. `git diff --check` pa
 No report implementation or desktop/mobile screenshots exist at this stop point.
 No report accuracy, responsive layout or performance claim is made. A passing
 baseline suite does not establish the data provenance guarantees identified above.
+
+## Prerequisite implementation — 15 October 2026
+
+The subsequently authorized corrections are now implemented without architectural,
+provider, billing or scoring changes:
+
+- Recommendation rows retain `signal_source` (`calculated`, `supplied`, `generated`,
+  `fallback`, `unavailable`) and optional `observed_at`. CSVs may supply these columns;
+  existing unclassified CSV rows are identified as supplied, not assumed calculated.
+  Defaults are fallback; deterministic expansion is generated. Unknown legacy
+  snapshot provenance is unavailable rather than inferred.
+- Observation timestamps must include a timezone and cannot be in the future.
+  Missing/invalid dates stay unavailable. Generated/default prompts have no market
+  observation date. Cache retrieval is explicitly separate from source observation.
+  Cache reads recompute age on copies, preserving existing TTL and refresh behavior.
+  Current means within the existing recommendation refresh window; stale means
+  older than that window. Neither classification verifies input quality.
+- Stock detail, the Premium decision page, recommendation confidence tables and
+  Opportunity cards expose provenance/freshness. Cached snapshots recompute the
+  displayed age. Existing scores and access checks are preserved.
+- Decision Score breakdown labels fundamentals categories and valuation allowances
+  as heuristic. The accompanying explanation states their fixed-category basis
+  and distinguishes signal-derived momentum from measured financial analysis.
+- Existing thematic news matching is retained. An additional conservative local
+  classifier identifies company-name mentions or explicitly marked tickers; all
+  other associations remain sector/market context. The initial feed and its public
+  polling payload preserve that distinction. A direct mention is not independent
+  verification of the article's claims; no story is marked verified company news.
+- Business education is explicitly described as general sector/fund context rather
+  than verified company strengths, financial results or recent developments.
+
+Remaining limits: existing undated CSVs cannot establish current observations;
+provenance on old persisted snapshots cannot be reconstructed; local headline
+classification can miss aliases and does not validate claims. The original thematic
+matcher still permits broad associations, now labelled as related context. No new
+financial data, reporting dates, verified developments or upcoming event calendar
+have been invented. The unified Intelligence Report remains a separate implementation.
+
+Validation: new prerequisite tests cover CSV and fallback loading, generation,
+invalid/future/missing dates, cache ageing without cache mutation, unchanged scores,
+news classification and public serialization, and locked/unlocked report content.
+Existing universe, business context, Premium, What-If, Opportunity, market resilience,
+responsive feed, security and performance-path regressions were also run. The known
+navigation breakpoint assertion reproduced before final validation and remains
+unrelated; navigation styles were not changed. Final validation: 209 passed, 1 known unrelated breakpoint assertion deselected
+in 1.87 seconds. `git diff --check` passed.

@@ -2841,6 +2841,57 @@ def generated_signal_source_ticker(ticker):
     return EQUIVALENT_SHARE_CLASS_PRIMARY.get(cleaned_ticker, cleaned_ticker)
 
 
+def signal_provenance(row, now=None):
+    """Source observation time is independent of local cache retrieval time."""
+    now = time.time() if now is None else now
+    source = row.get("signal_source", "unavailable")
+    if source not in {"calculated", "supplied", "generated", "fallback", "unavailable"}:
+        source = "unavailable"
+    observed = None
+    try:
+        value = str(row.get("observed_at") or "").strip()
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is not None and parsed.timestamp() <= now:
+            observed = parsed.astimezone(timezone.utc)
+    except (ValueError, TypeError, OverflowError):
+        pass
+    # Synthetic prompts and defaults are never market observations.
+    if source in {"generated", "fallback", "unavailable"}:
+        observed = None
+    state = ("unavailable" if observed is None else
+             "stale" if now - observed.timestamp() >= RECOMMENDATIONS_CACHE_TTL_SECONDS
+             else "current")
+    label = {
+        "calculated": "Calculated signal", "supplied": "Supplied signal",
+        "generated": "Generated research prompt", "fallback": "Fallback research prompt",
+        "unavailable": "Signal data unavailable",
+    }[source]
+    date_label = observed.strftime("%Y-%m-%d %H:%M:%S UTC") if observed else "unavailable"
+    return {
+        "signal_source": source,
+        "signal_source_label": label,
+        "observed_at": observed.isoformat() if observed else None,
+        "signal_freshness": state,
+        "signal_cache_state": row.get("signal_cache_state", "not cached"),
+        "signal_data_note": (
+            f"{label} · Observation time: {date_label} · Freshness: {state}. "
+            "Current means within the recommendation refresh window; it does not verify the source. "
+            if observed else f"{label} · Observation time unavailable; freshness cannot be confirmed. "
+        ) + ("Generated and fallback prompts are not calculated from current market evidence. "
+             if source in {"generated", "fallback"} else "")
+        + f"Cache: {row.get('signal_cache_state', 'not cached')}. Cache retrieval is not an observation time.",
+    }
+
+
+app.jinja_env.globals["signal_provenance"] = signal_provenance
+
+
+def recommendation_cache_rows(rows, cached):
+    return [dict(row, **signal_provenance(
+        dict(row, signal_cache_state="cached" if cached else "freshly loaded")
+    )) for row in rows]
+
+
 def expand_recommendations(rows):
     output = []
     seen = set()
@@ -2856,6 +2907,7 @@ def expand_recommendations(rows):
             "confidence": normalise_confidence(row.get("confidence")),
             "reason": str(row.get("reason") or "AI scanner output is available for this ticker.").strip(),
             "sector": row.get("sector") or SECTOR_MAP.get(ticker, "AI Watchlist"),
+            **signal_provenance(dict(row, signal_source=row.get("signal_source", "supplied"))),
         })
         seen.add(ticker)
 
@@ -2874,6 +2926,7 @@ def expand_recommendations(rows):
                 else "Included in the StockRadar universe as a research watchlist name. Signal strength may update as more market, scanner and news data becomes available."
             ),
             "sector": SECTOR_MAP.get(ticker, "AI Watchlist"),
+            **signal_provenance({"signal_source": "generated"}),
         })
         seen.add(ticker)
 
@@ -3258,7 +3311,7 @@ def get_recommendations():
         RECOMMENDATIONS_CACHE["rows"] is not None
         and now - RECOMMENDATIONS_CACHE["timestamp"] < RECOMMENDATIONS_CACHE_TTL_SECONDS
     ):
-        return RECOMMENDATIONS_CACHE["rows"]
+        return recommendation_cache_rows(RECOMMENDATIONS_CACHE["rows"], cached=True)
 
     base_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -3288,21 +3341,23 @@ def get_recommendations():
                             "signal": clean_signal(signal, confidence),
                             "confidence": normalise_confidence(confidence),
                             "reason": str(reason).strip(),
+                            "signal_source": (str(lower.get("signal_source") or "supplied").strip().lower()),
+                            "observed_at": lower.get("observed_at"),
                         })
 
             if rows:
                 recommendations = expand_recommendations(rows)
                 RECOMMENDATIONS_CACHE["timestamp"] = now
                 RECOMMENDATIONS_CACHE["rows"] = recommendations
-                return recommendations
+                return recommendation_cache_rows(recommendations, cached=False)
         except Exception:
             app.logger.warning("Recommendation CSV load failed; trying next candidate.")
             continue
 
-    recommendations = expand_recommendations(DEFAULT_RECOMMENDATIONS)
+    recommendations = expand_recommendations([dict(row, signal_source="fallback") for row in DEFAULT_RECOMMENDATIONS])
     RECOMMENDATIONS_CACHE["timestamp"] = now
     RECOMMENDATIONS_CACHE["rows"] = recommendations
-    return recommendations
+    return recommendation_cache_rows(recommendations, cached=False)
 
 def confidence_number(value):
     text = str(value).replace("%", "").strip()
@@ -3431,6 +3486,7 @@ def rank_stockradar_opportunities(recommendations):
             continue
         components = opportunity_score_components(item)
         ranked.append({
+            **signal_provenance(item),
             "ticker": ticker,
             "label": stock_display_label(ticker),
             "signal": components["signal"],
@@ -4041,6 +4097,7 @@ def get_stock_ai_context(symbol):
 
             matching_item = {
                 "ticker": cleaned_symbol,
+                "signal_source": "generated",
                 "signal": signal,
                 "confidence": confidence,
                 "reason": reason,
@@ -4048,11 +4105,13 @@ def get_stock_ai_context(symbol):
         else:
             matching_item = {
                 "ticker": cleaned_symbol,
+                "signal_source": "unavailable",
                 "signal": "WATCH",
                 "confidence": "50%",
                 "reason": "This ticker is not currently inside the AI recommendation table, so StockRadar marks it as WATCH and gives it a balanced preview score until stronger scanner data is available.",
             }
 
+    generated_universe_prompt = matching_item.get("signal_source") in {"generated", "fallback"}
     confidence_value = confidence_number(matching_item["confidence"])
     signal = matching_item["signal"]
 
@@ -4090,10 +4149,11 @@ def get_stock_ai_context(symbol):
         watch_next = "Watch for a move above resistance, a confidence upgrade, or a signal change."
     else:
         momentum_view = "Watchlist setup"
-        risk_view = "Balanced risk — this ticker has live data, but it is not currently ranked as a high-conviction BUY or SELL in the AI recommendation table."
+        risk_view = "Balanced risk — this ticker has no confirmed signal observation and is not currently ranked as a high-conviction BUY or SELL in the AI recommendation table."
         watch_next = "Watch whether the stock earns a stronger AI recommendation, moves above key chart levels, or reaches confidence above 80%."
 
     return {
+        **signal_provenance(matching_item),
         "ticker": matching_item["ticker"],
         "signal": signal,
         "confidence": matching_item["confidence"],
@@ -4142,6 +4202,7 @@ def build_today_context(stock_context, news_context=None):
         news_text = str(news_context or "").strip()
 
     return {
+        **signal_provenance(context),
         "signal": signal,
         "confidence": confidence,
         "strength_label": strength_label,
@@ -4154,6 +4215,9 @@ def build_today_context(stock_context, news_context=None):
         "watch_next": context.get("watch_next", ""),
         "momentum_view": context.get("momentum_view", ""),
         "news_context": news_text,
+        "news_basis": ("Direct company mention; article claims are not independently verified"
+                       if isinstance(news_context, dict) and news_context.get("association") == "company_mention"
+                       else "Sector or market context; not confirmed company news"),
     }
 
 
@@ -4184,6 +4248,7 @@ def build_business_education(symbol, sector, company_name, role_profile=None):
 
     common = {
         "basis_label": "General sector education",
+        "evidence_note": "General sector or fund education, not verified company-specific strengths, financial results or recent developments.",
         "symbol": cleaned_symbol,
         "company_name": display_name,
         "sector": sector_text or "General research candidate",
@@ -5708,6 +5773,7 @@ def get_premium_report(symbol, ai_context):
 
 
     return {
+        **signal_provenance(ai_context),
         "headline": f"{stock_display_label(cleaned_symbol)} Premium Decision Panel",
         "summary": "Free shows the current signal. Premium explains what it may mean, why it matters, where it fits and what to check before acting.",
         "confidence": ai_context["confidence"],
@@ -6560,6 +6626,7 @@ def premium_decision(symbol):
                 <span class="badge {{ context.signal|lower }}">Signal: {{ context.signal }}</span>
                 <span class="badge">Confidence: {{ report.confidence }}</span>
             </div>
+            <p>{{ context.signal_data_note }}</p>
             <h2 class="readiness">{{ report.readiness }}</h2>
             <p class="action-frame">{{ report.action_frame }}</p>
             <p class="disclaimer">Educational decision support only. This is a research prompt, not a personalised recommendation.</p>
@@ -6697,7 +6764,7 @@ opportunities_html = """
 <a class="back" href="/">← Back to StockRadar</a><section class="hero"><div class="eyebrow">Premium daily research ranking</div><h1>StockRadar Opportunities</h1>{% if premium and snapshot.snapshot_date %}{% set months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] %}<p class="snapshot-freshness" title="Daily ranking snapshot date; individual data timestamps appear in the research.">Updated <time datetime="{{ snapshot.snapshot_date }}">{{ snapshot.snapshot_date[8:10]|int }} {{ months[(snapshot.snapshot_date[5:7]|int)-1] }}</time> · Daily</p>{% endif %}<p class="method">Five daily research opportunities ranked using a transparent, deterministic 100-point framework: signal, conviction, momentum, fundamentals, risk and valuation. Explanations describe the ranking; they do not select stocks.</p><p class="notice"><strong>Educational research only.</strong> Rankings are prompts for further investigation, not personalised advice or instructions to trade.</p></section>
 {% macro return_metric(outlook) %}{% if outlook.cases %}<div class="upside-headline"><span class="eyebrow">12M Upside</span><strong class="upside-value">{{ outlook.metric }}</strong><p class="muted">Analyst consensus · {{ outlook.analyst_count }} analysts · Yahoo Finance</p><p class="muted">Potential price upside, not a guaranteed return.</p>{% if outlook.cached %}<p class="muted">Cached / delayed · reference quote {{ outlook.price_date }}</p>{% endif %}</div>{% endif %}{% endmacro %}
 {% macro return_source(outlook) %}{% if outlook.cases %}<details class="research-detail methodology"><summary>How is 12M Upside calculated?</summary><div class="research-body"><p class="muted">Potential price upside = (Yahoo Finance analyst mean target / reference price − 1) × 100. Excludes dividends, fees and FX; not a guaranteed return.{% if outlook.cases %} Reference price: {{ outlook.reference }} · {{ outlook.price_date }} · {{ outlook.analyst_count }} analysts. Retrieved {{ outlook.retrieved_date }}. Targets accessed through yfinance; individual target dates and the exact horizon are not supplied, so 12M is indicative.{% else %} Reliable comparable analyst targets or a recent price are unavailable.{% endif %}</p><p class="muted">Analyst mean, high and low targets are base, bull and downside references, not probability-weighted StockRadar forecasts. The low target is not a loss floor and may be above today’s price.</p>{% if premium %}<p class="muted">Company fundamentals and earnings dates: Yahoo Finance via yfinance. Conditional observations from available figures, not a comprehensive company thesis.</p>{% endif %}</div></details>{% endif %}{% endmacro %}
-{% macro opportunity_header(item, ranked=false) %}<div class="topline"><div class="identity">{% if ranked %}<span class="rank">{{ item.rank }}</span>{% endif %}<h3>{{ item.label }}</h3></div><div class="score"><span class="score-label">Decision Score</span>{{ item.opportunity_score|int }}<small>/100</small><span class="score-note">Opportunity ranking</span></div></div><div class="signal-row"><span class="signal {{ item.signal|lower }}">{{ item.signal }}</span><span>Risk: <strong>{{ item.risk }}</strong></span><span>Momentum: <strong>{{ item.momentum }}</strong></span>{% if ranked %}<span class="status {{ item.status|lower }}">{{ item.status }}</span>{% endif %}</div>{% endmacro %}
+{% macro opportunity_header(item, ranked=false) %}<div class="topline"><div class="identity">{% if ranked %}<span class="rank">{{ item.rank }}</span>{% endif %}<h3>{{ item.label }}</h3></div><div class="score"><span class="score-label">Decision Score</span>{{ item.opportunity_score|int }}<small>/100</small><span class="score-note">Heuristic opportunity ranking</span></div></div><div class="signal-row"><span class="signal {{ item.signal|lower }}">{{ item.signal }}</span><span>Risk: <strong>{{ item.risk }}</strong></span><span>Momentum: <strong>{{ item.momentum }}</strong></span>{% if ranked %}<span class="status {{ item.status|lower }}">{{ item.status }}</span>{% endif %}</div><p class="muted">{{ signal_provenance(dict(item, signal_cache_state="cached snapshot")).signal_data_note }}</p>{% endmacro %}
 {% if premium %}<section class="grid" aria-label="Today's ranked opportunities">{% for item in snapshot.opportunities %}<article class="opportunity">{{ opportunity_header(item, true) }}
 {{ return_metric(item.return_outlook) }}
 {% if item.return_outlook.cases %}<section class="outlook-panel" aria-label="Return Outlook"><h4 class="eyebrow">Premium · Return Outlook</h4><div class="scenario-grid">{% for label, short_label in [('Base case', 'Base'), ('Bull case', 'Bull'), ('Downside case', 'Downside')] %}<div class="scenario" aria-label="{{ label }}"><span class="scenario-label">{{ short_label }}</span>{% if item.return_outlook.cases.get(label) %}{% set parts = item.return_outlook.cases[label].rsplit(' (', 1) %}<strong class="scenario-value">{{ parts[1].rstrip(')') }}</strong><span class="scenario-target">{{ parts[0] }}</span>{% else %}<strong class="scenario-value scenario-unavailable">Unavailable</strong><span class="scenario-target">No reliable target reference</span>{% endif %}</div>{% endfor %}</div><p class="muted">Analyst target references; not guaranteed outcomes.</p><div class="thesis"><h4>What Has To Go Right?</h4><p>{% if item.return_outlook.drivers and item.return_outlook.cases %}{% for driver in item.return_outlook.drivers %}{{ driver.split(';', 1)[0] }}{% if not loop.last %}; {% else %}.{% endif %}{% endfor %} These fundamentals need to persist and the share price needs to reach the analyst mean target. Neither is assured.{% else %}{{ item.return_outlook.go_right }}{% endif %}</p></div></section>
@@ -6706,7 +6773,7 @@ opportunities_html = """
 <details class="research-detail"><summary>What to watch</summary><div class="research-body"><p>{{ item.return_outlook.catalyst }}</p></div></details>
 <details class="research-detail"><summary>Valuation</summary><div class="research-body"><p>{{ item.return_outlook.valuation }}</p></div></details>
 {% endif %}
-<details class="research-detail"><summary>Detailed research</summary><div class="research-body">{% if not item.return_outlook.cases %}<p class="muted">Analyst outlook data is currently unavailable.</p>{% endif %}<p><strong>Current price:</strong> {% if item.current_price is not none %}{{ item.current_price_label }} <span class="muted">(latest available chart close)</span>{% elif item.return_outlook.cases %}{{ item.return_outlook.reference }} <span class="muted">(Yahoo Finance reference quote · {{ item.return_outlook.price_date }})</span>{% else %}Unavailable{% endif %}</p><div class="research-rows"><div>Daily score change: <strong>{% if item.score_change > 0 %}+{% endif %}{{ item.score_change }}</strong></div><div>Rank movement: <strong>{% if item.rank_change > 0 %}+{% endif %}{{ item.rank_change }}</strong></div><div>Conviction: <strong>{{ item.conviction }}</strong></div></div><h4>Decision score breakdown · Opportunity ranking</h4><div class="research-rows">{% for label, value, maximum in [('Signal', item.signal_score, 25), ('Conviction', item.conviction_score, 25), ('Momentum', item.momentum_score, 20), ('Fundamentals', item.fundamentals_score, 15), ('Risk quality', item.risk_score, 10), ('Valuation', item.valuation_score, 5)] %}<div><span class="research-label">{{ label }}:</span> <strong>{{ value }}/{{ maximum }}</strong></div>{% endfor %}</div><p><strong>Fundamentals:</strong> {{ item.fundamentals }} · <strong>Valuation/context:</strong> {{ item.valuation_context }}</p><p><strong>Positives:</strong> {{ item.explanation.positives }}</p><p><strong>Risks:</strong> {{ item.explanation.risks }}</p><p><strong>What to monitor:</strong> {{ item.explanation.monitor }}</p><div class="history"><svg viewBox="0 0 180 54" role="img" aria-label="Historical Opportunity Score for {{ item.ticker }}"><polyline points="{{ item.history_points }}"/></svg><span class="muted">{{ item.history|length }} daily snapshot{% if item.history|length != 1 %}s{% endif %} · last 30 retained for charting</span></div></div></details>
+<details class="research-detail"><summary>Detailed research</summary><div class="research-body">{% if not item.return_outlook.cases %}<p class="muted">Analyst outlook data is currently unavailable.</p>{% endif %}<p><strong>Current price:</strong> {% if item.current_price is not none %}{{ item.current_price_label }} <span class="muted">(latest available chart close)</span>{% elif item.return_outlook.cases %}{{ item.return_outlook.reference }} <span class="muted">(Yahoo Finance reference quote · {{ item.return_outlook.price_date }})</span>{% else %}Unavailable{% endif %}</p><div class="research-rows"><div>Daily score change: <strong>{% if item.score_change > 0 %}+{% endif %}{{ item.score_change }}</strong></div><div>Rank movement: <strong>{% if item.rank_change > 0 %}+{% endif %}{{ item.rank_change }}</strong></div><div>Conviction: <strong>{{ item.conviction }}</strong></div></div><h4>Decision score breakdown · Opportunity ranking</h4><div class="research-rows">{% for label, value, maximum in [('Signal', item.signal_score, 25), ('Conviction', item.conviction_score, 25), ('Momentum', item.momentum_score, 20), ('Fundamentals category (heuristic)', item.fundamentals_score, 15), ('Risk quality', item.risk_score, 10), ('Valuation allowance (heuristic)', item.valuation_score, 5)] %}<div><span class="research-label">{{ label }}:</span> <strong>{{ value }}/{{ maximum }}</strong></div>{% endfor %}</div><p>Fundamentals points use fixed ticker categories; valuation points use a fixed fund/other allowance. Neither is measured financial analysis. Momentum points derive from the signal.</p><p>{{ signal_provenance(dict(item, signal_cache_state="cached snapshot")).signal_data_note }}</p><p><strong>Fundamentals category (heuristic):</strong> {{ item.fundamentals }} · <strong>Valuation allowance (heuristic):</strong> {{ item.valuation_context }}</p><p><strong>Positives:</strong> {{ item.explanation.positives }}</p><p><strong>Risks:</strong> {{ item.explanation.risks }}</p><p><strong>What to monitor:</strong> {{ item.explanation.monitor }}</p><div class="history"><svg viewBox="0 0 180 54" role="img" aria-label="Historical Opportunity Score for {{ item.ticker }}"><polyline points="{{ item.history_points }}"/></svg><span class="muted">{{ item.history|length }} daily snapshot{% if item.history|length != 1 %}s{% endif %} · last 30 retained for charting</span></div></div></details>
 {{ return_source(item.return_outlook) }}</article>{% endfor %}</section>
 {% if snapshot.exited %}<section class="panel"><h2>Exited today</h2><p>{% for item in snapshot.exited %}<span class="status exited">EXITED</span> {{ item.label }}{% if not loop.last %} · {% endif %}{% endfor %}</p></section>{% endif %}
 <section class="panel" id="alerts" aria-live="polite"><h2>Premium watchlist alerts</h2><p>Loading alert preferences and recent changes…</p><a href="/opportunities/alerts">Open alert preferences and recent changes</a></section>
@@ -6950,7 +7017,7 @@ def premium_watchlist():
             <table>
                 <tr><th>Stock</th><th>Signal</th><th>Confidence</th><th>Role</th></tr>
                 {% for item in quality_names[:8] %}
-                <tr><td><a href="/stock/{{ item.ticker }}">{{ stock_identity(item.ticker, stock_display_label(item.ticker), 'compact') }}</a></td><td>{{ item.signal }}</td><td>{{ item.confidence }}</td><td>Quality compounder</td></tr>
+                <tr><td><a href="/stock/{{ item.ticker }}">{{ stock_identity(item.ticker, stock_display_label(item.ticker), 'compact') }}</a></td><td>{{ item.signal }}</td><td>{{ item.confidence }}{% set provenance = signal_provenance(item) %}<small style="display:block">{{ provenance.signal_source_label }} · {{ provenance.observed_at or "Observation time unavailable" }} · {{ provenance.signal_freshness }} · {{ provenance.signal_cache_state }}</small></td><td>Quality compounder</td></tr>
                 {% endfor %}
             </table>
         </div>
@@ -6961,7 +7028,7 @@ def premium_watchlist():
             <table>
                 <tr><th>Stock</th><th>Signal</th><th>Confidence</th><th>Role</th></tr>
                 {% for item in growth_names[:8] %}
-                <tr><td><a href="/stock/{{ item.ticker }}">{{ stock_identity(item.ticker, stock_display_label(item.ticker), 'compact') }}</a></td><td>{{ item.signal }}</td><td>{{ item.confidence }}</td><td>Controlled growth satellite</td></tr>
+                <tr><td><a href="/stock/{{ item.ticker }}">{{ stock_identity(item.ticker, stock_display_label(item.ticker), 'compact') }}</a></td><td>{{ item.signal }}</td><td>{{ item.confidence }}{% set provenance = signal_provenance(item) %}<small style="display:block">{{ provenance.signal_source_label }} · {{ provenance.observed_at or "Observation time unavailable" }} · {{ provenance.signal_freshness }} · {{ provenance.signal_cache_state }}</small></td><td>Controlled growth satellite</td></tr>
                 {% endfor %}
             </table>
         </div>
@@ -6972,7 +7039,7 @@ def premium_watchlist():
             <table>
                 <tr><th>Stock</th><th>Signal</th><th>Confidence</th><th>Role</th></tr>
                 {% for item in defensive_names[:8] %}
-                <tr><td><a href="/stock/{{ item.ticker }}">{{ stock_identity(item.ticker, stock_display_label(item.ticker), 'compact') }}</a></td><td>{{ item.signal }}</td><td>{{ item.confidence }}</td><td>Defensive balance</td></tr>
+                <tr><td><a href="/stock/{{ item.ticker }}">{{ stock_identity(item.ticker, stock_display_label(item.ticker), 'compact') }}</a></td><td>{{ item.signal }}</td><td>{{ item.confidence }}{% set provenance = signal_provenance(item) %}<small style="display:block">{{ provenance.signal_source_label }} · {{ provenance.observed_at or "Observation time unavailable" }} · {{ provenance.signal_freshness }} · {{ provenance.signal_cache_state }}</small></td><td>Defensive balance</td></tr>
                 {% endfor %}
             </table>
             <div class="note">Premium read: do not just chase the strongest BUY signal. Review whether your next addition improves the overall mix.</div>
@@ -8524,6 +8591,33 @@ def score_news_impact(title):
     return direction, signal_influence, f"{score}/100"
 
 
+def news_stock_associations(title, recommendations=None):
+    """Retain thematic matching, but never promote it to verified company news."""
+    matches = match_news_to_stocks(title, recommendations)
+    names = stock_display_lookup()
+    associations = []
+    for ticker in matches:
+        # Only actual company-name aliases, not product, sector or market keywords.
+        aliases = [names.get(ticker, "")]
+        if ticker in NEWS_STOCK_KEYWORDS and ticker not in {"SMH", "QQQ", "SPY", "BTC-USD", "ETH-USD"}:
+            aliases.append(NEWS_STOCK_KEYWORDS[ticker][0])
+        named = any(
+            len(alias) >= 4 and alias.upper() != ticker
+            and re.search(r"(?<!\w)" + re.escape(alias) + r"(?!\w)", title, re.I)
+            for alias in aliases if alias
+        )
+        # Bare short tickers are ambiguous English words; require financial notation.
+        explicit_ticker = bool(re.search(
+            r"(?<!\w)\$" + re.escape(ticker) + r"(?![\w.-])|\(" + re.escape(ticker) + r"\)", title
+        ))
+        associations.append({
+            "ticker": ticker,
+            "association": "company_mention" if named or explicit_ticker else "sector_or_market",
+            "verified_company_news": False,
+        })
+    return associations
+
+
 def match_news_to_stocks(title, recommendations=None):
     text = f" {str(title or '').lower()} "
     recommendations = recommendations or []
@@ -8732,7 +8826,8 @@ def build_live_headlines(recommendations, impact_radar):
         if not title:
             continue
 
-        matched_stocks = match_news_to_stocks(title, recommendations)
+        associations = news_stock_associations(title, recommendations)
+        matched_stocks = [item["ticker"] for item in associations]
         primary_stock = matched_stocks[0] if matched_stocks else "SPY"
         stock_text = ", ".join(matched_stocks)
         direction, signal_influence, impact_score = score_news_impact(title)
@@ -8748,7 +8843,10 @@ def build_live_headlines(recommendations, impact_radar):
             "article_url": article_url,
             "stock_url": f"/stock/{primary_stock}",
             "stock_text": stock_text,
-"stock_links": build_stock_links_with_signals(matched_stocks, signal_lookup),
+            "stock_associations": associations,
+            "association_note": "Headline mentions and thematic links; company claims are not independently verified.",
+            "stock_links": [dict(link, association=association["association"])
+                            for link, association in zip(build_stock_links_with_signals(matched_stocks, signal_lookup), associations)],
             "impact_score": impact_score,
             "direction": direction,
             "source": source,
@@ -13371,6 +13469,7 @@ def serialize_market_news_items(headlines, limit=MARKET_NEWS_TICKER_LIMIT):
                 "ticker": ticker,
                 "url": str(stock.get("url") or (f"/stock/{ticker}" if ticker else "/")).strip(),
                 "display_label": str(stock.get("display_label") or stock_display_label(ticker or "SPY")).strip(),
+                "association": "company_mention" if stock.get("association") == "company_mention" else "sector_or_market",
                 "signal_class": str(stock.get("signal_class") or "hold").strip().lower(),
                 "action_text": str(stock.get("action_text") or stock.get("signal") or "HOLD").strip(),
             })
@@ -13680,13 +13779,13 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
                 {% for repeat in range(2) %}
                 {% for headline in live_headlines[:market_news_ticker_limit] %}
                 <span class="live-headline {% if repeat %}ticker-duplicate{% endif %}" {% if repeat %}aria-hidden="true"{% endif %}>
-                    <span class="live-news-meta">{{ headline.get('source', 'StockRadar Market Impact Feed') }} • {{ headline.get('published_label', 'Theme watch') }}</span>
+                    <span class="live-news-meta">{{ headline.get('source', 'StockRadar Market Impact Feed') }} • {{ headline.get('published_label', 'Theme watch') }} · Headline/theme links, not verified company news</span>
                     <a class="live-news-title" href="{{ headline.get('article_url', '/') }}" {% if repeat %}tabindex="-1"{% endif %} {% if headline.get('article_url', '').startswith('http') %}target="_blank" rel="noopener noreferrer"{% endif %}>{{ headline.get('headline', 'Market headlines are reconnecting') }}</a>
                     <span class="live-headline-details market-news-stocks">
-                        <span class="live-affected-label">Affected:</span>
+                        <span class="live-affected-label">Related context:</span>
                         {% if headline.get('stock_links') %}
                         {% for stock in headline.get('stock_links', [])[:2] %}
-                        <a class="live-stock-link {{ stock.get('signal_class', 'hold') }}" href="{{ stock.get('url', '/') }}" {% if repeat %}tabindex="-1"{% endif %}>{{ stock_identity(stock.get('ticker', 'SPY'), stock.get('display_label') or stock_display_label(stock.get('ticker', 'SPY')), 'compact') }} <span class="live-stock-action">{{ stock.get('action_text', stock.get('signal', 'HOLD'))|title }}</span></a>
+                        <a class="live-stock-link {{ stock.get('signal_class', 'hold') }}" href="{{ stock.get('url', '/') }}" {% if repeat %}tabindex="-1"{% endif %}>{{ stock_identity(stock.get('ticker', 'SPY'), stock.get('display_label') or stock_display_label(stock.get('ticker', 'SPY')), 'compact') }} <span class="live-stock-action">{{ stock.get('action_text', stock.get('signal', 'HOLD'))|title }}</span> <small>{{ 'Headline mention' if stock.get('association') == 'company_mention' else 'Sector/market link' }}</small></a>
                         {% endfor %}
                         {% set stock_link_total = headline.get('stock_links_total', headline.get('stock_links', [])|length) %}
                         {% if stock_link_total > 2 %}
@@ -13991,7 +14090,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
     <div id="buy-panel" class="card panel">
         <h2>Opportunity Watch — BUY Signals</h2>
         {% if buy_rows %}
-        <table><tr><th>Stock</th><th>Confidence</th><th>AI Reason</th></tr>{% for item in buy_rows %}<tr><td class="buy"><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_identity(item.ticker, stock_display_label(item.ticker), 'compact') }}</a></td><td>{{ item.confidence }}</td><td>{{ item.reason }}</td></tr>{% endfor %}</table>
+        <table><tr><th>Stock</th><th>Confidence</th><th>AI Reason</th></tr>{% for item in buy_rows %}<tr><td class="buy"><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_identity(item.ticker, stock_display_label(item.ticker), 'compact') }}</a></td><td>{{ item.confidence }}{% set provenance = signal_provenance(item) %}<small style="display:block">{{ provenance.signal_source_label }} · {{ provenance.observed_at or "Observation time unavailable" }} · {{ provenance.signal_freshness }} · {{ provenance.signal_cache_state }}</small></td><td>{{ item.reason }}</td></tr>{% endfor %}</table>
         {% else %}<div class="empty-state">No BUY signals are currently active in your latest scanner output.</div>{% endif %}
         {% if has_premium_access %}<div class="notice"><h3>✅ Premium signal breakdown active</h3><p>You have full premium access. Use the linked tickers above to open the premium stock intelligence pages.</p></div>{% else %}<div class="notice"><h3>🔒 Unlock full AI signal breakdown</h3><p>Premium adds conviction context, risk reads and deeper signal reasoning.</p><a class="upgrade-cta" href="/upgrade">Upgrade to Premium — £5/month</a></div>{% endif %}
     </div>
@@ -13999,7 +14098,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
     <div id="hold-panel" class="card panel">
         <h2>Monitor Zone — HOLD Signals</h2>
         {% if hold_rows %}
-        <table><tr><th>Stock</th><th>Confidence</th><th>AI Reason</th></tr>{% for item in hold_rows %}<tr><td class="hold"><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_identity(item.ticker, stock_display_label(item.ticker), 'compact') }}</a></td><td>{{ item.confidence }}</td><td>{{ item.reason }}</td></tr>{% endfor %}</table>
+        <table><tr><th>Stock</th><th>Confidence</th><th>AI Reason</th></tr>{% for item in hold_rows %}<tr><td class="hold"><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_identity(item.ticker, stock_display_label(item.ticker), 'compact') }}</a></td><td>{{ item.confidence }}{% set provenance = signal_provenance(item) %}<small style="display:block">{{ provenance.signal_source_label }} · {{ provenance.observed_at or "Observation time unavailable" }} · {{ provenance.signal_freshness }} · {{ provenance.signal_cache_state }}</small></td><td>{{ item.reason }}</td></tr>{% endfor %}</table>
         {% else %}<div class="empty-state">No HOLD signals are currently active.</div>{% endif %}
         {% if has_premium_access %}<div class="notice"><h3>✅ Premium HOLD analysis active</h3><p>You have full premium access to deeper HOLD interpretation and premium stock pages.</p></div>{% else %}<div class="notice"><h3>🔒 Unlock deeper HOLD analysis</h3><p>Premium explains what would make a HOLD more useful, riskier or worth waiting on.</p><a class="upgrade-cta" href="/upgrade">Upgrade to Premium — £5/month</a></div>{% endif %}
     </div>
@@ -14007,14 +14106,14 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
     <div id="sell-panel" class="card panel">
         <h2>Risk Warning — SELL Signals</h2>
         {% if sell_rows %}
-        <table><tr><th>Stock</th><th>Confidence</th><th>AI Reason</th></tr>{% for item in sell_rows %}<tr><td class="sell"><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_identity(item.ticker, stock_display_label(item.ticker), 'compact') }}</a></td><td>{{ item.confidence }}</td><td>{{ item.reason }}</td></tr>{% endfor %}</table>
+        <table><tr><th>Stock</th><th>Confidence</th><th>AI Reason</th></tr>{% for item in sell_rows %}<tr><td class="sell"><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_identity(item.ticker, stock_display_label(item.ticker), 'compact') }}</a></td><td>{{ item.confidence }}{% set provenance = signal_provenance(item) %}<small style="display:block">{{ provenance.signal_source_label }} · {{ provenance.observed_at or "Observation time unavailable" }} · {{ provenance.signal_freshness }} · {{ provenance.signal_cache_state }}</small></td><td>{{ item.reason }}</td></tr>{% endfor %}</table>
         {% else %}<div class="empty-state">No SELL signals are currently active.</div>{% endif %}
         {% if has_premium_access %}<div class="notice"><h3>✅ Premium downside warnings active</h3><p>You have full premium access to downside warnings and premium risk interpretation.</p></div>{% else %}<div class="notice"><h3>🔒 Unlock full downside warnings</h3><p>Premium adds risk interpretation, concentration checks and watch-next triggers for weaker setups.</p><a class="upgrade-cta" href="/upgrade">Upgrade to Premium — £5/month</a></div>{% endif %}
     </div>
 
     <div id="conviction-panel" class="card panel">
         <h2>Premium Focus — Highest AI Conviction</h2>
-        <table><tr><th>Stock</th><th>Conviction</th><th>AI Insight</th></tr>{% for item in conviction_rows %}<tr><td class="buy"><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_identity(item.ticker, stock_display_label(item.ticker), 'compact') }}</a></td><td>{{ item.confidence }}</td><td>{{ item.reason }}</td></tr>{% endfor %}</table>
+        <table><tr><th>Stock</th><th>Conviction</th><th>AI Insight</th></tr>{% for item in conviction_rows %}<tr><td class="buy"><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_identity(item.ticker, stock_display_label(item.ticker), 'compact') }}</a></td><td>{{ item.confidence }}{% set provenance = signal_provenance(item) %}<small style="display:block">{{ provenance.signal_source_label }} · {{ provenance.observed_at or "Observation time unavailable" }} · {{ provenance.signal_freshness }} · {{ provenance.signal_cache_state }}</small></td><td>{{ item.reason }}</td></tr>{% endfor %}</table>
         {% if has_premium_access %}<div class="notice"><h3>✅ Premium AI-ranked opportunities active</h3><p>You have full premium access to the AI watchlist, conviction engine and premium market intelligence.</p></div>{% else %}<div class="notice"><h3>🔒 Unlock premium conviction intelligence</h3><p>Premium turns High Conviction into a research shortlist with deeper AI reasoning, risk read and what-to-watch-next context on each linked stock page.</p><a class="upgrade-cta" href="/upgrade">Upgrade to Premium — £5/month</a></div>{% endif %}
     </div>
 
@@ -14063,7 +14162,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
             <tr class="signal-row" data-ticker="{{ item.ticker }}" data-signal="{{ item.signal }}" data-sector="{{ item.sector or 'AI Watchlist' }}">
                 <td><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_identity(item.ticker, stock_display_label(item.ticker), 'compact') }}</a></td>
                 <td class="{% if item.signal == 'BUY' %}buy{% elif item.signal == 'SELL' %}sell{% else %}hold{% endif %}">{{ item.signal }}</td>
-                <td>{{ item.confidence }}</td>
+                <td>{{ item.confidence }}{% set provenance = signal_provenance(item) %}<small style="display:block">{{ provenance.signal_source_label }} · {{ provenance.observed_at or "Observation time unavailable" }} · {{ provenance.signal_freshness }} · {{ provenance.signal_cache_state }}</small></td>
                 <td>{{ item.sector or 'AI Watchlist' }}</td>
                 <td>{{ item.reason }}</td>
             </tr>
@@ -14093,7 +14192,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
         <table>
             <tr><th>Stock</th><th>Signal</th><th>Confidence</th><th>AI Reason</th></tr>
             {% for item in recommendations %}
-            <tr><td><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_identity(item.ticker, stock_display_label(item.ticker), 'compact') }}</a></td><td class="{% if item.signal == 'BUY' %}buy{% elif item.signal == 'SELL' %}sell{% else %}hold{% endif %}">{{ item.signal }}</td><td>{{ item.confidence }}</td><td>{{ item.reason }}</td></tr>
+            <tr><td><a class="stock-link" href="/stock/{{ item.ticker }}">{{ stock_identity(item.ticker, stock_display_label(item.ticker), 'compact') }}</a></td><td class="{% if item.signal == 'BUY' %}buy{% elif item.signal == 'SELL' %}sell{% else %}hold{% endif %}">{{ item.signal }}</td><td>{{ item.confidence }}{% set provenance = signal_provenance(item) %}<small style="display:block">{{ provenance.signal_source_label }} · {{ provenance.observed_at or "Observation time unavailable" }} · {{ provenance.signal_freshness }} · {{ provenance.signal_cache_state }}</small></td><td>{{ item.reason }}</td></tr>
             {% endfor %}
         </table>
     </div>
@@ -14190,7 +14289,7 @@ if(['PRO','PREMIUM','UPGRADE','PAYMENT','SUBSCRIPTION'].includes(query)){window.
 function setSignalFilter(signal){var select=document.getElementById('signalFilterValue');if(select){select.value=signal;}document.querySelectorAll('[data-signal-filter]').forEach(function(button){button.classList.toggle('active-filter',button.getAttribute('data-signal-filter')===signal);});applySignalFilters();}
 function resetSignalFilters(){var tickerInput=document.getElementById('tickerFilterInput');var sectorSelect=document.getElementById('sectorFilterSelect');if(tickerInput){tickerInput.value='';}if(sectorSelect){sectorSelect.value='ALL';}setSignalFilter('ALL');}
 function applySignalFilters(){var tickerInput=document.getElementById('tickerFilterInput');var sectorSelect=document.getElementById('sectorFilterSelect');var signalSelect=document.getElementById('signalFilterValue');var tickerQuery=tickerInput ? tickerInput.value.trim().toUpperCase() : '';var selectedSector=sectorSelect ? sectorSelect.value : 'ALL';var selectedSignal=signalSelect ? signalSelect.value : 'ALL';var rows=document.querySelectorAll('.signal-row');var visibleCount=0;rows.forEach(function(row){var rowTicker=(row.getAttribute('data-ticker')||'').toUpperCase();var rowSignal=row.getAttribute('data-signal')||'';var rowSector=row.getAttribute('data-sector')||'AI Watchlist';var tickerMatch=!tickerQuery || rowTicker.includes(tickerQuery);var signalMatch=selectedSignal==='ALL' || rowSignal===selectedSignal;var sectorMatch=selectedSector==='ALL' || rowSector===selectedSector;var shouldShow=tickerMatch && signalMatch && sectorMatch;row.classList.toggle('hidden-signal-row',!shouldShow);if(shouldShow){visibleCount+=1;}});var status=document.getElementById('signalFilterStatus');if(status){var signalText=selectedSignal==='ALL'?'all signals':selectedSignal+' signals';var sectorText=selectedSector==='ALL'?'all sectors':selectedSector;var tickerText=tickerQuery?(' matching '+tickerQuery):'';status.textContent='Showing '+visibleCount+' stocks for '+signalText+', '+sectorText+tickerText+'.';}}
-function makeMarketNewsItem(item,duplicate){var card=document.createElement('span');card.className='live-headline'+(duplicate?' ticker-duplicate':'');if(duplicate){card.setAttribute('aria-hidden','true');}var meta=document.createElement('span');meta.className='live-news-meta';meta.textContent=(item.source||'StockRadar Market Impact Feed')+' • '+(item.published_label||'Theme watch');card.appendChild(meta);var title=document.createElement('a');title.className='live-news-title';title.href=item.article_url||'/';title.textContent=item.headline||'Market headlines are reconnecting';if((item.article_url||'').indexOf('http')===0){title.target='_blank';title.rel='noopener noreferrer';}if(duplicate){title.tabIndex=-1;}card.appendChild(title);var allStockLinks=item.stock_links||[];var stockLinks=allStockLinks.slice(0,2);var stocks=document.createElement('span');stocks.className='live-headline-details market-news-stocks';var affected=document.createElement('span');affected.className='live-affected-label';affected.textContent='Affected:';stocks.appendChild(affected);if(stockLinks.length){stockLinks.forEach(function(stock){var link=document.createElement('a');link.className='live-stock-link '+(stock.signal_class||'hold');link.href=stock.url||'/';if(duplicate){link.tabIndex=-1;}var stockLabel=stock.display_label||stock.ticker||'SPY';if(window.StockRadarCompanyLogos){link.appendChild(window.StockRadarCompanyLogos.createIdentity(stock.ticker||'SPY',stockLabel,'compact'));}else{link.appendChild(document.createTextNode(stockLabel));}var action=document.createElement('span');action.className='live-stock-action';var actionText=stock.action_text||stock.signal||'HOLD';action.textContent=actionText.charAt(0).toUpperCase()+actionText.slice(1).toLowerCase();link.appendChild(action);stocks.appendChild(link);});var stockTotal=Math.max(parseInt(item.stock_links_total||allStockLinks.length,10),allStockLinks.length);if(stockTotal>2){var more=document.createElement('span');more.className='live-stock-more';more.textContent='+'+(stockTotal-2)+' more';stocks.appendChild(more);}}else{var marketWide=document.createElement('span');marketWide.className='live-market-wide';marketWide.textContent='Market-wide';stocks.appendChild(marketWide);}card.appendChild(stocks);var impact=document.createElement('span');impact.className='live-headline-details market-news-impact';var score=document.createElement('span');score.className='live-score';score.textContent='Impact '+(item.impact_score||'Pending');var direction=document.createElement('span');direction.className='live-meta';direction.textContent=item.direction||'Theme watch';impact.appendChild(score);impact.appendChild(direction);card.appendChild(impact);return card;}
+function makeMarketNewsItem(item,duplicate){var card=document.createElement('span');card.className='live-headline'+(duplicate?' ticker-duplicate':'');if(duplicate){card.setAttribute('aria-hidden','true');}var meta=document.createElement('span');meta.className='live-news-meta';meta.textContent=(item.source||'StockRadar Market Impact Feed')+' • '+(item.published_label||'Theme watch')+' · Headline/theme links, not verified company news';card.appendChild(meta);var title=document.createElement('a');title.className='live-news-title';title.href=item.article_url||'/';title.textContent=item.headline||'Market headlines are reconnecting';if((item.article_url||'').indexOf('http')===0){title.target='_blank';title.rel='noopener noreferrer';}if(duplicate){title.tabIndex=-1;}card.appendChild(title);var allStockLinks=item.stock_links||[];var stockLinks=allStockLinks.slice(0,2);var stocks=document.createElement('span');stocks.className='live-headline-details market-news-stocks';var affected=document.createElement('span');affected.className='live-affected-label';affected.textContent='Related context:';stocks.appendChild(affected);if(stockLinks.length){stockLinks.forEach(function(stock){var link=document.createElement('a');link.className='live-stock-link '+(stock.signal_class||'hold');link.href=stock.url||'/';if(duplicate){link.tabIndex=-1;}var stockLabel=stock.display_label||stock.ticker||'SPY';if(window.StockRadarCompanyLogos){link.appendChild(window.StockRadarCompanyLogos.createIdentity(stock.ticker||'SPY',stockLabel,'compact'));}else{link.appendChild(document.createTextNode(stockLabel));}var action=document.createElement('span');action.className='live-stock-action';var actionText=stock.action_text||stock.signal||'HOLD';action.textContent=actionText.charAt(0).toUpperCase()+actionText.slice(1).toLowerCase();link.appendChild(action);var basis=document.createElement('small');basis.textContent=stock.association==='company_mention'?' Headline mention':' Sector/market link';link.appendChild(basis);stocks.appendChild(link);});var stockTotal=Math.max(parseInt(item.stock_links_total||allStockLinks.length,10),allStockLinks.length);if(stockTotal>2){var more=document.createElement('span');more.className='live-stock-more';more.textContent='+'+(stockTotal-2)+' more';stocks.appendChild(more);}}else{var marketWide=document.createElement('span');marketWide.className='live-market-wide';marketWide.textContent='Market-wide';stocks.appendChild(marketWide);}card.appendChild(stocks);var impact=document.createElement('span');impact.className='live-headline-details market-news-impact';var score=document.createElement('span');score.className='live-score';score.textContent='Impact '+(item.impact_score||'Pending');var direction=document.createElement('span');direction.className='live-meta';direction.textContent=item.direction||'Theme watch';impact.appendChild(score);impact.appendChild(direction);card.appendChild(impact);return card;}
 function browserLocalTimeLabel(date){var fallbackTimeZone='Europe/London';var browserTimeZone=fallbackTimeZone;try{browserTimeZone=Intl.DateTimeFormat().resolvedOptions().timeZone||fallbackTimeZone;}catch(error){browserTimeZone=fallbackTimeZone;}var options={hour:'2-digit',minute:'2-digit',timeZone:browserTimeZone,timeZoneName:'short'};try{return new Intl.DateTimeFormat(undefined,options).format(date||new Date());}catch(error){return new Intl.DateTimeFormat('en-GB',{hour:'2-digit',minute:'2-digit',timeZone:fallbackTimeZone,timeZoneName:'short'}).format(date||new Date());}}
 function updateMarketNewsStatus(liveActive,pending){var status=document.getElementById('marketNewsStatus');if(!status){return;}if(typeof liveActive!=='boolean'){liveActive=status.getAttribute('data-live-news-active')==='true';}if(typeof pending!=='boolean'){pending=status.getAttribute('data-refresh-pending')==='true';}status.setAttribute('data-refresh-pending',pending?'true':'false');status.setAttribute('data-live-news-active',liveActive?'true':'false');status.textContent='Local time: '+browserLocalTimeLabel(new Date())+(liveActive?' • Live headlines':pending?' • Refreshing headlines':' • Feed reconnecting');}
 function renderMarketNews(items,pending){var track=document.getElementById('marketNewsTrack');if(!track){return;}track.innerHTML='';if(!items||!items.length){var empty=document.createElement('div');empty.className='live-news-empty';empty.textContent=pending?'Market headlines are refreshing. Please check again shortly.':'Market headlines temporarily unavailable. StockRadar will refresh when the feed reconnects.';track.appendChild(empty);return;}var loop=document.createElement('div');loop.className='live-alert-loop';for(var repeat=0;repeat<2;repeat+=1){items.forEach(function(item){loop.appendChild(makeMarketNewsItem(item,repeat===1));});}track.appendChild(loop);}
@@ -14886,7 +14985,7 @@ stock_detail_html = """
 {{ stockradar_header_navigation('app') | safe }}
 <div class="card"><p><a href="/">← Back to Dashboard</a></p><h1>{{ stock_identity(symbol, stock_display_label(symbol), 'detail', false) }} <span>Stock Detail</span></h1><p style="color:#94a3b8;">Price history for {{ range_label }} (cached or delayed provider data). Use the buttons below to change timeframe.</p></div>
 
-	<div class="ai-grid"><div class="ai-card"><small>{% if has_premium_access %}Current Signal{% else %}Free Signal Preview{% endif %}</small><h2 class="{% if ai_context.signal == 'BUY' %}buy{% elif ai_context.signal == 'SELL' %}sell{% elif ai_context.signal == 'HOLD' %}hold{% endif %}">{{ ai_context.signal }}</h2><p>The headline signal shows what the scanner is flagging for {{ stock_display_label(symbol) }}.</p><span class="signal-badge">Stock research page: {{ stock_display_label(symbol) }}</span></div><div class="ai-card warning"><small>{% if has_premium_access %}Current Confidence{% else %}Free Confidence Preview{% endif %}</small><div class="confidence-large">{{ ai_context.confidence }}</div><div class="free-meter">{{ ai_context.confidence_meter }}</div><span class="free-strength">Signal strength: {{ ai_context.strength_label }}</span><p style="margin-top:12px;">The score and meter are a research prompt. Premium explains how to interpret them, what risk to check and what evidence matters next.</p></div><div class="ai-card risk"><small>{% if has_premium_access %}Premium Active{% else %}Premium Preview{% endif %}</small><h2>Decision context</h2>{% if has_premium_access %}<p>The Premium report below puts the simple answer first, followed by practical checks and optional supporting detail.</p><span class="signal-badge">Premium unlocked</span>{% else %}<p>Premium explains the decision layer behind {{ stock_display_label(symbol) }}: risk level, portfolio role, concentration warning and the next trigger to watch.</p><a class="signal-badge" href="/upgrade">Explore Premium</a>{% endif %}</div></div>
+	<div class="ai-grid"><div class="ai-card"><small>{% if has_premium_access %}Current Signal{% else %}Free Signal Preview{% endif %}</small><h2 class="{% if ai_context.signal == 'BUY' %}buy{% elif ai_context.signal == 'SELL' %}sell{% elif ai_context.signal == 'HOLD' %}hold{% endif %}">{{ ai_context.signal }}</h2><p>The headline signal shows what the scanner is flagging for {{ stock_display_label(symbol) }}.</p><p class="muted">{{ ai_context.signal_data_note }}</p><span class="signal-badge">Stock research page: {{ stock_display_label(symbol) }}</span></div><div class="ai-card warning"><small>{% if has_premium_access %}Current Confidence{% else %}Free Confidence Preview{% endif %}</small><div class="confidence-large">{{ ai_context.confidence }}</div><div class="free-meter">{{ ai_context.confidence_meter }}</div><span class="free-strength">Signal strength: {{ ai_context.strength_label }}</span><p style="margin-top:12px;">The score and meter are a research prompt. Premium explains how to interpret them, what risk to check and what evidence matters next.</p></div><div class="ai-card risk"><small>{% if has_premium_access %}Premium Active{% else %}Premium Preview{% endif %}</small><h2>Decision context</h2>{% if has_premium_access %}<p>The Premium report below puts the simple answer first, followed by practical checks and optional supporting detail.</p><span class="signal-badge">Premium unlocked</span>{% else %}<p>Premium explains the decision layer behind {{ stock_display_label(symbol) }}: risk level, portfolio role, concentration warning and the next trigger to watch.</p><a class="signal-badge" href="/upgrade">Explore Premium</a>{% endif %}</div></div>
 
 {% set fundamentals = dividend_context.get('fundamentals', []) if dividend_context else [] %}
 {% if fundamentals %}
@@ -14969,7 +15068,7 @@ stock_detail_html = """
 	                <span class="stock-premium-label">Why this setup is showing</span>
 	                <strong>Existing StockRadar reason</strong>
 	                <p>{{ today_context.setup_reason }}</p>
-	                {% if today_context.news_context %}<p><strong>Relevant news context:</strong> {{ today_context.news_context }}</p>{% endif %}
+	                {% if today_context.news_context %}<p><strong>{{ today_context.news_basis }}:</strong> {{ today_context.news_context }}</p>{% endif %}
 	            </article>
 	            <article class="stock-today-item">
 	                <span class="stock-premium-label">Risk today</span>
@@ -15122,7 +15221,7 @@ stock_detail_html = """
 	        <summary>Understand the Business</summary>
 	        <div class="stock-business-body">
 	            <div class="stock-business-basis">
-	                <span>{{ business_education.basis_label }}</span>
+	                <span>{{ business_education.basis_label }}</span><p>{{ business_education.evidence_note }}</p>
 	                <span>{{ business_education.education_type }}</span>
 	                <span>{{ stock_identity(symbol, business_education.company_name, 'compact') }}</span>
 	            </div>
