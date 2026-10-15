@@ -1,0 +1,85 @@
+{
+  "fixture": "Authenticated stock page; existing local recommendation data; unavailable financial/news data; external requests blocked.",
+  "results": [
+    {
+      "width": 1440,
+      "reportWidth": 1344,
+      "reportScrollWidth": 1342,
+      "documentWidth": 1440,
+      "viewport": 1440,
+      "columns": 2,
+      "headings": [
+        "Start with the evidence behind the signal",
+        "Understand the opportunity",
+        "Know what could weaken the case",
+        "Key fundamentals",
+        "How this may fit in a portfolio",
+        "See what matters next",
+        "A research checklist, before a decision"
+      ],
+      "missingImages": 0,
+      "keyboardDisclosure": true,
+      "expandedScoreNoOverflow": true
+    },
+    {
+      "width": 900,
+      "reportWidth": 868,
+      "reportScrollWidth": 866,
+      "documentWidth": 900,
+      "viewport": 900,
+      "columns": 2,
+      "headings": [
+        "Start with the evidence behind the signal",
+        "Understand the opportunity",
+        "Know what could weaken the case",
+        "Key fundamentals",
+        "How this may fit in a portfolio",
+        "See what matters next",
+        "A research checklist, before a decision"
+      ],
+      "missingImages": 0,
+      "keyboardDisclosure": true,
+      "expandedScoreNoOverflow": true
+    },
+    {
+      "width": 390,
+      "reportWidth": 358,
+      "reportScrollWidth": 356,
+      "documentWidth": 390,
+      "viewport": 390,
+      "columns": 1,
+      "headings": [
+        "Start with the evidence behind the signal",
+        "Understand the opportunity",
+        "Know what could weaken the case",
+        "Key fundamentals",
+        "How this may fit in a portfolio",
+        "See what matters next",
+        "A research checklist, before a decision"
+      ],
+      "missingImages": 0,
+      "keyboardDisclosure": true,
+      "expandedScoreNoOverflow": true
+    },
+    {
+      "width": 320,
+      "reportWidth": 288,
+      "reportScrollWidth": 286,
+      "documentWidth": 320,
+      "viewport": 320,
+      "columns": 1,
+      "headings": [
+        "Start with the evidence behind the signal",
+        "Understand the opportunity",
+        "Know what could weaken the case",
+        "Key fundamentals",
+        "How this may fit in a portfolio",
+        "See what matters next",
+        "A research checklist, before a decision"
+      ],
+      "missingImages": 0,
+      "keyboardDisclosure": true,
+      "expandedScoreNoOverflow": true
+    }
+  ]
+}

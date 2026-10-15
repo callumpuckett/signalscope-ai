@@ -1,0 +1,94 @@
+{% set research = intelligence_report %}
+<link rel="stylesheet" href="{{ url_for('static', filename='intelligence-report.css') }}">
+<section class="intelligence-report" id="intelligence-report" aria-labelledby="intelligence-title">
+  <header class="intelligence-hero">
+    <p class="intelligence-kicker">StockRadar Premium · Intelligence Report</p>
+    <h2 id="intelligence-title">{{ stock_display_label(symbol) }}</h2>
+    <p class="intelligence-promise">Understand the opportunity. Know the risks. See what matters next.</p>
+    <p class="intelligence-caption">One structured research review, bringing the signal, business context and portfolio questions together. Educational research, not a personalised investment recommendation.</p>
+  </header>
+
+  <section class="intelligence-section" aria-labelledby="intelligence-overview">
+    <p class="intelligence-kicker">01 · Investment Overview</p>
+    <h3 id="intelligence-overview">Start with the evidence behind the signal</h3>
+    <div class="intelligence-overview-grid">
+      <div class="intelligence-score"><span>Decision Score</span><strong>{% if research.score %}{{ research.score.opportunity_score }}<small>/100</small>{% else %}Unavailable{% endif %}</strong><p>Heuristic opportunity ranking</p></div>
+      <div class="intelligence-signal"><span class="intelligence-label">Overall signal</span><strong>{{ research.signal }}</strong><p>Input confidence: {{ research.confidence }} · {{ research.strength }}</p><p>{{ research.overview_meaning }}</p></div>
+    </div>
+    <aside class="intelligence-basis"><strong>{{ research.provenance.signal_source_label }}</strong><p>{{ research.provenance.signal_data_note }}</p><p>Signal confidence and Decision Score are different measures. Neither is a probability of returns.</p></aside>
+    <details class="intelligence-details">
+      <summary>How the Decision Score is built</summary>
+      {% if research.score %}
+      <dl class="intelligence-components">
+        {% for label, key, maximum in [('Signal', 'signal_score', 25), ('Confidence input', 'conviction_score', 25), ('Signal-derived momentum', 'momentum_score', 20), ('Fundamentals category · heuristic', 'fundamentals_score', 15), ('Risk category · heuristic', 'risk_score', 10), ('Valuation allowance · heuristic', 'valuation_score', 5)] %}
+        <div><dt>{{ label }}</dt><dd>{{ research.score[key] }} / {{ maximum }}</dd></div>
+        {% endfor %}
+      </dl>
+      <p>Signal and confidence use the existing recommendation input. Momentum points derive from the signal. Fundamentals use fixed quality/fund/other ticker categories (15/12/10 points); valuation uses a fixed fund/other allowance (4/3 points). Risk points use signal and fixed volatility/fund categories. These categories are not measured financial analysis or a fair-value estimate.</p>
+      {% else %}<p>Decision Score unavailable because the signal’s source is unavailable. No score has been inferred from the default preview.</p>{% endif %}
+    </details>
+  </section>
+
+  <div class="intelligence-case-grid">
+    <section class="intelligence-section" aria-labelledby="intelligence-opportunities">
+      <p class="intelligence-kicker">02 · Opportunities</p>
+      <h3 id="intelligence-opportunities">Understand the opportunity</h3>
+      <h4>Existing AI Reasoning</h4><p>{{ research.signal_reason }}</p>
+      <p class="intelligence-caption">Interpret this explanation with the source and freshness limits above. It is not independently verified business evidence.</p>
+      <h4>Potential growth drivers · education</h4><p>{{ research.business.growth_drivers }}</p>
+      <h4>What could strengthen the business case</h4><p>{{ research.business.strengthen_case }}</p>
+      <p class="intelligence-empty">Verified company strengths and recent positive developments are unavailable unless supported by the evidence or attributed headlines below. Potential drivers describe questions to research, not established outcomes.</p>
+      <details class="intelligence-details"><summary>Understand the Business</summary><p class="intelligence-label">{{ research.business.basis_label }}</p><p>{{ research.business.evidence_note }}</p><h4>{{ 'What exposure the fund generally provides' if research.business.is_etf else 'How the company generally makes money' }}</h4><p>{{ research.business.business_model }}</p>{% if research.business.is_etf %}<p>{{ research.business.holdings_check }}</p>{% endif %}</details>
+    </section>
+    <section class="intelligence-section intelligence-risk" aria-labelledby="intelligence-risks">
+      <p class="intelligence-kicker">03 · Risks</p>
+      <h3 id="intelligence-risks">Know what could weaken the case</h3>
+      <h4>Risk Read · {{ research.risk_level }}</h4><p>{{ research.risk }}</p>
+      <h4>Valuation uncertainty</h4><p>The score’s valuation allowance is heuristic. It does not establish whether this stock is cheap or expensive. Compare available valuation evidence with the company’s financial reports and relevant peers.</p>
+      <h4>Business and market uncertainties · education</h4><p>{{ research.business.business_risks }}</p>
+      <h4>What would weaken the investment case?</h4><p>{{ research.weaker_evidence }}</p><p>{{ research.business.weaken_case }}</p>
+      <p class="intelligence-caption">Risk prompts reflect the existing signal and general business context. They are not a comprehensive assessment of current company risks.</p>
+    </section>
+  </div>
+
+  <section class="intelligence-section" aria-labelledby="intelligence-financials">
+    <p class="intelligence-kicker">Supporting evidence · available provider data</p>
+    <h3 id="intelligence-financials">Key fundamentals</h3>
+    {% if research.fundamentals %}
+    <div class="intelligence-metrics">{% for metric in research.fundamentals %}<div data-fundamental="{{ metric.key }}"><span>{{ metric.label }}</span><strong>{{ metric.value }}</strong></div>{% endfor %}</div>
+    {% else %}<p class="intelligence-empty">Financial metrics unavailable for this report. No financial strength or valuation conclusion has been inferred.</p>{% endif %}
+    <p class="intelligence-caption">{{ research.financial_state }}{% if research.financial_retrieved_at %} · Retrieved {{ research.financial_retrieved_at }}{% endif %}. Retrieval time is not the financial reporting period or a live quote timestamp. Reporting periods are unavailable here.</p>
+    <p class="intelligence-caption">{{ research.financial_source }}</p>
+  </section>
+
+  <section class="intelligence-section" aria-labelledby="intelligence-portfolio">
+    <p class="intelligence-kicker">04 · Portfolio Intelligence</p>
+    <h3 id="intelligence-portfolio">How this may fit in a portfolio</h3>
+    <p class="intelligence-label">{{ research.sector }} · {{ research.portfolio_role }}</p>
+    <p>{{ research.portfolio_builder.role_meaning }}</p><p>{{ research.decision_use }}</p>
+    <div class="intelligence-two-column">
+      <div><h4>Portfolio overlap to check</h4><p>{{ research.portfolio_builder.overlap }}</p><p>{{ research.concentration_note }}</p></div>
+      <div><h4>Core or satellite?</h4><p>{{ research.portfolio_builder.core_label }}</p><p>{{ research.portfolio_builder.core_or_satellite }}</p></div>
+    </div>
+    <p class="intelligence-empty">Actual portfolio exposure and concentration are unavailable: this report has no holdings, position weights or fund look-through data. Sector and role classifications are educational; they do not establish your personal allocation.</p>
+    <details class="intelligence-details"><summary>Explore the Portfolio Fit assessment</summary><ul>{% for item in research.portfolio_fit_points %}<li>{{ item }}</li>{% endfor %}</ul><h4>Why position size matters</h4><p>{{ research.portfolio_builder.position_size }}</p><p>{{ research.portfolio_builder.position_question }}</p><h4>Before adding this holding</h4><ul>{% for item in research.portfolio_builder.checklist %}<li>{{ item }}</li>{% endfor %}</ul><h4>Portfolio mistake to avoid</h4><p>{{ research.portfolio_builder.mistake }}</p><h4>Portfolio principle</h4><p>{{ research.portfolio_builder.principle }}</p></details>
+  </section>
+
+  <section class="intelligence-section" aria-labelledby="intelligence-watch">
+    <p class="intelligence-kicker">05 · What to Watch Next</p>
+    <h3 id="intelligence-watch">See what matters next</h3>
+    <h4>Existing Watch-Next trigger</h4><p>{{ research.next_move }}</p>
+    <div class="intelligence-two-column"><div><h4>Evidence that could change the analysis</h4><p>{{ research.stronger_evidence }}</p></div><div><h4>One business question to research next</h4><p>{{ research.business.research_question }}</p></div></div>
+    <p>{% if research.upcoming %}<strong>Provider-listed next earnings:</strong> {{ research.upcoming }}. Confirm timing with the company.{% else %}A reliable upcoming event date is unavailable in this report.{% endif %}</p>
+    <h4>Available news context · cached headlines</h4>
+    {% if research.news %}<ul class="intelligence-news">{% for article in research.news %}<li><span class="intelligence-label">{{ article.basis }}</span><a href="{{ article.url }}" target="_blank" rel="noopener noreferrer">{{ article.title }}</a><p>{{ article.source }} · {{ article.published_at }}</p></li>{% endfor %}</ul><p class="intelligence-caption">Company-name mentions identify the headline’s subject; they do not independently verify the article’s claims. Sector or market associations are thematic links, not confirmed company developments. Cached headlines are not a complete or live news feed.</p>{% else %}<p class="intelligence-empty">Company-specific news and relevant sector headlines are unavailable in the existing cache. No company development has been inferred from a thematic match.</p>{% endif %}
+  </section>
+
+  <footer class="intelligence-section intelligence-closing">
+    <p class="intelligence-kicker">Before You Act</p><h3>A research checklist, before a decision</h3>
+    <ul>{% for item in research.checklist %}<li>{{ item }}</li>{% endfor %}</ul>
+    <details class="intelligence-details"><summary>Learn From This Stock</summary><p>{{ research.learning_lesson.lesson }}</p><p>{{ research.learning_lesson.why }}</p><p>{{ research.learning_lesson.question }}</p><h4>Common mistake to avoid</h4><p>{{ research.common_mistake }}</p></details>
+    <div class="intelligence-actions"><a href="/compare">Compare Stocks</a><a href="/portfolio-fit">Check Portfolio Fit</a><a href="/what-if">Explore What-If</a><a href="/premium-watchlist">Premium Watchlist</a></div>
+    <p class="intelligence-caption">StockRadar Premium — structured investment research for £5/month. Signals and scores are research prompts, not investment instructions or return forecasts.</p>
+  </footer>
+</section>

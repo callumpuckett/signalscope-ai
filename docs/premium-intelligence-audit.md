@@ -129,3 +129,9 @@ responsive feed, security and performance-path regressions were also run. The kn
 navigation breakpoint assertion reproduced before final validation and remains
 unrelated; navigation styles were not changed. Final validation: 209 passed, 1 known unrelated breakpoint assertion deselected
 in 1.87 seconds. `git diff --check` passed.
+
+## Unified report follow-up
+
+The subsequently authorized unified report is implemented. See
+`premium-intelligence-report.md` for the reused functionality, access and cache
+boundaries, validation evidence, screenshots and remaining data limitations.

@@ -1,0 +1,15 @@
+{
+  "before": {
+    "median_ms": 12.18,
+    "p95_ms": 15.85,
+    "html_bytes": 62990,
+    "requests": 20
+  },
+  "after": {
+    "median_ms": 8.01,
+    "p95_ms": 8.22,
+    "html_bytes": 51890,
+    "requests": 20
+  },
+  "method": "Local Flask test-client benchmark, 5 warmups + 20 measured authenticated stock requests per version; identical preloaded signal; provider calls stubbed unavailable. Compares rendering/composition, not live network latency."
+}

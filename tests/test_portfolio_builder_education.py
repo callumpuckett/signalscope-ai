@@ -76,7 +76,7 @@ def test_premium_stock_pages_render_builder_in_the_expected_hierarchy():
         page = response.get_data(as_text=True)
 
         assert response.status_code == 200
-        assert "Premium decision summary" in page
+        assert "StockRadar Premium · Intelligence Report" in page
         assert "Learn From This Stock" in page
         assert "How this may fit in a portfolio" in page
         assert "Portfolio overlap to check" in page
@@ -85,9 +85,9 @@ def test_premium_stock_pages_render_builder_in_the_expected_hierarchy():
         assert "Before adding this holding" in page
         assert "Portfolio mistake to avoid" in page
         assert "Portfolio principle" in page
-        assert "Explore the reasoning" in page
-        assert page.index("Learn From This Stock") < page.index("How this may fit in a portfolio")
-        assert page.index("How this may fit in a portfolio") < page.index("Explore the reasoning")
+        assert "Explore the Portfolio Fit assessment" in page
+        assert page.index("How this may fit in a portfolio") < page.index("What to Watch Next")
+        assert page.index("What to Watch Next") < page.index("Learn From This Stock")
 
 
 def test_compare_portfolio_roles_is_premium_only():

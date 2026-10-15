@@ -187,14 +187,14 @@ def test_premium_stock_source_receives_both_phase18_sections():
     page = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "Today’s Context" in page
-    assert "Today’s Context can change" in page
+    assert "Investment Overview" in page
+    assert "Observation time unavailable" in page
     assert "UNIQUE_PHASE18_SETUP_REASON" in page
     assert "UNIQUE_PHASE18_FULL_RISK_VIEW" in page
     assert "UNIQUE_PHASE18_FULL_WATCH_NEXT" in page
     assert "Understand the Business" in page
     assert "General sector education" in page
     assert "How the company generally makes money" in page
-    assert page.index("Today’s Context") < page.index("Premium decision summary")
-    assert page.index("Think Before You Invest") < page.index("Understand the Business")
-    assert page.index("Understand the Business") < page.index("Explore the reasoning")
+    assert page.index("Investment Overview") < page.index("02 · Opportunities")
+    assert page.index("Understand the Business") < page.index("04 · Portfolio Intelligence")
+    assert page.index("04 · Portfolio Intelligence") < page.index("05 · What to Watch Next")

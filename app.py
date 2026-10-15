@@ -5804,6 +5804,87 @@ def get_premium_report(symbol, ai_context):
     }
 
 
+def build_intelligence_report(symbol, ai_context, financial_context=None):
+    """Compose existing research using local identity and already-loaded/cache-only data."""
+    symbol = canonical_stock_symbol(symbol)
+    provenance = signal_provenance(ai_context)
+    report = get_premium_report(symbol, ai_context)
+    universe_item = next((item for item in get_stock_universe()
+                          if item.get("ticker") == symbol), {})
+    sector = universe_item.get("sector") or SECTOR_MAP.get(symbol) or "Sector unavailable"
+    business = build_business_education(
+        symbol, sector, universe_item.get("name") or stock_display_label(symbol),
+        classify_portfolio_role(symbol),
+    )
+    # This helper never calls get_dividend_context or refreshes an existing cache.
+    cached, cached_context, _ = _cached_dividend_context(symbol, None, time.time())
+    financial = financial_context if financial_context is not None else cached_context
+    financial = financial if isinstance(financial, dict) and financial.get("ticker") == symbol else {}
+    cache_matches = bool(cached and financial and cached_context
+                         and financial.get("fundamentals") == cached_context.get("fundamentals"))
+    retrieved_at = None
+    financial_state = "Freshness unavailable"
+    if cache_matches and isinstance(cached.get("timestamp"), (int, float)):
+        stamp = cached["timestamp"]
+        if 0 < stamp <= time.time():
+            retrieved_at = datetime.fromtimestamp(stamp, timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+            ttl = (DIVIDEND_CONTEXT_UNAVAILABLE_CACHE_TTL_SECONDS
+                   if income_status_from_context(financial) == INCOME_STATUS_UNAVAILABLE
+                   else DIVIDEND_CONTEXT_CACHE_TTL_SECONDS)
+            financial_state = "Cached" if time.time() - stamp < ttl else "Stale cached data"
+    fundamentals = [dict(metric) for metric in (financial.get("fundamentals") or [])
+                    if isinstance(metric, dict) and metric.get("label") and metric.get("value")
+                    and metric.get("key") != "next-earnings"]
+    # A stored formatted earnings date must still be in the future and in a fresh cache.
+    upcoming = None
+    if financial_state == "Cached":
+        for metric in (financial.get("fundamentals") or []):
+            if isinstance(metric, dict) and metric.get("key") == "next-earnings":
+                try:
+                    event_date = datetime.strptime(str(metric.get("value", "")).split(" · ")[0], "%d %B %Y").date()
+                    if event_date >= datetime.now(timezone.utc).date():
+                        upcoming = metric["value"]
+                except ValueError:
+                    pass
+    news = []
+    # Read the completed local dashboard cache only; do not schedule a news refresh.
+    dashboard = DASHBOARD_CACHE.get("data") or {}
+    for item in (dashboard.get("live_headlines") or []):
+        if not isinstance(item, dict) or item.get("label") != "LIVE NEWS":
+            continue
+        association = next((entry.get("association") for entry in (item.get("stock_associations") or [])
+                            if isinstance(entry, dict) and entry.get("ticker") == symbol), None)
+        if association not in {"company_mention", "sector_or_market"}:
+            continue
+        url = str(item.get("article_url") or "")
+        try:
+            parsed = urlsplit(url)
+        except ValueError:
+            continue
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            continue
+        news.append({
+            "title": item.get("headline") or "Headline unavailable", "url": url,
+            "source": item.get("source") or "Source unavailable",
+            "published_at": signal_provenance({"signal_source": "supplied", "observed_at": item.get("published_at")})["observed_at"] or "Publication time unavailable",
+            "basis": "Company-name mention" if association == "company_mention" else "Sector or market association",
+        })
+        if len(news) >= 3:
+            break
+    score = opportunity_score_components(dict(ai_context, ticker=symbol))
+    return dict(report, **{
+        "provenance": provenance, "score": score if provenance["signal_source"] != "unavailable" else None,
+        "business": business, "sector": sector, "fundamentals": fundamentals,
+        "financial_state": financial_state, "financial_retrieved_at": retrieved_at,
+        "financial_source": financial.get("source_note") or "Financial source data unavailable.",
+        "upcoming": upcoming, "news": news,
+        "signal": ai_context.get("signal", "WATCH"),
+        "overview_meaning": (report["signal_meaning"] if provenance["signal_freshness"] == "current"
+                             else "This signal describes the direction of the existing research prompt. Its source or age does not establish current market conditions."),
+    })
+
+
+
 def compare_signal_rank(signal):
     return {
         "BUY": 3,
@@ -6496,9 +6577,10 @@ def stock_universe_page():
 
 @app.route("/premium-decision/<symbol>")
 def premium_decision(symbol):
+    if len(symbol) > 16:
+        return Response("Invalid ticker symbol.", status=400, mimetype="text/plain")
     cleaned_symbol = canonical_stock_symbol(symbol)
     ai_context = get_stock_ai_context(cleaned_symbol)
-    report = get_premium_report(cleaned_symbol, ai_context)
 
     if not premium_has_access():
         locked_html = """
@@ -6506,7 +6588,7 @@ def premium_decision(symbol):
         <html>
         <head>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Premium Decision Panel — StockRadar</title>
+        <title>Intelligence Report — StockRadar</title>
         {{ company_identity_assets() }}
         <style>
         *{box-sizing:border-box;}
@@ -6530,9 +6612,9 @@ def premium_decision(symbol):
         <div class="wrap">
             <a href="/stock/{{ symbol }}">← Back to {{ stock_identity(symbol, stock_display_label(symbol), 'compact') }}</a>
             <div class="card">
-                <p class="kicker">Premium Decision Layer</p>
-                <h1>{{ stock_identity(symbol, stock_display_label(symbol), 'detail', false) }} <span>Decision Panel</span></h1>
-                <p><strong>Free shows the signal. Premium explains the decision.</strong> It helps you ask better questions before acting without revealing the full Premium answer in this preview.</p>
+                <p class="kicker">StockRadar Premium</p>
+                <h1>{{ stock_identity(symbol, stock_display_label(symbol), 'detail', false) }} <span>Intelligence Report</span></h1>
+                <p><strong>Understand the opportunity. Know the risks. See what matters next.</strong> It helps you ask better questions before acting without revealing the full Premium answer in this preview.</p>
                 <div class="preview-grid">
                     <div class="preview"><strong>Why is this signal showing?</strong>Unlock the plain-English reasoning behind the headline prompt.</div>
                     <div class="preview"><strong>What could weaken it?</strong>See the risk evidence that would make the setup less useful.</div>
@@ -6552,182 +6634,19 @@ def premium_decision(symbol):
         """
         return render_template_string(locked_html, symbol=cleaned_symbol, context=ai_context)
 
-    panel_html = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ report.headline }} — StockRadar</title>
-    {{ company_identity_assets() }}
-    <style>
-    *{box-sizing:border-box;}
-    :root{--navy:#08111c;--panel:#111d2b;--panel-deep:#0b1623;--text:#f1f5f9;--muted:#aebdca;--green:#4adea3;--amber:#f0c36a;}
-    body{margin:0;background:radial-gradient(circle at 12% 6%,rgba(0,255,170,0.10),transparent 30%),linear-gradient(135deg,var(--navy),#101827);color:var(--text);font-family:Arial,sans-serif;min-height:100vh;}
-    .wrap{max-width:1212px;margin:0 auto;padding:46px;}
-    .back{display:inline-block;margin-bottom:22px;color:#69c9f2;font-weight:900;text-decoration:none;}
-    .card{background:linear-gradient(180deg,rgba(18,29,42,0.98),rgba(12,22,33,0.98));border:1px solid rgba(148,163,184,0.16);border-radius:28px;padding:30px;box-shadow:0 24px 70px rgba(0,0,0,0.32);margin-bottom:20px;}
-    .summary-card{padding:36px;background:linear-gradient(135deg,rgba(12,47,48,0.94),rgba(28,38,49,0.98) 62%,rgba(72,52,27,0.74));border-color:rgba(74,222,163,0.28);}
-    .kicker{color:var(--green);font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:11px;margin:0 0 9px;}
-    h1{font-size:clamp(34px,4.2vw,48px);line-height:1.06;margin:0 0 12px;letter-spacing:0;}
-    h2{font-size:clamp(23px,2.5vw,30px);line-height:1.16;margin:0 0 12px;color:var(--text);}
-    h3{font-size:19px;line-height:1.25;margin:0 0 12px;color:var(--text);}
-    p,li{color:var(--muted);line-height:1.65;}
-    ul{padding-left:22px;margin:12px 0 0;}
-    li{margin-bottom:8px;}
-    .identity-line{max-width:780px;margin:0 0 20px;}
-    .badges{display:flex;gap:9px;flex-wrap:wrap;margin:18px 0;}
-    .badge{display:inline-flex;align-items:center;min-height:34px;padding:7px 11px;border-radius:999px;border:1px solid rgba(148,163,184,0.22);background:rgba(7,17,28,0.60);color:#e5edf5;font-size:12px;font-weight:950;text-transform:uppercase;letter-spacing:0.07em;}
-    .badge.buy{border-color:rgba(74,222,128,0.34);color:#bbf7d0;}.badge.hold,.badge.watch{border-color:rgba(240,195,106,0.38);color:#fde68a;}.badge.sell{border-color:rgba(251,113,133,0.32);color:#fecdd3;}
-    .readiness{font-size:clamp(27px,3.3vw,38px);margin:0 0 10px;color:#fff;}
-    .action-frame{max-width:880px;margin:0;color:#e5edf5;font-size:18px;line-height:1.55;font-weight:800;}
-    .disclaimer{margin:18px 0 0;color:#9fb0bf;font-size:13px;line-height:1.55;}
-    .decision-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-bottom:20px;}
-    .decision-card{background:rgba(14,25,38,0.94);border:1px solid rgba(148,163,184,0.16);border-radius:22px;padding:22px;min-width:0;}
-    .card-label{display:block;margin-bottom:8px;color:var(--green);font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:0.1em;}
-    .primary-answer{display:block;color:#fff;font-size:20px;font-weight:950;line-height:1.3;overflow-wrap:anywhere;}
-    .support{display:block;margin-top:9px;color:var(--muted);font-size:14px;line-height:1.55;overflow-wrap:anywhere;}
-    .support strong{color:#dce8f1;}
-    .reminder{display:block;margin-top:11px;color:#93a6b7;font-size:12px;line-height:1.5;}
-    .caution{background:linear-gradient(145deg,rgba(106,76,24,0.34),rgba(14,25,38,0.96));border-color:rgba(240,195,106,0.30);}
-    .caution .card-label{color:#f6d88a;}
-    .lesson{background:rgba(74,222,163,0.07);border-color:rgba(74,222,163,0.20);}
-    .lesson p{margin:0;color:#d9eee6;font-size:16px;}
-    .learning-card{background:linear-gradient(145deg,rgba(21,42,55,0.96),rgba(13,27,40,0.98));border-color:rgba(105,201,242,0.22);}
-    .learning-card>p{margin:0;}.learning-subtitle{color:#c5d7e3;font-size:15px;}
-    .learning-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:18px;}
-    .learning-part{min-width:0;padding:16px;border-radius:16px;background:rgba(7,17,28,0.52);border:1px solid rgba(148,163,184,0.14);}
-    .learning-part span{display:block;margin-bottom:7px;color:#86d8f5;font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:0.1em;}
-    .learning-part p{margin:0;color:#d7e2ea;font-size:14px;line-height:1.58;}
-    .learning-goal{margin-top:16px!important;color:#9fb0bf!important;font-size:13px;line-height:1.55;}
-    .supporting h2{margin-bottom:6px;}.supporting>p{margin:0 0 16px;}
-    details{background:rgba(7,17,28,0.56);border:1px solid rgba(148,163,184,0.14);border-radius:17px;margin-top:10px;overflow:hidden;}
-    summary{display:flex;align-items:center;min-height:48px;padding:13px 16px;color:#eef5fa;font-weight:900;cursor:pointer;line-height:1.35;}
-    summary:focus-visible{outline:3px solid rgba(105,201,242,0.72);outline-offset:-3px;}
-    .detail-body{padding:0 16px 16px;}.detail-body p:last-child{margin-bottom:0;}
-    .breakdown{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
-    .breakdown-item{background:rgba(148,163,184,0.06);border-radius:14px;padding:14px;color:var(--muted);line-height:1.55;}
-    .breakdown-item strong{display:block;color:#e9f1f7;margin-bottom:4px;}
-    .button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;border-radius:15px;padding:12px 18px;font-weight:950;text-decoration:none;margin-top:14px;}
-    .identity-note{margin:18px 0 0;color:#aebdca;font-size:13px;line-height:1.55;}
-    @media(max-width:900px){.wrap{padding:24px 16px;}.card,.summary-card{padding:24px 20px;border-radius:24px;}.decision-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.decision-card:last-child{grid-column:1/-1;}.breakdown,.learning-grid{grid-template-columns:1fr;}}
-    @media(max-width:640px){.decision-grid{grid-template-columns:1fr;}.decision-card:last-child{grid-column:auto;}.action-frame{font-size:16px;}.badges{gap:7px;}.badge{font-size:11px;}.button{width:100%;text-align:center;}.summary-card{padding:24px 18px;}}
-    </style>
-    </head>
-    <body>
-    {{ stockradar_header_navigation('app') | safe }}
-    <main class="wrap">
-        <a class="back" href="/stock/{{ symbol }}">← Back to {{ stock_identity(symbol, stock_display_label(symbol), 'compact') }}</a>
-
-        <section class="card summary-card" aria-labelledby="premium-summary-heading">
-            <p class="kicker">Premium decision summary</p>
-            <h1 id="premium-summary-heading">{{ stock_identity(symbol, stock_display_label(symbol), 'detail', false) }}</h1>
-            <p class="identity-line">Each Premium report is designed to help you understand the decision process, not simply copy a signal.</p>
-            <div class="badges" aria-label="Current signal and confidence">
-                <span class="badge {{ context.signal|lower }}">Signal: {{ context.signal }}</span>
-                <span class="badge">Confidence: {{ report.confidence }}</span>
-            </div>
-            <p>{{ context.signal_data_note }}</p>
-            <h2 class="readiness">{{ report.readiness }}</h2>
-            <p class="action-frame">{{ report.action_frame }}</p>
-            <p class="disclaimer">Educational decision support only. This is a research prompt, not a personalised recommendation.</p>
-        </section>
-
-        <section class="decision-grid" aria-label="Practical decision points">
-            <article class="decision-card">
-                <span class="card-label">Risk to check</span>
-                <strong class="primary-answer">{{ report.risk_level }}</strong>
-                <span class="support">{{ report.risk }}</span>
-            </article>
-            <article class="decision-card">
-                <span class="card-label">Portfolio fit</span>
-                <strong class="primary-answer">{{ report.portfolio_role }}</strong>
-                <span class="support">{{ report.decision_use }}</span>
-                <span class="support"><strong>Exposure check:</strong> {{ report.concentration_note }}</span>
-                <span class="reminder">Portfolio fit depends on your own goals, circumstances, time horizon and existing exposure.</span>
-            </article>
-            <article class="decision-card">
-                <span class="card-label">Watch next</span>
-                <strong class="primary-answer">Next research trigger</strong>
-                <span class="support">{{ report.next_move }}</span>
-                <span class="support"><strong>What would improve the case:</strong> {{ report.stronger_evidence }}</span>
-            </article>
-        </section>
-
-        <aside class="card caution" aria-labelledby="mistake-heading">
-            <span class="card-label">Investor caution</span>
-            <h2 id="mistake-heading">Common mistake to avoid</h2>
-            <p>{{ report.common_mistake }}</p>
-        </aside>
-
-        <section class="card lesson" aria-labelledby="lesson-heading">
-            <span class="card-label">Investor lesson</span>
-            <h2 id="lesson-heading">What this teaches you</h2>
-            <p>{{ report.investor_lesson }}</p>
-        </section>
-
-        <section class="card learning-card" aria-labelledby="learning-heading">
-            <span class="card-label">Premium investing principle</span>
-            <h2 id="learning-heading">Learn From This Stock</h2>
-            <p class="learning-subtitle">This investing principle can help with future decisions.</p>
-            <div class="learning-grid">
-                <div class="learning-part"><span>Lesson</span><p>{{ report.learning_lesson.lesson }}</p></div>
-                <div class="learning-part"><span>Why investors care</span><p>{{ report.learning_lesson.why }}</p></div>
-                <div class="learning-part"><span>Question to ask yourself</span><p>{{ report.learning_lesson.question }}</p></div>
-            </div>
-            <p class="learning-goal">The goal is to help you understand investing principles, not memorise stock signals.</p>
-        </section>
-
-        <section class="card supporting" aria-labelledby="supporting-heading">
-            <p class="kicker">Supporting detail</p>
-            <h2 id="supporting-heading">Explore the reasoning</h2>
-            <p>Open the sections that are useful for your research. The essential decision points stay visible above.</p>
-            <details open>
-                <summary>Why this signal?</summary>
-                <div class="detail-body">
-                    <p><strong>Plain-English meaning:</strong> {{ report.signal_meaning }}</p>
-                    <p><strong>Why it is showing:</strong> {{ report.signal_reason }}</p>
-                    <p><strong>How to read confidence:</strong> {{ report.confidence_read }}</p>
-                </div>
-            </details>
-            <details>
-                <summary>What would weaken the case?</summary>
-                <div class="detail-body"><p>{{ report.weaker_evidence }}</p></div>
-            </details>
-            <details>
-                <summary>Portfolio fit checklist</summary>
-                <div class="detail-body">
-                    <ul>{% for item in report.portfolio_fit_points %}<li>{{ item }}</li>{% endfor %}</ul>
-                    <a class="button" href="/portfolio-fit">Check Portfolio Fit</a>
-                </div>
-            </details>
-            <details>
-                <summary>Before you decide checklist</summary>
-                <div class="detail-body"><ul>{% for item in report.checklist %}<li>{{ item }}</li>{% endfor %}</ul></div>
-            </details>
-            <details>
-                <summary>Decision score breakdown</summary>
-                <div class="detail-body">
-                    <p>This structured research read uses the existing signal, confidence, risk and portfolio-role context. It is not a precise prediction.</p>
-                    <div class="breakdown">
-                        {% for item in report.score_breakdown %}<div class="breakdown-item"><strong>{{ item.label }}</strong>{{ item.text }}</div>{% endfor %}
-                    </div>
-                </div>
-            </details>
-            <p class="identity-note">Premium helps you practise risk awareness, portfolio thinking, evidence-based research and patience so you can make more independent decisions.</p>
-        </section>
-        {{ disclaimer_footer() | safe }}
-    </main>
-    {{ newsletter_side_tab() | safe }}
-    </body>
-    </html>
-    """
-
+    report = build_intelligence_report(cleaned_symbol, ai_context)
     return render_template_string(
-        panel_html,
-        symbol=cleaned_symbol,
-        context=ai_context,
-        report=report,
-    )
+        """<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>StockRadar Intelligence Report — {{ stock_display_label(symbol) }}</title>
+        {{ company_identity_assets() }}
+        <style>body{margin:0;background:#08111c;color:#eef4f8;font-family:Arial,sans-serif}
+        main{max-width:1180px;margin:auto;padding:32px 20px}a{color:#69c9f2}</style></head><body>
+        {{ stockradar_header_navigation('app') | safe }}<main>
+        <p><a href="/stock/{{ symbol }}">← Back to stock research</a></p>
+        {% include 'intelligence_report.html' %}
+        {{ disclaimer_footer() | safe }}</main></body></html>""",
+        symbol=cleaned_symbol, intelligence_report=report,
+    ), 200, {"Cache-Control": "no-store, max-age=0", "Vary": "Cookie"}
 
 
 opportunity_alerts_html = """
@@ -8844,6 +8763,7 @@ def build_live_headlines(recommendations, impact_radar):
             "stock_url": f"/stock/{primary_stock}",
             "stock_text": stock_text,
             "stock_associations": associations,
+            "published_at": str(article.get("published_at") or ""),
             "association_note": "Headline mentions and thematic links; company claims are not independently verified.",
             "stock_links": [dict(link, association=association["association"])
                             for link, association in zip(build_stock_links_with_signals(matched_stocks, signal_lookup), associations)],
@@ -14985,10 +14905,16 @@ stock_detail_html = """
 {{ stockradar_header_navigation('app') | safe }}
 <div class="card"><p><a href="/">← Back to Dashboard</a></p><h1>{{ stock_identity(symbol, stock_display_label(symbol), 'detail', false) }} <span>Stock Detail</span></h1><p style="color:#94a3b8;">Price history for {{ range_label }} (cached or delayed provider data). Use the buttons below to change timeframe.</p></div>
 
+{% if not has_premium_access %}
 	<div class="ai-grid"><div class="ai-card"><small>{% if has_premium_access %}Current Signal{% else %}Free Signal Preview{% endif %}</small><h2 class="{% if ai_context.signal == 'BUY' %}buy{% elif ai_context.signal == 'SELL' %}sell{% elif ai_context.signal == 'HOLD' %}hold{% endif %}">{{ ai_context.signal }}</h2><p>The headline signal shows what the scanner is flagging for {{ stock_display_label(symbol) }}.</p><p class="muted">{{ ai_context.signal_data_note }}</p><span class="signal-badge">Stock research page: {{ stock_display_label(symbol) }}</span></div><div class="ai-card warning"><small>{% if has_premium_access %}Current Confidence{% else %}Free Confidence Preview{% endif %}</small><div class="confidence-large">{{ ai_context.confidence }}</div><div class="free-meter">{{ ai_context.confidence_meter }}</div><span class="free-strength">Signal strength: {{ ai_context.strength_label }}</span><p style="margin-top:12px;">The score and meter are a research prompt. Premium explains how to interpret them, what risk to check and what evidence matters next.</p></div><div class="ai-card risk"><small>{% if has_premium_access %}Premium Active{% else %}Premium Preview{% endif %}</small><h2>Decision context</h2>{% if has_premium_access %}<p>The Premium report below puts the simple answer first, followed by practical checks and optional supporting detail.</p><span class="signal-badge">Premium unlocked</span>{% else %}<p>Premium explains the decision layer behind {{ stock_display_label(symbol) }}: risk level, portfolio role, concentration warning and the next trigger to watch.</p><a class="signal-badge" href="/upgrade">Explore Premium</a>{% endif %}</div></div>
+{% endif %}
+
+{% if has_premium_access and intelligence_report %}
+{% include 'intelligence_report.html' %}
+{% endif %}
 
 {% set fundamentals = dividend_context.get('fundamentals', []) if dividend_context else [] %}
-{% if fundamentals %}
+{% if fundamentals and not has_premium_access %}
 <section class="card stock-fundamentals" aria-labelledby="stock-fundamentals-heading">
     <p class="kicker">Supporting data</p>
     <h2 id="stock-fundamentals-heading">Key fundamentals</h2>
@@ -15003,7 +14929,7 @@ stock_detail_html = """
 </section>
 {% endif %}
 
-	{% if not has_premium_access %}<div class="premium-banner stock-locked-preview"><div><small>Premium locked preview</small><h2>Free shows the signal. Premium explains the decision.</h2><p>Premium is the calm education layer behind the {{ ai_context.signal }} prompt. It helps you understand the questions that matter before acting without adding another screen of market noise.</p><div class="premium-preview-grid"><div class="premium-preview-item"><strong>Why is this signal showing?</strong><span>Unlock the plain-English reasoning behind the current research prompt.</span></div><div class="premium-preview-item"><strong>What could weaken it?</strong><span>See which risk evidence would make the case less useful.</span></div><div class="premium-preview-item"><strong>Could it duplicate exposure?</strong><span>Check possible sector, ETF, theme or mega-cap overlap.</span></div><div class="premium-preview-item"><strong>Where might it fit?</strong><span>Review core, growth, defensive, income, cyclical or speculative context.</span></div><div class="premium-preview-item"><strong>What should I watch next?</strong><span>Define the next signal, price or business evidence to review.</span></div><div class="premium-preview-item"><strong>What mistake should I avoid?</strong><span>See the beginner trap linked to this type of signal.</span></div></div></div><div class="premium-cta-box"><strong>Unlock the {{ stock_display_label(symbol) }} Decision Panel</strong><p>Includes signal meaning, risk checks, portfolio fit, a beginner-mistake warning, watch-next trigger and Before You Act checklist.</p><a class="payment-button" href="/upgrade">Upgrade to Premium</a><div class="payment-note"><a href="/premium-decision/{{ symbol }}">View the locked decision-panel preview</a></div><div class="payment-note">Helpful research context only. No investment advice or return promises.</div></div></div>{% endif %}
+	{% if not has_premium_access %}<div class="premium-banner stock-locked-preview"><div><small>Premium locked preview</small><h2>Free shows the signal. Premium explains the decision.</h2><p>Premium is the calm education layer behind the {{ ai_context.signal }} prompt. It helps you understand the questions that matter before acting without adding another screen of market noise.</p><div class="premium-preview-grid"><div class="premium-preview-item"><strong>Why is this signal showing?</strong><span>Unlock the plain-English reasoning behind the current research prompt.</span></div><div class="premium-preview-item"><strong>What could weaken it?</strong><span>See which risk evidence would make the case less useful.</span></div><div class="premium-preview-item"><strong>Could it duplicate exposure?</strong><span>Check possible sector, ETF, theme or mega-cap overlap.</span></div><div class="premium-preview-item"><strong>Where might it fit?</strong><span>Review core, growth, defensive, income, cyclical or speculative context.</span></div><div class="premium-preview-item"><strong>What should I watch next?</strong><span>Define the next signal, price or business evidence to review.</span></div><div class="premium-preview-item"><strong>What mistake should I avoid?</strong><span>See the beginner trap linked to this type of signal.</span></div></div></div><div class="premium-cta-box"><strong>Unlock the {{ stock_display_label(symbol) }} Intelligence Report</strong><p>Includes signal meaning, risk checks, portfolio fit, a beginner-mistake warning, watch-next trigger and Before You Act checklist.</p><a class="payment-button" href="/upgrade">Upgrade to Premium</a><div class="payment-note"><a href="/premium-decision/{{ symbol }}">Preview the Intelligence Report</a></div><div class="payment-note">Helpful research context only. No investment advice or return promises.</div></div></div>{% endif %}
 
 {% if dividend_context %}
 {% set income_status = income_status_from_context(dividend_context) %}
@@ -15047,255 +14973,6 @@ stock_detail_html = """
 
 <div class="card" style="background:linear-gradient(135deg,rgba(0,255,170,0.12),rgba(56,189,248,0.08));border-color:rgba(0,255,170,0.22);"><small style="color:#00ffaa;font-weight:950;text-transform:uppercase;letter-spacing:0.1em;">StockRadar Weekly</small><h2>Get weekly signal highlights</h2><p style="color:#cbd5e1;line-height:1.7;">StockRadar Weekly sends a plain-English market signal recap, including what’s strengthening, what’s weakening and what deserves attention next.</p><a class="payment-button" href="/newsletter">Join StockRadar Weekly</a></div>
 
-	{% if has_premium_access and example_report %}
-	<section class="stock-premium-report" aria-labelledby="stock-premium-summary-heading">
-	    <section class="stock-today-context" aria-labelledby="stock-today-context-heading">
-	        <span class="stock-premium-label">Premium current context</span>
-	        <h2 id="stock-today-context-heading">Today’s Context</h2>
-	        <p class="stock-today-intro">The current StockRadar research prompt, using the same live context shown across this report.</p>
-	        <div class="stock-today-grid">
-	            <article class="stock-today-item">
-	                <span class="stock-premium-label">Current signal</span>
-	                <strong>{{ today_context.signal }}</strong>
-	                <p>{{ today_context.plain_english_summary }}</p>
-	            </article>
-	            <article class="stock-today-item">
-	                <span class="stock-premium-label">Confidence</span>
-	                <strong>{{ today_context.confidence_label }}</strong>
-	                {% if today_context.momentum_view %}<p>{{ today_context.momentum_view }}</p>{% endif %}
-	            </article>
-	            <article class="stock-today-item">
-	                <span class="stock-premium-label">Why this setup is showing</span>
-	                <strong>Existing StockRadar reason</strong>
-	                <p>{{ today_context.setup_reason }}</p>
-	                {% if today_context.news_context %}<p><strong>{{ today_context.news_basis }}:</strong> {{ today_context.news_context }}</p>{% endif %}
-	            </article>
-	            <article class="stock-today-item">
-	                <span class="stock-premium-label">Risk today</span>
-	                <strong>Current risk view</strong>
-	                <p>{{ today_context.risk_today }}</p>
-	            </article>
-	            <article class="stock-today-item">
-	                <span class="stock-premium-label">Watch next</span>
-	                <strong>Next research trigger</strong>
-	                <p>{{ today_context.watch_next }}</p>
-	            </article>
-	        </div>
-	        <p class="stock-today-note">Today’s Context can change as price action, signals and relevant news update.</p>
-	    </section>
-
-	    <div class="stock-premium-summary">
-	        <span class="stock-premium-label">Premium decision summary</span>
-	        <h2 id="stock-premium-summary-heading">{{ stock_identity(symbol, stock_display_label(symbol), 'detail', false) }}</h2>
-	        <p class="premium-identity">Each Premium report is designed to help you understand the decision process, not simply copy a signal.</p>
-	        <div class="stock-premium-badges" aria-label="Current signal and confidence">
-	            <span class="stock-premium-badge {{ ai_context.signal|lower }}">Signal: {{ ai_context.signal }}</span>
-	            <span class="stock-premium-badge">Confidence: {{ example_report.confidence }}</span>
-	        </div>
-	        <strong class="stock-premium-readiness">{{ example_report.readiness }}</strong>
-	        <p class="stock-premium-action">{{ example_report.action_frame }}</p>
-	        <p class="stock-premium-disclaimer">Educational decision support only. This is a research prompt, not a personalised recommendation.</p>
-	    </div>
-
-	    <div class="stock-decision-grid" aria-label="Practical decision points">
-	        <article class="stock-decision-card">
-	            <span class="stock-premium-label">Risk to check</span>
-	            <strong class="stock-decision-answer">{{ example_report.risk_level }}</strong>
-	            <span class="stock-decision-support">{{ example_report.risk }}</span>
-	        </article>
-	        <article class="stock-decision-card">
-	            <span class="stock-premium-label">Portfolio fit</span>
-	            <strong class="stock-decision-answer">{{ example_report.portfolio_role }}</strong>
-	            <span class="stock-decision-support">{{ example_report.decision_use }}</span>
-	            <span class="stock-decision-support"><strong>Exposure check:</strong> {{ example_report.concentration_note }}</span>
-	            <span class="stock-decision-reminder">Portfolio fit depends on your own goals, circumstances, time horizon and existing exposure.</span>
-	        </article>
-	        <article class="stock-decision-card">
-	            <span class="stock-premium-label">Watch next</span>
-	            <strong class="stock-decision-answer">Next research trigger</strong>
-	            <span class="stock-decision-support">{{ example_report.next_move }}</span>
-	            <span class="stock-decision-support"><strong>What would improve the case:</strong> {{ example_report.stronger_evidence }}</span>
-	        </article>
-	    </div>
-
-	    <aside class="stock-premium-callout" aria-labelledby="stock-mistake-heading">
-	        <span class="stock-premium-label">Investor caution</span>
-	        <h3 id="stock-mistake-heading">Common mistake to avoid</h3>
-	        <p>{{ example_report.common_mistake }}</p>
-	    </aside>
-
-	    <div class="stock-investor-lesson" aria-labelledby="stock-lesson-heading">
-	        <span class="stock-premium-label">Investor lesson</span>
-	        <h3 id="stock-lesson-heading">What this teaches you</h3>
-	        <p>{{ example_report.investor_lesson }}</p>
-	    </div>
-
-	    <div class="stock-learning-card" aria-labelledby="stock-learning-heading">
-	        <span class="stock-premium-label">Premium investing principle</span>
-	        <h3 id="stock-learning-heading">Learn From This Stock</h3>
-	        <p class="stock-learning-subtitle">This investing principle can help with future decisions.</p>
-	        <div class="stock-learning-grid">
-	            <div class="stock-learning-part"><span>Lesson</span><p>{{ example_report.learning_lesson.lesson }}</p></div>
-	            <div class="stock-learning-part"><span>Why investors care</span><p>{{ example_report.learning_lesson.why }}</p></div>
-	            <div class="stock-learning-part"><span>Question to ask yourself</span><p>{{ example_report.learning_lesson.question }}</p></div>
-	        </div>
-	        <p class="stock-learning-goal">The goal is to help you understand investing principles, not memorise stock signals.</p>
-	    </div>
-
-	    {% set portfolio = example_report.portfolio_builder %}
-	    <section class="stock-portfolio-builder" aria-labelledby="stock-portfolio-builder-heading">
-	        <span class="stock-premium-label">Premium portfolio education</span>
-	        <h3 id="stock-portfolio-builder-heading">How this may fit in a portfolio</h3>
-	        <p>Understand the role, overlap and risk questions to consider before adding another holding.</p>
-
-	        <article class="stock-portfolio-role" aria-labelledby="stock-portfolio-role-heading">
-	            <h4 id="stock-portfolio-role-heading">Likely portfolio role</h4>
-	            <strong>{{ portfolio.role_label }}</strong>
-	            <p>{{ portfolio.role_meaning }}</p>
-	            <p><b>How investors often use it:</b> {{ portfolio.role_use }}</p>
-	            <p class="stock-portfolio-caution"><b>Educational caution:</b> {{ portfolio.role_caution }}</p>
-	        </article>
-
-	        <div class="stock-portfolio-grid">
-	            <article class="stock-portfolio-card">
-	                <h4>Portfolio overlap to check</h4>
-	                <strong>{{ portfolio.overlap }}</strong>
-	            </article>
-	            <article class="stock-portfolio-card">
-	                <h4>Core or satellite?</h4>
-	                <strong>{{ portfolio.core_label }}</strong>
-	                <p>{{ portfolio.core_or_satellite }}</p>
-	            </article>
-	            <article class="stock-portfolio-card">
-	                <h4>Why position size matters</h4>
-	                <p>{{ portfolio.position_size }}</p>
-	                <p class="stock-position-question">{{ portfolio.position_question }}</p>
-	            </article>
-	            <article class="stock-portfolio-card caution">
-	                <h4>Portfolio mistake to avoid</h4>
-	                <strong>{{ portfolio.mistake }}</strong>
-	            </article>
-	        </div>
-
-	        <div class="stock-portfolio-checklist">
-	            <h4>Before adding this holding</h4>
-	            <ul>{% for item in portfolio.checklist %}<li>{{ item }}</li>{% endfor %}</ul>
-	        </div>
-
-	        <aside class="stock-portfolio-principle" aria-labelledby="stock-portfolio-principle-heading">
-	            <h4 id="stock-portfolio-principle-heading">Portfolio principle</h4>
-	            <p>{{ portfolio.principle }}</p>
-	        </aside>
-	        <p class="stock-portfolio-note">Portfolio examples are general education only. Appropriate diversification and position size depend on personal circumstances, goals and risk tolerance.</p>
-	    </section>
-
-	    <section class="stock-psychology" aria-labelledby="stock-psychology-heading">
-	        <span class="stock-premium-label">Premium investor psychology</span>
-	        <h3 id="stock-psychology-heading">Think Before You Invest</h3>
-	        <p>A strong investing process includes checking your own thinking—not just the stock.</p>
-	        <div class="stock-psychology-grid">
-	            <article class="stock-psychology-card">
-	                <h4>Avoid FOMO</h4>
-	                <p class="stock-psychology-prompt">Would this still interest me if the price had not risen recently or the stock was not receiving attention?</p>
-	                <p class="stock-psychology-support">Recent excitement can make an opportunity feel safer or more urgent than the evidence supports.</p>
-	            </article>
-	            <article class="stock-psychology-card">
-	                <h4>What could prove me wrong?</h4>
-	                <p class="stock-psychology-prompt">What evidence would weaken the investment case?</p>
-	                <p class="stock-psychology-support">A clear reason to reconsider helps prevent confirmation bias and overconfidence.</p>
-	            </article>
-	            <article class="stock-psychology-card">
-	                <h4>Am I investing or reacting?</h4>
-	                <p class="stock-psychology-prompt">Is this decision based on research, or am I reacting to headlines, price moves or other investors?</p>
-	                <p class="stock-psychology-support">Separating evidence from emotion can improve decision discipline.</p>
-	            </article>
-	            <article class="stock-psychology-card">
-	                <h4>Patience reminder</h4>
-	                <p class="stock-psychology-prompt">Has the investment case changed, or am I simply uncomfortable with short-term movement?</p>
-	                <p class="stock-psychology-support">Good investing decisions often come from waiting for evidence rather than rushing to act.</p>
-	            </article>
-	        </div>
-	    </section>
-
-	    <details class="stock-business-education">
-	        <summary>Understand the Business</summary>
-	        <div class="stock-business-body">
-	            <div class="stock-business-basis">
-	                <span>{{ business_education.basis_label }}</span><p>{{ business_education.evidence_note }}</p>
-	                <span>{{ business_education.education_type }}</span>
-	                <span>{{ stock_identity(symbol, business_education.company_name, 'compact') }}</span>
-	            </div>
-	            <div class="stock-business-grid">
-	                <article class="stock-business-item">
-	                    <h4>{{ "What exposure the fund generally provides" if business_education.is_etf else "How the company generally makes money" }}</h4>
-	                    <p>{{ business_education.business_model }}</p>
-	                </article>
-	                <article class="stock-business-item">
-	                    <h4>{{ "What usually drives performance" if business_education.is_etf else "Main growth drivers" }}</h4>
-	                    <p>{{ business_education.growth_drivers }}</p>
-	                </article>
-	                <article class="stock-business-item">
-	                    <h4>{{ "Concentration and overlap risks" if business_education.is_etf else "Main business risks" }}</h4>
-	                    <p>{{ business_education.business_risks }}</p>
-	                </article>
-	                {% if business_education.is_etf %}
-	                <article class="stock-business-item">
-	                    <h4>What to inspect in the holdings</h4>
-	                    <p>{{ business_education.holdings_check }}</p>
-	                </article>
-	                {% endif %}
-	                <article class="stock-business-item">
-	                    <h4>What could strengthen the business case</h4>
-	                    <p>{{ business_education.strengthen_case }}</p>
-	                </article>
-	                <article class="stock-business-item">
-	                    <h4>What could weaken the business case</h4>
-	                    <p>{{ business_education.weaken_case }}</p>
-	                </article>
-	                <article class="stock-business-item">
-	                    <h4>One question to research next</h4>
-	                    <p>{{ business_education.research_question }}</p>
-	                </article>
-	            </div>
-	        </div>
-	    </details>
-
-	    <div class="stock-supporting-detail" aria-labelledby="stock-supporting-heading">
-	        <span class="stock-premium-label">Supporting detail</span>
-	        <h3 id="stock-supporting-heading">Explore the reasoning</h3>
-	        <p>Open the sections that are useful for your research. The essential decision points stay visible above.</p>
-	        <details open>
-	            <summary>Why this signal?</summary>
-	            <div class="stock-detail-body">
-	                <p><strong>Plain-English meaning:</strong> {{ example_report.signal_meaning }}</p>
-	                <p><strong>Why it is showing:</strong> {{ example_report.signal_reason }}</p>
-	                <p><strong>How to read confidence:</strong> {{ example_report.confidence_read }}</p>
-	            </div>
-	        </details>
-	        <details>
-	            <summary>What would weaken the case?</summary>
-	            <div class="stock-detail-body"><p>{{ example_report.weaker_evidence }}</p></div>
-	        </details>
-	        <details>
-	            <summary>Portfolio fit checklist</summary>
-	            <div class="stock-detail-body"><ul>{% for item in example_report.portfolio_fit_points %}<li>{{ item }}</li>{% endfor %}</ul><a class="payment-button" href="/portfolio-fit">Check Portfolio Fit</a></div>
-	        </details>
-	        <details>
-	            <summary>Before you decide checklist</summary>
-	            <div class="stock-detail-body"><ul>{% for item in example_report.checklist %}<li>{{ item }}</li>{% endfor %}</ul></div>
-	        </details>
-	        <details>
-	            <summary>Decision score breakdown</summary>
-	            <div class="stock-detail-body">
-	                <p>This structured research read uses the existing signal, confidence, risk and portfolio-role context. It is not a precise prediction.</p>
-	                <div class="stock-score-grid">{% for item in example_report.score_breakdown %}<div class="stock-score-item"><strong>{{ item.label }}</strong>{{ item.text }}</div>{% endfor %}</div>
-	            </div>
-	        </details>
-	        <p class="stock-identity-note">Premium helps you practise risk awareness, portfolio thinking, evidence-based research and patience so you can make more independent decisions.</p>
-	        <a class="payment-button" href="/premium-decision/{{ symbol }}">Open focused Premium report</a>
-	    </div>
-	</section>
-    {% endif %}
 
 <div class="range-row">{% for key, settings in chart_ranges.items() %}<a class="range-button {% if key == active_range %}active{% endif %}" href="/stock/{{ symbol }}?range={{ key }}">{{ settings.label }}</a>{% endfor %}</div>
 <div class="metric-grid"><div class="metric"><small>Range start</small><h2>{{ chart_data.start_price }}</h2></div><div class="metric"><small>Range latest</small><h2>{{ chart_data.end_price }}</h2></div><div class="metric"><small>Range move</small><h2 class="{{ chart_data.direction }}">{{ chart_data.change_amount }}</h2></div><div class="metric"><small>Range % move</small><h2 class="{{ chart_data.direction }}">{{ chart_data.change_percent }}</h2></div></div>
@@ -15315,7 +14992,7 @@ if(stockChartPoints.length>0 && window.StockRadarPriceChart){
     });
 }
 </script>
-{{ newsletter_side_tab() | safe }}
+{% if not has_premium_access %}{{ newsletter_side_tab() | safe }}{% endif %}
 </body>
 </html>
 """
@@ -16032,7 +15709,6 @@ def stock_detail(symbol):
     chart_data["points"] = stock_chart_points(chart_data, active_range)
     lifetime = stock_lifetime_growth(cleaned_symbol)
     ai_context = get_stock_ai_context(cleaned_symbol)
-    example_report = get_premium_report(cleaned_symbol, ai_context)
     dividend_context = get_dividend_context(cleaned_symbol) or {}
     chart_currency = chart_currency_metadata(dividend_context.get("currency"))
     chart_accessible_summary = stock_chart_accessible_summary(
@@ -16041,35 +15717,8 @@ def stock_detail(symbol):
         dividend_context.get("currency"),
     )
     has_premium_access = premium_has_access()
-    today_context = None
-    business_education = None
-
-    if has_premium_access:
-        universe_item = next(
-            (
-                item for item in get_stock_universe()
-                if str(item.get("ticker") or "").strip().upper() == cleaned_symbol
-            ),
-            {},
-        )
-        sector = str(
-            universe_item.get("sector")
-            or SECTOR_MAP.get(cleaned_symbol)
-            or "General research candidate"
-        ).strip()
-        company_name = str(
-            universe_item.get("name")
-            or stock_display_label(cleaned_symbol)
-            or cleaned_symbol
-        ).strip()
-        role_profile = classify_portfolio_role(cleaned_symbol)
-        today_context = build_today_context(ai_context)
-        business_education = build_business_education(
-            cleaned_symbol,
-            sector,
-            company_name,
-            role_profile,
-        )
+    intelligence_report = (build_intelligence_report(cleaned_symbol, ai_context, dividend_context)
+                           if has_premium_access else None)
 
     return render_template_string(
         stock_detail_html,
@@ -16083,12 +15732,10 @@ def stock_detail(symbol):
         chart_accessible_summary=chart_accessible_summary,
         lifetime=lifetime,
         ai_context=ai_context,
-        example_report=example_report,
+        intelligence_report=intelligence_report,
         dividend_context=dividend_context,
         has_premium_access=has_premium_access,
-        today_context=today_context,
-        business_education=business_education,
-    )
+    ), 200, {"Cache-Control": "no-store, max-age=0", "Vary": "Cookie"}
 
 
 @app.route("/upgrade")

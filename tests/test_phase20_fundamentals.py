@@ -248,7 +248,7 @@ def test_free_and_premium_pages_share_basic_fundamentals_without_entitlement_cha
     assert "Premium locked preview" in free_page
     assert "Today’s Context" not in free_page
     assert "Premium locked preview" not in premium_page
-    assert "Today’s Context" in premium_page
+    assert "Investment Overview" in premium_page
 
 
 def test_mobile_css_keeps_the_grid_compact_and_prevents_overflow():

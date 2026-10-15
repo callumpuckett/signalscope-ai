@@ -1,0 +1,45 @@
+.intelligence-report{--ir-text:#eef4f8;--ir-muted:#b7c5d1;--ir-green:#4adea3;color:var(--ir-text);margin:0 0 26px;border:1px solid rgba(74,222,163,.25);border-radius:26px;overflow:hidden;background:#0c1724;font-family:Arial,sans-serif;line-height:1.65;min-width:0}
+.intelligence-report *{box-sizing:border-box}
+.intelligence-report .intelligence-hero{padding:34px;background:linear-gradient(120deg,#11352f,#152539 70%,#343022)}
+.intelligence-report .intelligence-kicker{color:var(--ir-green);font-size:11px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;margin:0 0 10px}
+.intelligence-report h2{font-size:clamp(28px,3vw,40px);margin:0 0 12px;line-height:1.2;color:var(--ir-text)}
+.intelligence-report h3{font-size:clamp(22px,2vw,27px);margin:0 0 16px;line-height:1.3;color:var(--ir-text)}
+.intelligence-report h4{font-size:15px;color:#dcebe8;margin:22px 0 7px;line-height:1.4}
+.intelligence-report p,.intelligence-report li{font-size:15px;line-height:1.7;color:var(--ir-muted);overflow-wrap:anywhere}
+.intelligence-report p{margin:8px 0 14px}
+.intelligence-report .intelligence-promise{font-size:19px;color:#e3f5ee;line-height:1.5;max-width:750px}
+.intelligence-report .intelligence-caption{font-size:13px;color:#a3b5c4;max-width:950px}
+.intelligence-report .intelligence-section{padding:30px 34px;border-top:1px solid rgba(148,163,184,.15);min-width:0}
+.intelligence-report .intelligence-overview-grid{display:grid;grid-template-columns:220px minmax(0,1fr);gap:28px;align-items:start;margin:22px 0}
+.intelligence-report .intelligence-score{border-left:3px solid var(--ir-green);padding-left:20px}
+.intelligence-report .intelligence-score>span,.intelligence-report .intelligence-label{display:block;font-size:12px;font-weight:800;color:#a0d9ca;letter-spacing:.02em}
+.intelligence-report .intelligence-score strong{display:block;font-size:42px;line-height:1.3;overflow-wrap:anywhere;color:var(--ir-text)}
+.intelligence-report .intelligence-score small{font-size:17px;color:#a3b5c4}
+.intelligence-report .intelligence-score p{font-size:13px}
+.intelligence-report .intelligence-signal>strong{display:block;font-size:28px;color:#e6f7ee}
+.intelligence-report .intelligence-basis,.intelligence-report .intelligence-empty{padding:14px 18px;background:rgba(148,163,184,.06);border-left:2px solid #6a839b;border-radius:0 10px 10px 0;font-size:13px}
+.intelligence-report .intelligence-basis p{font-size:13px;margin:6px 0}
+.intelligence-report .intelligence-case-grid,.intelligence-report .intelligence-two-column{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:28px}
+.intelligence-report .intelligence-case-grid{gap:0}
+.intelligence-report .intelligence-risk{background:rgba(240,195,106,.025);border-left:1px solid rgba(148,163,184,.15)}
+.intelligence-report .intelligence-risk .intelligence-kicker{color:#f0c36a}
+.intelligence-report .intelligence-details{border-top:1px solid rgba(148,163,184,.18);margin-top:20px}
+.intelligence-report summary{cursor:pointer;padding:15px 0;color:#d9f2e8;font-size:14px;font-weight:800;min-height:48px}
+.intelligence-report summary:focus-visible,.intelligence-report a:focus-visible{outline:3px solid #69c9f2;outline-offset:4px}
+.intelligence-report .intelligence-components,.intelligence-report .intelligence-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:16px 0}
+.intelligence-report .intelligence-components>div,.intelligence-report .intelligence-metrics>div{padding:14px;border-radius:12px;background:rgba(148,163,184,.06);min-width:0}
+.intelligence-report dt,.intelligence-report .intelligence-metrics span{display:block;color:#a3b5c4;font-size:12px;line-height:1.5}
+.intelligence-report dd{margin:6px 0 0;font-size:19px;font-weight:800}
+.intelligence-report .intelligence-metrics strong{display:block;font-size:21px;overflow-wrap:anywhere;margin-top:6px}
+.intelligence-report .intelligence-news{list-style:none;padding:0}
+.intelligence-report .intelligence-news li{padding:14px 0;border-bottom:1px solid rgba(148,163,184,.15)}
+.intelligence-report a{color:#80d4f4;font-size:14px;text-decoration:none;font-weight:700;overflow-wrap:anywhere}
+.intelligence-report a:hover{text-decoration:underline}
+.intelligence-report .intelligence-news p{font-size:12px;margin:5px 0}
+.intelligence-report ul{padding-left:22px}
+.intelligence-report li{margin-bottom:10px}
+.intelligence-report .intelligence-closing{background:rgba(74,222,163,.035)}
+.intelligence-report .intelligence-actions{display:flex;gap:12px;flex-wrap:wrap;margin:22px 0}
+.intelligence-report .intelligence-actions a{border:1px solid rgba(74,222,163,.25);border-radius:10px;padding:10px 14px;min-height:44px}
+@media(max-width:760px){.intelligence-report{border-radius:20px}.intelligence-report .intelligence-hero,.intelligence-report .intelligence-section{padding:24px 20px}.intelligence-report .intelligence-case-grid,.intelligence-report .intelligence-two-column{grid-template-columns:1fr;gap:0}.intelligence-report .intelligence-risk{border-left:0}.intelligence-report .intelligence-overview-grid{grid-template-columns:1fr;gap:18px}.intelligence-report .intelligence-components,.intelligence-report .intelligence-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.intelligence-report .intelligence-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}.intelligence-report .intelligence-actions a{text-align:center;padding:10px 8px}.intelligence-report .intelligence-score strong{font-size:38px}}
+@media(prefers-reduced-motion:reduce){.intelligence-report *{scroll-behavior:auto}}
