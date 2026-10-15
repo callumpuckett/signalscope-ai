@@ -2220,10 +2220,12 @@ def consume_rate_limit(scope, limit, window_seconds, now=None):
     def update_buckets(state):
         buckets = state.setdefault("buckets", {})
         cutoff = current_time - max(window_seconds, 3600)
-        if len(buckets) > 5000:
-            for key in list(buckets):
-                if float(buckets[key].get("reset_at", 0)) < cutoff:
-                    buckets.pop(key, None)
+        # This state is read/written as one JSON document by the shared store.
+        # Keep the existing retention cutoff, but do not carry expired counters
+        # through every request until an arbitrary bucket-count threshold.
+        for key in list(buckets):
+            if float(buckets[key].get("reset_at", 0)) < cutoff:
+                buckets.pop(key, None)
         bucket = buckets.get(bucket_key)
         if not bucket or current_time >= float(bucket.get("reset_at", 0)):
             bucket = {"count": 0, "reset_at": current_time + window_seconds}
@@ -5804,6 +5806,7 @@ def get_premium_report(symbol, ai_context):
     }
 
 
+@measured("stock.intelligence_report")
 def build_intelligence_report(symbol, ai_context, financial_context=None):
     """Compose existing research using local identity and already-loaded/cache-only data."""
     symbol = canonical_stock_symbol(symbol)
@@ -7501,6 +7504,7 @@ def stock_chart_points(chart_data, range_key):
     return points
 
 
+@measured("stock.history")
 def stock_history(symbol, range_key):
     symbol = canonical_stock_symbol(symbol)
     settings = CHART_RANGES.get(range_key, CHART_RANGES["1mo"])
@@ -7565,6 +7569,7 @@ def stock_history(symbol, range_key):
         }
 
 
+@measured("stock.lifetime_history")
 def stock_lifetime_growth(symbol):
     symbol = canonical_stock_symbol(symbol)
     try:
@@ -15656,6 +15661,7 @@ def dashboard():
 
 
 @app.route("/api/market-news")
+@measured("route.market_news")
 def api_market_news():
     force_refresh = request.args.get("refresh") == "1"
     if force_refresh and not force_refresh_authorized():
@@ -15692,6 +15698,7 @@ def watchlist():
 
 
 @app.route("/stock/<symbol>")
+@measured("route.stock_detail")
 def stock_detail(symbol):
     if len(symbol) > 16:
         return Response("Invalid ticker symbol.", status=400, mimetype="text/plain")

@@ -500,6 +500,7 @@ class PostgresNewsletterStorage(NewsletterStorageBackend):
             if connection is not None:
                 self._close(connection)
 
+    @measured("db.state_read")
     def _load_state_with_cursor(self, cursor, store_name):
         data = state_default(store_name)
         if store_name == "issues":
@@ -785,6 +786,7 @@ class PostgresNewsletterStorage(NewsletterStorageBackend):
             ),
         )
 
+    @measured("db.state_write")
     def _sync_state_with_cursor(self, cursor, store_name, data, overwrite=True):
         if store_name == "issues":
             self._sync_issues(cursor, data)

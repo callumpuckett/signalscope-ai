@@ -99,7 +99,11 @@ class TimingMiddleware:
         self.application = application
 
     def __call__(self, environ, start_response):
-        route = self.ROUTES.get(environ.get('PATH_INFO'))
+        path = environ.get('PATH_INFO', '')
+        route = self.ROUTES.get(path)
+        if route is None and path.startswith('/stock/') and path.count('/') == 2:
+            # Use a static label, never the supplied ticker or query string.
+            route = 'stock_detail'
         if not route or not enabled():
             return self.application(environ, start_response)
         method = environ.get('REQUEST_METHOD')
