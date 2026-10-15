@@ -41,7 +41,7 @@ def test_upgrade_page_clearly_lists_price_and_premium_tools():
 
     assert response.status_code == 200
     assert "£5" in page
-    assert "Premium Decision Panels" in page
+    assert "Intelligence Report" in page
     assert "Premium Watchlist Intelligence" in page
     assert "Portfolio Fit Checker" in page
     assert "Educational only." in page

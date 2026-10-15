@@ -35,17 +35,18 @@ def test_upgrade_offer_and_checkout_preserve_access_states(identity, payments_en
         assert "Premium is already active." in page
         assert "You do not need to purchase again." in page
         assert 'href="/opportunities">Open StockRadar Opportunities</a>' in page
-        assert 'href="/stock/AAPL">Open Premium Stock Page</a>' in page
+        assert 'href="/stock/AAPL">Open an Intelligence Report</a>' in page
         assert not forms
     else:
         assert "Free shows the signal. Premium explains the decision." in page
         assert "£5/month · Cancel anytime" in page
-        assert page.index("Understand the signal before you act.") < page.index("What Premium adds")
-        assert page.index("What Premium adds") < page.index("Start with a ranked view.")
-        assert page.index("Start with a ranked view.") < page.index("Subscription details and support")
-        for label in ("Opportunity Radar", "AI Reasoning", "Risk Read", "Portfolio Fit", "Watch Next"):
-            assert f"<strong>{label}</strong>" in page
-        assert "complete ranked Top 5" in page
+        assert page.index("Stop Guessing.") < page.index("What Premium adds")
+        assert page.index("What Premium adds") < page.index("Choose the research depth you need")
+        assert page.index("Choose the research depth you need") < page.index("Subscription details and support")
+        for label in ("Investment Overview", "Opportunities", "Risks", "Portfolio Intelligence", "What to Watch Next"):
+            assert label in page
+        assert "Complete ranked Top 5" in page
+        assert "Report guide · not live stock analysis" in page
         assert "Controlled early access" not in page
         assert "Premium features and support processes are still being improved." in page
         assert "Cancellation stops future billing" in page
@@ -65,8 +66,7 @@ def test_upgrade_offer_and_checkout_preserve_access_states(identity, payments_en
             assert "Checkout remains disabled during soft launch." in page
     assert 'href="/risk-disclaimer"' in page
     assert "It does not provide personal financial" in page
-    assert '<details class="card future-card">' in page
-    assert "Not live yet" in page
+    assert "Dividend Dip Tracker" not in page
 
 
 def test_upgrade_keeps_existing_mobile_layout_rules():

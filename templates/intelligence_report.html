@@ -1,12 +1,8 @@
 {% set research = intelligence_report %}
 <link rel="stylesheet" href="{{ url_for('static', filename='intelligence-report.css') }}">
 <section class="intelligence-report" id="intelligence-report" aria-labelledby="intelligence-title">
-  <header class="intelligence-hero">
-    <p class="intelligence-kicker">StockRadar Premium · Intelligence Report</p>
-    <h2 id="intelligence-title">{{ stock_display_label(symbol) }}</h2>
-    <p class="intelligence-promise">Understand the opportunity. Know the risks. See what matters next.</p>
-    <p class="intelligence-caption">One structured research review, bringing the signal, business context and portfolio questions together. Educational research, not a personalised investment recommendation.</p>
-  </header>
+  {% from 'intelligence_report_components.html' import report_header %}
+  {{ report_header(stock_display_label(symbol)) }}
 
   <section class="intelligence-section" aria-labelledby="intelligence-overview">
     <p class="intelligence-kicker">01 · Investment Overview</p>
