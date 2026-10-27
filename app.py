@@ -12904,7 +12904,7 @@ newsletter_landing_html = """
 <style>
 *{box-sizing:border-box;}:root{--font-hero:clamp(40px,5vw,52px);--font-section:clamp(26px,2.4vw,34px);--font-body:16px;--font-small:13px;--font-kicker:11px;--font-cta:14px;}body{margin:0;min-height:100vh;background:radial-gradient(circle at 18% 8%,rgba(0,255,170,.11),transparent 30%),linear-gradient(135deg,#08111c,#101827);color:#dbe4ee;font-family:Arial,sans-serif;font-size:var(--font-body);}
 .wrap{max-width:944px;margin:0 auto;padding:42px 22px;}.back{color:#69c9f2;text-decoration:none;font-weight:900;}.hero{margin-top:24px;padding:46px;border-radius:30px;background:linear-gradient(180deg,rgba(18,29,42,.97),rgba(12,22,33,.97));border:1px solid rgba(148,163,184,.16);box-shadow:0 24px 70px rgba(0,0,0,.30);}
-.eyebrow{color:#4adea3;font-size:var(--font-kicker);font-weight:950;letter-spacing:.13em;text-transform:uppercase;}h1{color:#f2f5f8;font-size:var(--font-hero);line-height:1.04;margin:14px 0 18px;letter-spacing:0;}p{color:#b9c5d2;line-height:1.7;font-size:var(--font-body);}.signup{margin-top:28px;padding:24px;border-radius:22px;background:#0d1826;border:1px solid rgba(74,222,163,.22);}form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:start;}input{min-width:240px;border:1px solid rgba(148,163,184,.24);background:#07111d;color:#e5edf5;border-radius:14px;padding:14px 15px;font-size:16px;}.turnstile-field,.turnstile-unavailable{grid-column:1/-1;max-width:100%;overflow:visible;}.turnstile-unavailable{margin:0;padding:12px 13px;border-radius:13px;background:rgba(248,113,113,.10);border:1px solid rgba(248,113,113,.24);color:#fecaca;font-size:14px;line-height:1.5;}button{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;border:0;border-radius:14px;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#061018;font-weight:950;font-size:var(--font-cta);line-height:1.1;padding:13px 18px;cursor:pointer;}.status{margin:0 0 16px;padding:13px 14px;border-radius:14px;background:rgba(74,222,163,.10);border:1px solid rgba(74,222,163,.22);color:#d1fae5;font-size:14px;line-height:1.55;}.status.error{background:rgba(248,113,113,.10);border-color:rgba(248,113,113,.24);color:#fecaca;}.fallback{color:#f4cf79;font-weight:900;margin:18px 0 0;font-size:var(--font-small);}.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-top:24px;}.note{padding:18px;border-radius:18px;background:rgba(148,163,184,.07);color:#c6d0da;line-height:1.6;font-size:14px;}.bridge{margin-top:22px;padding:18px;border-radius:18px;background:linear-gradient(135deg,rgba(74,222,163,.10),rgba(56,189,248,.08));border:1px solid rgba(74,222,163,.18);color:#d1fae5;font-size:15px;}.feed-link{display:inline-block;margin-top:22px;color:#69c9f2;font-size:14px;font-weight:900;text-decoration:none;}@media(max-width:700px){:root{--font-hero:clamp(32px,9vw,38px);--font-section:clamp(24px,6vw,28px);}.wrap{padding:24px 16px}.hero{padding:28px}.notes{grid-template-columns:1fr;}form{grid-template-columns:1fr;}.turnstile-field,.turnstile-unavailable{grid-column:auto;}button,input{width:100%;}}
+.eyebrow{color:#4adea3;font-size:var(--font-kicker);font-weight:950;letter-spacing:.13em;text-transform:uppercase;}h1{color:#f2f5f8;font-size:var(--font-hero);line-height:1.04;margin:14px 0 18px;letter-spacing:0;}p{color:#b9c5d2;line-height:1.7;font-size:var(--font-body);}.signup{margin-top:28px;padding:24px;border-radius:22px;background:#0d1826;border:1px solid rgba(74,222,163,.22);}form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:start;}input{min-width:0;width:100%;border:1px solid rgba(148,163,184,.24);background:#07111d;color:#e5edf5;border-radius:14px;padding:14px 15px;font-size:16px;}.turnstile-field,.turnstile-unavailable{grid-column:1/-1;max-width:100%;overflow:visible;}.turnstile-unavailable{margin:0;padding:12px 13px;border-radius:13px;background:rgba(248,113,113,.10);border:1px solid rgba(248,113,113,.24);color:#fecaca;font-size:14px;line-height:1.5;}button{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;border:0;border-radius:14px;background:linear-gradient(135deg,#00ffaa,#ffb86b);color:#061018;font-weight:950;font-size:var(--font-cta);line-height:1.1;padding:13px 18px;cursor:pointer;}.status{margin:0 0 16px;padding:13px 14px;border-radius:14px;background:rgba(74,222,163,.10);border:1px solid rgba(74,222,163,.22);color:#d1fae5;font-size:14px;line-height:1.55;}.status.error{background:rgba(248,113,113,.10);border-color:rgba(248,113,113,.24);color:#fecaca;}.fallback{color:#f4cf79;font-weight:900;margin:18px 0 0;font-size:var(--font-small);}.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-top:24px;}.note{padding:18px;border-radius:18px;background:rgba(148,163,184,.07);color:#c6d0da;line-height:1.6;font-size:14px;}.bridge{margin-top:22px;padding:18px;border-radius:18px;background:linear-gradient(135deg,rgba(74,222,163,.10),rgba(56,189,248,.08));border:1px solid rgba(74,222,163,.18);color:#d1fae5;font-size:15px;}.feed-link{display:inline-block;margin-top:22px;color:#69c9f2;font-size:14px;font-weight:900;text-decoration:none;}@media(max-width:700px){:root{--font-hero:clamp(32px,9vw,38px);--font-section:clamp(24px,6vw,28px);}.wrap{padding:24px 16px}.hero{padding:28px}.notes{grid-template-columns:1fr;}form{grid-template-columns:1fr;}.turnstile-field,.turnstile-unavailable{grid-column:auto;}button,input{width:100%;}}
 </style>
 </head>
 <body>
@@ -12922,7 +12922,7 @@ newsletter_landing_html = """
 {% endif %}
 <form method="POST" action="/newsletter">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-<input type="email" name="email" placeholder="you@example.com" autocomplete="email" maxlength="254" required>
+<input type="email" name="email" aria-label="Email address" placeholder="you@example.com" autocomplete="email" maxlength="254" required>
 {% if turnstile_site_key %}
 <div class="turnstile-field"><div class="cf-turnstile" data-sitekey="{{ turnstile_site_key }}" data-action="{{ turnstile_action }}"></div></div>
 {% else %}
@@ -12930,7 +12930,7 @@ newsletter_landing_html = """
 {% endif %}
 <button type="submit">Join Free</button>
 </form>
-<p class="fallback">Free to join. After signup, the latest issue is emailed automatically if email delivery is configured. The regular weekly issue normally arrives Friday.</p>
+<p class="fallback">Free to join. Check your inbox if confirmation is required. The regular weekly issue normally arrives Friday.</p>
 <p class="fallback">Your email is used to send StockRadar Weekly, StockRadar updates and market briefs. Signals are educational research prompts, not personalised financial advice.</p>
 </section>
 <div class="notes">
@@ -12950,6 +12950,19 @@ newsletter_landing_html = """
 </body>
 </html>
 """
+
+
+NEWSLETTER_RESEARCH_LINKS = """
+<section class="section" id="newsletter-research" aria-labelledby="newsletter-research-heading">
+<h2 id="newsletter-research-heading">Put this week’s brief to work</h2>
+<p>Explore current signals and charts with the free research tools, then review the evidence behind a stock.</p>
+<p style="display:flex;flex-wrap:wrap;gap:14px;"><a href="/universe">Research a stock</a><a href="/compare">Compare stocks</a><a href="/upgrade">Explore Premium — £5/month</a></p>
+<p>New to StockRadar Weekly? <a href="/newsletter">Join the free newsletter</a>.</p>
+</section>
+"""
+
+
+app.jinja_env.globals["newsletter_research_links"] = lambda: NEWSLETTER_RESEARCH_LINKS
 
 
 newsletter_latest_html = """
@@ -12975,6 +12988,7 @@ newsletter_latest_html = """
 <p style="margin-top:0;">{{ draft.market_pulse }}</p>
 <p>{{ draft.market_week_summary }}</p>
 </header>
+{{ newsletter_research_links() | safe }}
 <section class="section">
 <h2>This Week in the Market</h2>
 <h3>Verified weekly news</h3>
@@ -13055,7 +13069,7 @@ newsletter_latest_html = """
 <section class="section">
 <h2>Premium research preview</h2>
 <p>{{ draft.premium_note }}</p>
-<p><a href="/upgrade">Explore Premium</a> · <a href="/premium-watchlist">Preview Premium Watchlist</a> · <a href="/newsletter/latest">Latest issue</a></p>
+<p><a href="/upgrade">Explore Premium — £5/month</a> · <a href="/premium-watchlist">Preview Premium Watchlist</a> · <a href="/universe">Research a stock</a></p>
 <p><strong>Research prompts only.</strong> Premium tools are not financial advice or buy/sell instructions.</p>
 </section>
 </div>
@@ -15075,6 +15089,14 @@ def newsletter_latest():
         )
         return render_template_string(newsletter_latest_unavailable_html), 503
     published_html = published["html"]
+    # Published issues are immutable. Add current navigation to older HTML only
+    # in the response, without regenerating the issue or querying market data.
+    if 'id="newsletter-research"' not in published_html:
+        published_html = published_html.replace(
+            '<section class="section">',
+            NEWSLETTER_RESEARCH_LINKS + '<section class="section">',
+            1,
+        )
     if 'id="stockradar-primary-navigation-styles"' not in published_html:
         header_html = stockradar_header_navigation("app")
         published_html = re.sub(
@@ -15752,6 +15774,14 @@ def stock_detail(symbol):
         dividend_context=dividend_context,
         has_premium_access=has_premium_access,
     ), 200, {"Cache-Control": "no-store, max-age=0", "Vary": "Cookie"}
+
+
+@app.route("/premium")
+def premium():
+    destination = url_for("upgrade")
+    if request.query_string:
+        destination += "?" + request.query_string.decode("latin-1")
+    return redirect(destination, code=301)
 
 
 @app.route("/upgrade")
