@@ -13704,14 +13704,15 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 .public-hero{padding:32px;background:#101d29;box-shadow:none;border-color:rgba(148,163,184,.20);border-radius:20px;}
 .public-hero h1{max-width:760px;font-size:clamp(28px,3.1vw,40px);line-height:1.18;letter-spacing:-.025em;font-weight:800;text-wrap:balance;margin-bottom:12px;}
 .public-hero .hero-subtitle{max-width:680px;font-size:16px;line-height:1.6;}
-.public-hero .public-home-actions{align-items:center;gap:10px;margin-top:20px;}
-.public-hero .public-home-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:12px 18px;border-radius:10px;font-size:14px;line-height:1.35;font-weight:700;width:auto;}
+.public-hero .public-home-actions{align-items:flex-start;gap:12px;margin-top:20px;}
+.public-hero .public-home-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:52px;padding:12px 18px;border-radius:10px;font-size:14px;line-height:1.35;font-weight:700;width:auto;}
 .public-hero .cta-primary{box-shadow:none;border:1px solid transparent;}
 .public-hero .public-portfolio-cta{background:transparent;border-color:rgba(148,163,184,.35);}
-.public-hero .public-home-actions .homepage-newsletter-link{color:#aebdca;background:transparent;border:1px solid transparent;padding-inline:8px;font-size:13px;font-weight:400;text-decoration:underline;text-underline-offset:4px;}
-.public-hero .homepage-newsletter-action{flex:0 1 290px;max-width:100%;text-align:center;}
-.public-hero .homepage-newsletter-action p{margin:0;color:#91a3b4;font-size:12px;line-height:1.5;}
-@media(max-width:640px){.public-hero .homepage-newsletter-action{flex:auto;width:100%;}.public-hero .homepage-newsletter-action p{max-width:290px;margin:0 auto;}}
+.public-hero .public-home-actions .homepage-newsletter-link{width:100%;color:#f1f5f9;background:#112a29;border:1px solid rgba(74,222,163,.42);padding:12px 18px;font-size:14px;font-weight:600;text-decoration:none;text-wrap:balance;}
+.public-hero .public-home-actions .homepage-newsletter-link:hover{background:#173833;border-color:#4adea3;text-decoration:none;}
+.public-hero .homepage-newsletter-action{flex:0 1 400px;max-width:100%;text-align:center;}
+.public-hero .homepage-newsletter-action p{margin:8px 0 0;color:#91a3b4;font-size:12px;line-height:1.5;}
+@media(max-width:1000px){.public-hero .public-home-actions{flex-direction:column;align-items:stretch;}.public-hero .public-home-actions a{width:100%;}.public-hero .homepage-newsletter-action{flex:auto;width:100%;}.public-hero .homepage-newsletter-action p{max-width:400px;margin:8px auto 0;}}
 .public-hero>.example-reassurance{max-width:680px;margin:12px auto 0;font-size:12px;line-height:1.5;}
 .public-hero .hero-search-panel{max-width:780px;margin:24px auto 0;padding-top:22px;text-align:left;border-color:rgba(148,163,184,.24);}
 .public-hero .hero-search-panel h2{font-size:18px;line-height:1.35;font-weight:700;margin:0 0 12px;}
@@ -13725,7 +13726,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 .public-hero .suggested-search-chip:hover{color:#86efac;text-decoration:underline;}
 .public-hero a:focus-visible,.public-hero button:focus-visible{outline:2px solid #f0c36a;outline-offset:3px;}
 @media(min-width:641px) and (max-width:900px){.public-hero .public-home-actions a{width:auto;}}
-@media(max-width:640px){.public-hero{padding:24px 18px;}.public-hero h1{font-size:28px;}.public-hero .hero-subtitle{font-size:15px;}.public-hero .public-home-actions{gap:8px;margin-top:18px;}.public-hero .public-home-actions a{width:100%;}.public-hero .public-home-actions .homepage-newsletter-link{min-height:44px;padding:8px;}.public-hero .hero-search-panel{margin-top:20px;padding-top:20px;}.public-hero .smart-search-row{flex-direction:column;}.public-hero .smart-search input{width:100%;min-height:44px;}.public-hero .suggested-searches{gap:0 14px;}.public-hero .suggested-searches-label{width:100%;margin-top:8px;}}
+@media(max-width:640px){.public-hero{padding:24px 18px;}.public-hero h1{font-size:28px;}.public-hero .hero-subtitle{font-size:15px;}.public-hero .public-home-actions{gap:8px;margin-top:18px;}.public-hero .public-home-actions a{width:100%;min-height:64px;}.public-hero .public-home-actions .homepage-newsletter-link{min-height:64px;padding:12px 14px;}.public-hero .hero-search-panel{margin-top:20px;padding-top:20px;}.public-hero .smart-search-row{flex-direction:column;}.public-hero .smart-search input{width:100%;min-height:44px;}.public-hero .suggested-searches{gap:0 14px;}.public-hero .suggested-searches-label{width:100%;margin-top:8px;}}
 </style>
 </head>
 <body class="{% if is_public_home %}public-home{% else %}dashboard-view{% endif %}" data-public-home="{{ 'true' if is_public_home else 'false' }}">
@@ -13805,8 +13806,8 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
                 <a class="cta-primary" href="/beginner">Explore Investment Compass</a>
                 <a class="cta-secondary public-portfolio-cta" href="/portfolio-fit">Build Your Portfolio</a>
                 <div class="homepage-newsletter-action">
-                    <a class="homepage-newsletter-link" href="/newsletter" aria-describedby="homepage-newsletter-description">Get Free Weekly Market Insights</a>
-                    <p id="homepage-newsletter-description">Free weekly newsletter • Market trends, stock insights &amp; investing tips</p>
+                    <a class="homepage-newsletter-link" href="/newsletter" aria-describedby="homepage-newsletter-description">✉ Get Your Free Weekly Investing Newsletter →</a>
+                    <p id="homepage-newsletter-description">Market insights, stock analysis &amp; investing tips • Every Friday</p>
                 </div>
             </div>
             <p class="example-reassurance">Understand the risks before building a portfolio. Educational guidance, not personalised investment recommendations.</p>

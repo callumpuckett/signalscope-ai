@@ -134,8 +134,8 @@ def test_public_homepage_restores_build_your_portfolio_cta():
         'href="/portfolio-fit">Build Your Portfolio</a>'
         in page
     )
-    assert '<a class="homepage-newsletter-link" href="/newsletter" aria-describedby="homepage-newsletter-description">Get Free Weekly Market Insights</a>' in page
-    assert 'Free weekly newsletter • Market trends, stock insights &amp; investing tips' in page
+    assert '<a class="homepage-newsletter-link" href="/newsletter" aria-describedby="homepage-newsletter-description">✉ Get Your Free Weekly Investing Newsletter →</a>' in page
+    assert 'Market insights, stock analysis &amp; investing tips • Every Friday' in page
     assert "Build your own portfolio with AI help" not in page
     assert (
         ".public-portfolio-cta{display:inline-flex;align-items:center;"
