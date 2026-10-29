@@ -12,8 +12,10 @@
     overflow-wrap: anywhere;
 }
 
-.company-logo-frame {
+/* Keep card-level span rules from overriding the logo internals. */
+.company-identity .company-logo-frame {
     position: relative;
+    box-sizing: border-box;
     display: inline-flex;
     flex: 0 0 auto;
     align-items: center;
@@ -27,8 +29,9 @@
     color: #334155;
 }
 
-.company-logo-image {
-    position: relative;
+.company-logo-frame .company-logo-image {
+    position: absolute;
+    inset: 0;
     z-index: 1;
     display: block;
     box-sizing: border-box;
@@ -40,12 +43,14 @@
     background: #f8fafc;
 }
 
-.company-logo-fallback {
+.company-logo-frame .company-logo-fallback {
     position: absolute;
     inset: 0;
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 0;
+    margin: 0;
     font: 900 10px/1 Arial, sans-serif;
     letter-spacing: 0.02em;
     text-transform: uppercase;
