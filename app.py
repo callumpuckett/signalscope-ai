@@ -13708,7 +13708,9 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 .public-hero .public-home-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:52px;padding:12px 18px;border-radius:10px;font-size:14px;line-height:1.35;font-weight:700;width:auto;}
 .public-hero .cta-primary{box-shadow:none;border:1px solid transparent;}
 .public-hero .public-portfolio-cta{background:transparent;border-color:rgba(148,163,184,.35);}
-.public-hero .public-home-actions .homepage-newsletter-link{width:100%;color:#f1f5f9;background:#112a29;border:1px solid rgba(74,222,163,.42);padding:12px 18px;font-size:14px;font-weight:600;text-decoration:none;text-wrap:balance;}
+.public-hero .public-home-actions .homepage-newsletter-link{width:100%;color:#f1f5f9;background:#112a29;border:1px solid rgba(74,222,163,.42);padding:12px 18px;font-size:14px;font-weight:600;text-decoration:none;text-wrap:balance;gap:10px;}
+.homepage-newsletter-icon{width:24px;height:24px;flex:0 0 24px;}
+.homepage-newsletter-label{min-width:0;}
 .public-hero .public-home-actions .homepage-newsletter-link:hover{background:#173833;border-color:#4adea3;text-decoration:none;}
 .public-hero .homepage-newsletter-action{flex:0 1 400px;max-width:100%;text-align:center;}
 .public-hero .homepage-newsletter-action p{margin:8px 0 0;color:#91a3b4;font-size:12px;line-height:1.5;}
@@ -13806,7 +13808,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
                 <a class="cta-primary" href="/beginner">Explore Investment Compass</a>
                 <a class="cta-secondary public-portfolio-cta" href="/portfolio-fit">Build Your Portfolio</a>
                 <div class="homepage-newsletter-action">
-                    <a class="homepage-newsletter-link" href="/newsletter" aria-describedby="homepage-newsletter-description">✉ Get Your Free Weekly Investing Newsletter →</a>
+                    <a class="homepage-newsletter-link" href="/newsletter" aria-describedby="homepage-newsletter-description"><svg class="homepage-newsletter-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 6 9 7 9-7"/></svg><span class="homepage-newsletter-label">Get Your Free Weekly Investing Newsletter →</span></a>
                     <p id="homepage-newsletter-description">Market insights, stock analysis &amp; investing tips • Every Friday</p>
                 </div>
             </div>
