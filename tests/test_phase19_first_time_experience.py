@@ -90,8 +90,7 @@ def test_public_hero_leads_with_compass_and_preserves_stock_search():
         "answer five plain-English questions to see an educational starter profile, example allocations and ideas to research."
         in page
     )
-    assert "Start with a company you already know" in page
-    assert "Search any stock or ETF." in page
+    assert "Search stocks &amp; ETFs" in page
     assert '<label for="smartSearchInput">Search a stock or ETF</label>' in page
     assert 'placeholder="Try Microsoft, Apple, SPY or MSFT"' in page
     assert "View free report" in page
@@ -122,23 +121,20 @@ def test_suggested_examples_open_real_existing_reports():
     document = BeautifulSoup(page, "html.parser")
 
     expected_links = {
-        "Microsoft — MSFT": "/stock/MSFT",
-        "Apple — AAPL": "/stock/AAPL",
-        "Amazon — AMZN": "/stock/AMZN",
-        "S&amp;P 500 ETF — SPY": "/stock/SPY",
+        "Microsoft": "/stock/MSFT",
+        "Apple": "/stock/AAPL",
+        "Amazon": "/stock/AMZN",
+        "S&amp;P 500 ETF": "/stock/SPY",
     }
     for label, href in expected_links.items():
         link = document.select_one(f'.suggested-search-chip[href="{href}"]')
         assert link is not None
-        assert link.select_one(".company-identity-name").get_text(strip=True) == (
+        assert link.get_text(strip=True) == (
             BeautifulSoup(label, "html.parser").get_text()
         )
-        assert link.select_one("img.company-logo-image")["alt"].endswith(" logo")
+        assert link.select_one("img") is None
 
-    assert (
-        "New to investing? Start with a company or fund you already recognise."
-        in page
-    )
+    assert "New to investing? Start with a company or fund you already recognise." not in page
 
 
 def test_four_step_journey_preserves_the_free_report_preview():

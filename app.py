@@ -13700,6 +13700,29 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 	@media(max-width:900px){:root{--font-hero:clamp(32px,9vw,38px);--font-section:clamp(24px,6vw,28px);}body{flex-direction:column;}.sidebar{width:100%;min-height:auto;position:relative;top:auto;z-index:11000;padding:12px max(16px,env(safe-area-inset-right)) 12px max(16px,env(safe-area-inset-left));overflow:visible;white-space:normal;border-right:0;border-bottom:1px solid rgba(148,163,184,0.12);}.sidebar-navigation-shell{position:relative;}.sidebar-header{display:flex;align-items:center;justify-content:space-between;gap:12px;}.sidebar .logo{display:block;max-width:170px;margin:0;}.sidebar .logo-img{max-width:170px;max-height:46px;}.sidebar-menu-toggle{display:inline-flex;}.sidebar-nav{display:none;position:absolute;top:calc(100% + 8px);right:0;left:0;z-index:11001;max-height:calc(100dvh - 82px - env(safe-area-inset-top) - env(safe-area-inset-bottom));padding:10px 10px max(12px,env(safe-area-inset-bottom));overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;border:1px solid rgba(148,163,184,.22);border-radius:18px;background:#0b1521;box-shadow:0 24px 70px rgba(0,0,0,.58);}.sidebar-navigation-shell.nav-menu-open .sidebar-nav{display:block;}.sidebar .nav-section-label{display:block;margin:12px 6px 6px;}.sidebar .menu-help,.sidebar .owner-box{display:block;margin:8px 6px 12px;}.sidebar .menu-divider{display:block;margin:10px 0;}.sidebar .nav-link{display:flex;align-items:center;width:100%;min-height:44px;padding:11px 12px;margin:4px 0;font-size:13px;white-space:normal;}.main{padding:20px 16px;width:100%;}.dashboard-view .card{overflow-x:auto;}.dashboard-view .live-news-empty{white-space:normal;}.top-bar{position:relative;justify-content:stretch;}.smart-search{width:100%;}.live-alert-strip{width:100%;}.live-alert-header{padding:8px 11px;font-size:11px;}.live-alert-track{padding:5px 0;}.live-alert-loop{gap:14px;animation-duration:48s;}.live-headline{flex-basis:540px;min-height:28px;padding:3px 14px 3px 0;gap:6px;}.live-news-title{font-size:12px;max-width:225px;}.market-news-stocks{display:inline-flex;}.market-news-stocks .live-affected-label{font-size:9px;}.market-news-impact .live-meta{display:none;}.market-news-impact .live-score{font-size:9px;}.summary-grid,.market-grid,.feature-grid,.impact-grid,.radar-summary,.signal-guide-grid,.filter-grid,.trust-strip,.signal-snapshot-grid{grid-template-columns:1fr;}.product-step-grid{grid-template-columns:1fr;}.premium-example-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.premium-brief-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.premium-home-grid{grid-template-columns:repeat(2,minmax(0,1fr));max-width:720px;}.newsletter-cta-card{align-items:flex-start;flex-direction:column;}.hero-card{padding:28px 22px}.hero-card h1{font-size:var(--font-hero);line-height:1.05;}.hero-card .hero-subtitle{font-size:15px;}.hero-actions a,.premium-price-row a{width:100%;text-align:center;}}
 	@media(display-mode:standalone){.sidebar{padding-top:max(12px,env(safe-area-inset-top));padding-bottom:max(12px,env(safe-area-inset-bottom));}body{padding-bottom:env(safe-area-inset-bottom);}}
 	@media(max-width:640px){.public-header{padding:12px 14px;}.public-header-inner{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px 12px;}.public-header .logo{width:154px;}.public-header .logo-img{max-width:154px;max-height:42px;}.public-nav-links{grid-column:1/-1;justify-content:flex-start;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;overflow:visible;}.public-nav-link{padding:9px 6px;font-size:12px;white-space:normal;text-align:center;}.public-nav-login{display:inline-flex;visibility:visible;opacity:1;}.public-nav-primary{grid-column:2;grid-row:1;min-width:86px;}.public-nav-links .public-nav-primary{grid-column:auto;grid-row:auto;}.product-steps,.free-report-preview{padding:20px 18px;}.hero-search-panel{margin-top:22px;padding-top:20px;}.hero-search-panel .smart-search-row{flex-direction:column;}.hero-search-panel .smart-search button{width:100%;min-height:42px;}.suggested-searches-label{width:100%;}.suggested-search-chip{flex:1 1 calc(50% - 8px);}.free-report-preview-header{gap:12px;}.free-report-preview .cta-primary{width:100%;text-align:center;}.public-home-actions{display:flex;overflow:visible;}.public-portfolio-cta{display:inline-flex;visibility:visible;opacity:1;width:100%;}.premium-home-card{padding:20px 18px;}.premium-home-header{text-align:left;margin-bottom:14px;}.premium-home-card h2{font-size:clamp(28px,7vw,34px);}.premium-example-header{flex-direction:column;gap:8px;}.premium-example-grid,.premium-home-grid{grid-template-columns:1fr;max-width:none;}.premium-home-feature{min-height:0;padding:16px;}.premium-home-cta-banner{align-items:flex-start;flex-direction:column;gap:6px;width:100%;}.premium-home-cta-banner small{text-align:left;}}
+/* Public homepage: compact Compass hierarchy and a distinct research search. */
+.public-hero{padding:32px;background:#101d29;box-shadow:none;border-color:rgba(148,163,184,.20);border-radius:20px;}
+.public-hero h1{max-width:760px;font-size:clamp(28px,3.1vw,40px);line-height:1.18;letter-spacing:-.025em;font-weight:800;text-wrap:balance;margin-bottom:12px;}
+.public-hero .hero-subtitle{max-width:680px;font-size:16px;line-height:1.6;}
+.public-hero .public-home-actions{align-items:center;gap:10px;margin-top:20px;}
+.public-hero .public-home-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:12px 18px;border-radius:10px;font-size:14px;line-height:1.35;font-weight:700;width:auto;}
+.public-hero .cta-primary{box-shadow:none;border:1px solid transparent;}
+.public-hero .public-portfolio-cta{background:transparent;border-color:rgba(148,163,184,.35);}
+.public-hero .public-home-actions .homepage-newsletter-link{color:#aebdca;background:transparent;border:1px solid transparent;padding-inline:8px;font-size:13px;font-weight:400;text-decoration:underline;text-underline-offset:4px;}
+.public-hero>.example-reassurance{max-width:680px;margin:12px auto 0;font-size:12px;line-height:1.5;}
+.public-hero .hero-search-panel{max-width:780px;margin:24px auto 0;padding-top:22px;text-align:left;border-color:rgba(148,163,184,.24);}
+.public-hero .hero-search-panel h2{font-size:18px;line-height:1.35;font-weight:700;margin:0 0 12px;}
+.public-hero .smart-search-row{background:#0b1621;border:1px solid rgba(148,163,184,.30);border-radius:12px;padding:5px;box-shadow:none;gap:6px;}
+.public-hero .smart-search-row:focus-within{border-color:#4adea3;outline:2px solid rgba(74,222,163,.20);outline-offset:2px;}
+.public-hero .smart-search input{font-size:16px;font-weight:400;padding:10px 12px;}
+.public-hero .smart-search button{min-height:44px;border-radius:8px;font-size:14px;font-weight:700;background:#4adea3;}
+.public-hero .suggested-searches{gap:4px 12px;margin-top:8px;}
+.public-hero .suggested-searches-label{width:auto;font-weight:400;}
+.public-hero .suggested-search-chip{flex:0 0 auto;min-height:44px;padding:6px 0;border:0;border-radius:4px;background:transparent;font-weight:400;font-size:13px;color:#bdc9d5;}
+.public-hero .suggested-search-chip:hover{color:#86efac;text-decoration:underline;}
+.public-hero a:focus-visible,.public-hero button:focus-visible{outline:2px solid #f0c36a;outline-offset:3px;}
+@media(min-width:641px) and (max-width:900px){.public-hero .public-home-actions a{width:auto;}}
+@media(max-width:640px){.public-hero{padding:24px 18px;}.public-hero h1{font-size:28px;}.public-hero .hero-subtitle{font-size:15px;}.public-hero .public-home-actions{gap:8px;margin-top:18px;}.public-hero .public-home-actions a{width:100%;}.public-hero .public-home-actions .homepage-newsletter-link{min-height:44px;padding:8px;}.public-hero .hero-search-panel{margin-top:20px;padding-top:20px;}.public-hero .smart-search-row{flex-direction:column;}.public-hero .smart-search input{width:100%;min-height:44px;}.public-hero .suggested-searches{gap:0 14px;}.public-hero .suggested-searches-label{width:100%;margin-top:8px;}}
 </style>
 </head>
 <body class="{% if is_public_home %}public-home{% else %}dashboard-view{% endif %}" data-public-home="{{ 'true' if is_public_home else 'false' }}">
@@ -13778,12 +13801,11 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
             <div class="hero-actions public-home-actions" aria-label="Investment discovery and portfolio tools">
                 <a class="cta-primary" href="/beginner">Explore Investment Compass</a>
                 <a class="cta-secondary public-portfolio-cta" href="/portfolio-fit">Build Your Portfolio</a>
-                <a class="cta-secondary" href="/newsletter">Join StockRadar Weekly</a>
+                <a class="homepage-newsletter-link" href="/newsletter">Join StockRadar Weekly</a>
             </div>
             <p class="example-reassurance">Understand the risks before building a portfolio. Educational guidance, not personalised investment recommendations.</p>
             <section class="hero-search-panel" id="stock-search" aria-labelledby="stock-search-heading">
-                <h2 id="stock-search-heading">Start with a company you already know</h2>
-                <p>Search any stock or ETF.</p>
+                <h2 id="stock-search-heading">Search stocks &amp; ETFs</h2>
                 <form class="smart-search" onsubmit="return runSmartSearch(event)">
                     <label for="smartSearchInput">Search a stock or ETF</label>
                     <div class="smart-search-row">
@@ -13794,12 +13816,11 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
                 </form>
                 <div class="suggested-searches" aria-label="Suggested example reports">
                     <span class="suggested-searches-label">Try an example</span>
-                    <a class="suggested-search-chip" href="/stock/MSFT">{{ stock_identity('MSFT', 'Microsoft — MSFT', 'compact') }}</a>
-                    <a class="suggested-search-chip" href="/stock/AAPL">{{ stock_identity('AAPL', 'Apple — AAPL', 'compact') }}</a>
-                    <a class="suggested-search-chip" href="/stock/AMZN">{{ stock_identity('AMZN', 'Amazon — AMZN', 'compact') }}</a>
-                    <a class="suggested-search-chip" href="/stock/SPY">{{ stock_identity('SPY', 'S&P 500 ETF — SPY', 'compact') }}</a>
+                    <a class="suggested-search-chip" href="/stock/MSFT">Microsoft</a>
+                    <a class="suggested-search-chip" href="/stock/AAPL">Apple</a>
+                    <a class="suggested-search-chip" href="/stock/AMZN">Amazon</a>
+                    <a class="suggested-search-chip" href="/stock/SPY">S&amp;P 500 ETF</a>
                 </div>
-                <p class="example-reassurance">New to investing? Start with a company or fund you already recognise.</p>
             </section>
         {% else %}
 	        <p style="color:#4adea3;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 12px;">AI-assisted market research</p>
