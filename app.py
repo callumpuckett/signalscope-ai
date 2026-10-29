@@ -13709,6 +13709,9 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 .public-hero .cta-primary{box-shadow:none;border:1px solid transparent;}
 .public-hero .public-portfolio-cta{background:transparent;border-color:rgba(148,163,184,.35);}
 .public-hero .public-home-actions .homepage-newsletter-link{color:#aebdca;background:transparent;border:1px solid transparent;padding-inline:8px;font-size:13px;font-weight:400;text-decoration:underline;text-underline-offset:4px;}
+.public-hero .homepage-newsletter-action{flex:0 1 290px;max-width:100%;text-align:center;}
+.public-hero .homepage-newsletter-action p{margin:0;color:#91a3b4;font-size:12px;line-height:1.5;}
+@media(max-width:640px){.public-hero .homepage-newsletter-action{flex:auto;width:100%;}.public-hero .homepage-newsletter-action p{max-width:290px;margin:0 auto;}}
 .public-hero>.example-reassurance{max-width:680px;margin:12px auto 0;font-size:12px;line-height:1.5;}
 .public-hero .hero-search-panel{max-width:780px;margin:24px auto 0;padding-top:22px;text-align:left;border-color:rgba(148,163,184,.24);}
 .public-hero .hero-search-panel h2{font-size:18px;line-height:1.35;font-weight:700;margin:0 0 12px;}
@@ -13801,7 +13804,10 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
             <div class="hero-actions public-home-actions" aria-label="Investment discovery and portfolio tools">
                 <a class="cta-primary" href="/beginner">Explore Investment Compass</a>
                 <a class="cta-secondary public-portfolio-cta" href="/portfolio-fit">Build Your Portfolio</a>
-                <a class="homepage-newsletter-link" href="/newsletter">Join StockRadar Weekly</a>
+                <div class="homepage-newsletter-action">
+                    <a class="homepage-newsletter-link" href="/newsletter" aria-describedby="homepage-newsletter-description">Get Free Weekly Market Insights</a>
+                    <p id="homepage-newsletter-description">Free weekly newsletter • Market trends, stock insights &amp; investing tips</p>
+                </div>
             </div>
             <p class="example-reassurance">Understand the risks before building a portfolio. Educational guidance, not personalised investment recommendations.</p>
             <section class="hero-search-panel" id="stock-search" aria-labelledby="stock-search-heading">
