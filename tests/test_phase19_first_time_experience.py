@@ -80,14 +80,14 @@ def test_free_report_preview_has_a_claim_free_fallback():
     )
 
 
-def test_public_hero_integrates_the_single_stock_search_journey():
+def test_public_hero_leads_with_compass_and_preserves_stock_search():
     response = render_public_home()
     page = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "<h1>Learn to think like an investor.</h1>" in page
+    assert "<h1>Not Sure Where to Invest? Start Here.</h1>" in page
     assert (
-        "Search any stock or ETF and get a clear, plain-English research summary in seconds."
+        "answer five plain-English questions to see an educational starter profile, example allocations and ideas to research."
         in page
     )
     assert "Start with a company you already know" in page
@@ -100,6 +100,21 @@ def test_public_hero_integrates_the_single_stock_search_journey():
     assert "AI-assisted market research" not in page
     assert "We help people become better investors" not in page
     assert "Start free with StockRadar Weekly" not in page
+
+    document = BeautifulSoup(page, "html.parser")
+    hero = document.select_one("#investment-compass-card")
+    actions = hero.select(".public-home-actions a")
+    assert actions[0].get_text(strip=True) == "Explore Investment Compass"
+    assert actions[0]["href"] == "/beginner"
+    assert "cta-primary" in actions[0]["class"]
+    assert actions[1].get_text(strip=True) == "Build Your Portfolio"
+    assert actions[1]["href"] == "/portfolio-fit"
+    assert "cta-secondary" in actions[1]["class"]
+    assert page.index("Explore Investment Compass</a>") < page.index('id="stock-search"')
+    assert "not personalised investment recommendations" in hero.get_text()
+    assert [step.get_text(strip=True) for step in document.select(".product-step strong")] == [
+        "Discover", "Understand", "Build", "Monitor"
+    ]
 
 
 def test_suggested_examples_open_real_existing_reports():
@@ -126,16 +141,13 @@ def test_suggested_examples_open_real_existing_reports():
     )
 
 
-def test_three_steps_and_free_preview_use_the_required_compact_copy():
+def test_four_step_journey_preserves_the_free_report_preview():
     page = render_public_home().get_data(as_text=True)
     document = BeautifulSoup(page, "html.parser")
 
-    assert "<strong>Search</strong><span>Choose a company or fund you recognise.</span>" in page
-    assert "<strong>Understand</strong><span>See the current signal in plain English.</span>" in page
-    assert (
-        "<strong>Research</strong><span>Learn what evidence and risks may matter next.</span>"
-        in page
-    )
+    assert [step.get_text(strip=True) for step in document.select(".product-step strong")] == [
+        "Discover", "Understand", "Build", "Monitor"
+    ]
     assert "See a free report in action" in page
     preview_name = document.select_one("strong.free-report-preview-name")
     assert preview_name.select_one(".company-identity-name").get_text(strip=True) == (

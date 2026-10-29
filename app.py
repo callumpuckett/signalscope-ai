@@ -13520,7 +13520,7 @@ a:hover{text-decoration:underline;}
 .product-steps-header{text-align:center;margin:0 auto 15px;max-width:720px;}
 .product-steps-header h2{margin:0 0 7px;color:#eef2f6;font-size:var(--font-section);}
 .product-steps-header p{margin:0;color:#9fb0bf;line-height:1.55;}
-.product-step-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}
+.product-step-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;}
 .product-step{padding:15px 16px;border-radius:17px;background:rgba(2,6,23,0.28);border:1px solid rgba(148,163,184,0.12);}
 .product-step .product-step-number{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;line-height:1;flex:0 0 30px;margin-bottom:9px;border-radius:50%;background:rgba(74,222,163,0.13);color:#86efac;font-weight:950;}
 .product-step strong{display:block;color:#e8eef4;font-size:16px;margin-bottom:5px;}
@@ -13590,6 +13590,7 @@ a:hover{text-decoration:underline;}
 .public-hero .public-home-actions{justify-content:center;}
 .hero-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:24px;}
 .public-home-actions{overflow:visible;}
+.public-home-actions .cta-primary{display:inline-flex;align-items:center;justify-content:center;min-height:44px;}
 .public-portfolio-cta{display:inline-flex;align-items:center;justify-content:center;visibility:visible;opacity:1;}
 .cta-primary,.cta-secondary{display:inline-block;padding:14px 18px;border-radius:15px;text-decoration:none;font-weight:950;font-size:var(--font-cta);line-height:1.1;}
 .cta-primary{background:linear-gradient(135deg,#45e6a8,#f0c36a);color:#071018;box-shadow:0 14px 34px rgba(0,255,170,0.12);}
@@ -13772,8 +13773,14 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 
 	    <div class="card hero-card {% if is_public_home %}public-hero{% endif %}" id="investment-compass-card">
         {% if is_public_home %}
-	        <h1>Learn to think like an investor.</h1>
-	        <p class="hero-subtitle">Search any stock or ETF and get a clear, plain-English research summary in seconds.</p>
+	        <h1>Not Sure Where to Invest? Start Here.</h1>
+	        <p class="hero-subtitle">Explore investment ideas with Investment Compass: answer five plain-English questions to see an educational starter profile, example allocations and ideas to research.</p>
+            <div class="hero-actions public-home-actions" aria-label="Investment discovery and portfolio tools">
+                <a class="cta-primary" href="/beginner">Explore Investment Compass</a>
+                <a class="cta-secondary public-portfolio-cta" href="/portfolio-fit">Build Your Portfolio</a>
+                <a class="cta-secondary" href="/newsletter">Join StockRadar Weekly</a>
+            </div>
+            <p class="example-reassurance">Understand the risks before building a portfolio. Educational guidance, not personalised investment recommendations.</p>
             <section class="hero-search-panel" id="stock-search" aria-labelledby="stock-search-heading">
                 <h2 id="stock-search-heading">Start with a company you already know</h2>
                 <p>Search any stock or ETF.</p>
@@ -13794,10 +13801,6 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
                 </div>
                 <p class="example-reassurance">New to investing? Start with a company or fund you already recognise.</p>
             </section>
-            <div class="hero-actions public-home-actions" aria-label="Portfolio tools">
-                <a class="cta-secondary public-portfolio-cta" href="/portfolio-fit">Build Your Portfolio</a>
-                <a class="cta-secondary" href="/newsletter">Join StockRadar Weekly</a>
-            </div>
         {% else %}
 	        <p style="color:#4adea3;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 12px;">AI-assisted market research</p>
 	        <h1>Learn to think like an investor.</h1>
@@ -13815,12 +13818,13 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
     {% if is_public_home %}
     <section class="card product-steps" id="how-stockradar-works" aria-labelledby="product-steps-heading">
         <div class="product-steps-header">
-            <h2 id="product-steps-heading">Start with one stock</h2>
+            <h2 id="product-steps-heading">Discover → Understand → Build → Monitor</h2>
         </div>
         <div class="product-step-grid">
-            <div class="product-step"><span class="product-step-number">1</span><strong>Search</strong><span>Choose a company or fund you recognise.</span></div>
-            <div class="product-step"><span class="product-step-number">2</span><strong>Understand</strong><span>See the current signal in plain English.</span></div>
-            <div class="product-step"><span class="product-step-number">3</span><strong>Research</strong><span>Learn what evidence and risks may matter next.</span></div>
+            <div class="product-step"><span class="product-step-number">1</span><strong>Discover</strong><span>Explore a starter profile and investment ideas with Compass.</span></div>
+            <div class="product-step"><span class="product-step-number">2</span><strong>Understand</strong><span>Read stock research in plain English and check the risks.</span></div>
+            <div class="product-step"><span class="product-step-number">3</span><strong>Build</strong><span>Review portfolio roles and concentration with Build Your Portfolio.</span></div>
+            <div class="product-step"><span class="product-step-number">4</span><strong>Monitor</strong><span>Revisit signals and research as conditions change.</span></div>
         </div>
     </section>
 

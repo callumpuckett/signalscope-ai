@@ -97,9 +97,9 @@ def test_mobile_css_keeps_the_shared_feed_visible_and_clipped():
 def test_public_headline_correction_leaves_phase_19_content_intact():
     page = render_home().get_data(as_text=True)
 
-    assert "Learn to think like an investor." in page
+    assert "Not Sure Where to Invest? Start Here." in page
     assert 'placeholder="Try Microsoft, Apple, SPY or MSFT"' in page
-    assert "Choose a company or fund you recognise." in page
+    assert "Explore a starter profile and investment ideas with Compass." in page
     assert "See a free report in action" in page
     assert "Trading apps show you the market. Premium helps you understand the signal." in page
     assert "StockRadar Weekly" in page

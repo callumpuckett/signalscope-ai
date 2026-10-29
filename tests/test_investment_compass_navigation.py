@@ -90,6 +90,7 @@ def test_entitled_dashboard_navigation_contains_compass_once_and_all_tools():
         assert 'href="/premium-watchlist">Premium Watchlist' in page
         assert 'href="/compare">Compare Stocks' in page
         assert 'href="/portfolio-fit">Portfolio Builder' in page
+        assert page.index('href="/beginner"') < page.index('href="/portfolio-fit"')
         assert 'href="/universe">Stock Universe</a>' in page
         assert 'href="/manage-subscription">Manage Subscription</a>' in page
         assert 'aria-controls="stockradar-primary-menu"' in page
@@ -144,6 +145,7 @@ def test_relevant_standalone_pages_use_the_same_app_navigation():
         assert response.status_code == 200
         assert compass_navigation_count(page) == 1
         assert 'href="/beginner">Investment Compass</a>' in page
+        assert page.index('href="/beginner"') < page.index('href="/portfolio-fit"')
 
 
 def test_stock_report_uses_the_same_app_navigation():

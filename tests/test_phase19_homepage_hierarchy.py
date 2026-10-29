@@ -72,9 +72,10 @@ def test_logged_out_homepage_has_compact_public_navigation_and_stock_search():
     assert "Search a stock or ETF" in page
     assert 'placeholder="Try Microsoft, Apple, SPY or MSFT"' in page
     assert "View free report" in page
-    assert "Choose a company or fund you recognise." in page
-    assert "See the current signal in plain English." in page
-    assert "Learn what evidence and risks may matter next." in page
+    assert "Explore a starter profile and investment ideas with Compass." in page
+    assert "Read stock research in plain English and check the risks." in page
+    assert "Review portfolio roles and concentration with Build Your Portfolio." in page
+    assert "Revisit signals and research as conditions change." in page
     assert ".product-step .product-step-number{display:inline-flex;align-items:center;justify-content:center;" in page
 
     assert "📊 AI Signals" not in page
@@ -127,6 +128,7 @@ def test_public_homepage_restores_build_your_portfolio_cta():
     page = render_home().get_data(as_text=True)
 
     assert page.count(">Build Your Portfolio</a>") == 1
+    assert page.index(">Explore Investment Compass</a>") < page.index(">Build Your Portfolio</a>")
     assert (
         '<a class="cta-secondary public-portfolio-cta" '
         'href="/portfolio-fit">Build Your Portfolio</a>'
@@ -154,9 +156,10 @@ def test_login_and_portfolio_routes_preserve_existing_access_behaviour():
     locked_portfolio = client.get("/portfolio-fit")
     assert locked_portfolio.status_code == 200
     assert (
-        "<strong>Locked:</strong> Upgrade to unlock portfolio fit reviews."
+        "Upgrade to unlock portfolio fit reviews"
         in locked_portfolio.get_data(as_text=True)
     )
+    assert 'action="/portfolio-fit#portfolio-result"' not in locked_portfolio.get_data(as_text=True)
 
     with client.session_transaction() as current_session:
         current_session["stripe_subscription_id"] = "sub_test_active"
