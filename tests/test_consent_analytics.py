@@ -177,6 +177,22 @@ def test_different_checkout_cannot_reuse_consent_association(analytics):
     thread.assert_not_called()
 
 
+def test_real_stripe_sdk_objects_support_checkout_and_paid_confirmation(analytics):
+    tracker, store, client = accept(analytics)
+    checkout = app.stripe.checkout.Session.construct_from({
+        'id': 'cs_live_sdk', 'livemode': True, 'payment_status': 'paid', 'amount_total': 500,
+        'subscription': 'sub_sdk', 'metadata': {'stockradar_checkout_intent': 'sdk-intent'}
+    }, 'test-key')
+    with client.application.test_request_context('/create-checkout-session', headers={
+            'Cookie': COOKIE + '=' + client.get_cookie(COOKIE).value}):
+        with patch('analytics.threading.Thread') as thread:
+            tracker.checkout_created(checkout, 'sdk-intent')
+            tracker.paid_checkout(checkout, time.time())
+            tracker.paid_checkout(checkout, time.time())
+    assert thread.call_count == 2  # one actual checkout creation, one paid subscription
+    assert sorted(record['name'] for record in store.state['events'].values()) == ['begin_checkout', 'purchase']
+
+
 def test_purchase_recovery_reuses_transaction_and_rechecks_consent(analytics):
     tracker, store, client = prepare_checkout(analytics)
     with patch('analytics.threading.Thread'):

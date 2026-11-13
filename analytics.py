@@ -39,8 +39,8 @@ PUBLIC = {
 
 
 class ConsentAnalytics:
-    def __init__(self, app, storage):
-        self.app, self.storage = app, storage
+    def __init__(self, app, storage, stripe_value):
+        self.app, self.storage, self.value = app, storage, stripe_value
         # Remains off until the supplied container is reviewed and published.
         self.enabled = os.getenv("ANALYTICS_ENABLED", "false").lower() == "true"
         self.api_secret = os.getenv("GA4_API_SECRET", "").strip()
@@ -146,7 +146,7 @@ class ConsentAnalytics:
         consent = self.choice()
         if consent.get("choice") != "accepted":
             return
-        checkout_id = checkout.get("id", "")
+        checkout_id = self.value(checkout, "id", "")
         if not isinstance(checkout_id, str) or not checkout_id.startswith("cs_"):
             return
         reference = self.digest(intent)
@@ -170,17 +170,17 @@ class ConsentAnalytics:
     def paid_checkout(self, checkout, event_created):
         """Only called after the existing signed webhook and entitlement validation."""
         if (not self.enabled or not 0 <= time.time() - event_created <= 7 * 86400
-                or checkout.get("livemode") is not True
-                or checkout.get("payment_status") != "paid"
-                or not isinstance(checkout.get("amount_total"), int)
-                or checkout["amount_total"] <= 0):
+                or self.value(checkout, "livemode") is not True
+                or self.value(checkout, "payment_status") != "paid"
+                or not isinstance(self.value(checkout, "amount_total"), int)
+                or self.value(checkout, "amount_total") <= 0):
             return
-        intent = (checkout.get("metadata") or {}).get("stockradar_checkout_intent", "")
-        subscription = checkout.get("subscription")
+        intent = self.value(self.value(checkout, "metadata", {}), "stockradar_checkout_intent", "")
+        subscription = self.value(checkout, "subscription")
         if not intent or not isinstance(subscription, str) or not subscription.startswith("sub_"):
             return
         self.enqueue("purchase_" + self.digest(subscription), self.digest(intent), "purchase",
-                     checkout_id=checkout.get("id", ""))
+                     checkout_id=self.value(checkout, "id", ""))
 
     def enqueue(self, event_id, reference, name, checkout_id=None):
         if not self.api_secret:
@@ -282,5 +282,6 @@ class ConsentAnalytics:
     def safely(self, operation, *args):
         try:
             operation(*args)
-        except Exception:
-            self.app.logger.warning("Analytics unavailable; billing continues unchanged.")
+        except Exception as error:
+            self.app.logger.warning("Analytics unavailable: operation=%s error_type=%s; billing continues unchanged.",
+                                    operation.__name__, type(error).__name__)

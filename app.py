@@ -16506,7 +16506,7 @@ app.wsgi_app = TimingMiddleware(app.wsgi_app)
 
 from analytics import ConsentAnalytics
 
-consent_analytics = ConsentAnalytics(app, lambda: NEWSLETTER_STORAGE)
+consent_analytics = ConsentAnalytics(app, lambda: NEWSLETTER_STORAGE, stripe_value)
 
 
 def start_runtime_schedulers():
