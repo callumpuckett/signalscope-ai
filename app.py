@@ -5136,7 +5136,7 @@ def _fetch_yahoo_income_history(symbol):
         "includeAdjustedClose": "true",
     })
     url = (
-        "https://query1.finance.yahoo.com/v8/finance/chart/"
+        "https://query2.finance.yahoo.com/v8/finance/chart/"
         f"{quote(canonical_stock_symbol(symbol), safe='')}?{query}"
     )
     request_object = Request(

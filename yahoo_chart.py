@@ -17,7 +17,7 @@ def fetch_chart_history(symbol, *, period="1mo", interval="1d", timeout=6,
     query = urlencode({"range": period, "interval": interval,
                        "events": "div,splits", "includeAdjustedClose": "true"})
     request = Request(
-        f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(symbol, safe='')}?{query}",
+        f"https://query2.finance.yahoo.com/v8/finance/chart/{quote(symbol, safe='')}?{query}",
         headers={"Accept": "application/json", "User-Agent": "StockRadar/1.0"},
     )
     with urlopen(request, timeout=min(max(float(timeout), 1), 8),
