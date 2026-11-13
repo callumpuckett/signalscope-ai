@@ -14,6 +14,8 @@ def isolate_application_security_state(monkeypatch, tmp_path, request):
 
     # Legacy provider tests mock the yfinance adapter; direct transport has its own tests.
     monkeypatch.setattr(stockradar, "YAHOO_HISTORY_TRANSPORT", "yfinance")
+    monkeypatch.setattr(stockradar, "YAHOO_HISTORY_DIRECTORY", str(tmp_path / "market-history"))
+    monkeypatch.setattr(stockradar, "YAHOO_CHART_COOLDOWN_UNTIL", 0)
     monkeypatch.setattr(stockradar, "YAHOO_METADATA_ASYNC_ENABLED", False)
     monkeypatch.setattr(stockradar, "DASHBOARD_CACHE", {"timestamp": 0, "data": None})
     monkeypatch.setattr(stockradar, "DASHBOARD_REFRESH_PENDING", False)

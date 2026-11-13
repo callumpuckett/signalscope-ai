@@ -24,7 +24,7 @@ def test_global_yahoo_cooldown_preserves_expired_history_and_recovers(monkeypatc
         app.safe_history('MSFT', **kwargs)
         clock.return_value = 1301
         # Another Yahoo request has triggered the shared rate-limit cooldown.
-        monkeypatch.setattr(app, 'YAHOO_COOLDOWN_UNTIL', 1600)
+        monkeypatch.setattr(app, 'YAHOO_CHART_COOLDOWN_UNTIL', 1600)
         retained = app.safe_history('MSFT', **kwargs)
         assert retained.iloc[0, 0] == 100
         retained.iloc[0, 0] = 999

@@ -27,11 +27,15 @@ def frame(values=(10, 12)):
     return pd.DataFrame({"Close": values}, index=pd.date_range("2026-01-01", periods=len(values), tz="UTC"))
 
 
-def test_metadata_throttle_does_not_disable_chart_endpoint(direct, monkeypatch):
+@pytest.mark.parametrize("transport", ["chart", "yfinance"])
+def test_metadata_throttle_does_not_disable_chart_endpoint(direct, monkeypatch, transport):
+    monkeypatch.setattr(app, "YAHOO_HISTORY_TRANSPORT", transport)
     monkeypatch.setattr(app, "YAHOO_COOLDOWN_UNTIL", app.time.time() + 300)
-    with patch.object(app, "fetch_chart_history", return_value=frame()) as fetch:
+    ticker = Mock()
+    ticker.history.return_value = frame()
+    with patch.object(app, "fetch_chart_history", return_value=frame()) as fetch, patch.object(app.yf, "Ticker", return_value=ticker):
         assert app.stock_history("MSFT", "1mo")["ok"]
-        assert fetch.call_count == 1
+        assert (fetch.call_count if transport == "chart" else ticker.history.call_count) == 1
 
 
 def test_chart_429_blocks_requests_until_cooldown_then_recovers(direct):

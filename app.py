@@ -2704,7 +2704,7 @@ YAHOO_CHART_COOLDOWN_UNTIL = 0.0
 YAHOO_RETRY_SECONDS = 300
 YAHOO_HISTORY_CACHE = {}
 YAHOO_HISTORY_CACHE_LIMIT = 256
-YAHOO_HISTORY_TRANSPORT = os.environ.get("YAHOO_HISTORY_TRANSPORT", "chart")
+YAHOO_HISTORY_TRANSPORT = os.environ.get("YAHOO_HISTORY_TRANSPORT", "yfinance")
 YAHOO_HISTORY_DIRECTORY = stockradar_data_path("market_history")
 YAHOO_METADATA_ASYNC_ENABLED = True
 YAHOO_METADATA_PENDING = set()
@@ -2724,8 +2724,6 @@ def yahoo_refresh_allowed():
 
 
 def history_refresh_allowed():
-    if YAHOO_HISTORY_TRANSPORT != "chart":
-        return yahoo_refresh_allowed()
     # quoteSummary/authentication throttling must not disable the independent chart
     # endpoint. A chart 429 has its own full cooldown; never retry another host.
     return time.time() >= YAHOO_CHART_COOLDOWN_UNTIL and not (
@@ -5116,7 +5114,7 @@ def provider_failure_kind(exc):
 def fetch_yahoo_income_history(symbol):
     global YAHOO_CHART_COOLDOWN_UNTIL
     with history_refresh_slot() as acquired:
-        if not acquired or not history_refresh_allowed():
+        if not acquired or not history_refresh_allowed() or not yahoo_refresh_allowed():
             raise yahoo_deferred_error()
         try:
             return _fetch_yahoo_income_history(symbol)
@@ -5388,7 +5386,7 @@ def _fetch_dividend_context(cleaned_symbol, *, allow_network=True):
             or not str(info.get("currency") or "").strip()
             or not market_price_available
         )
-        if (income_history is None or needs_chart_metadata) and history_refresh_allowed():
+        if (income_history is None or needs_chart_metadata) and yahoo_refresh_allowed() and history_refresh_allowed():
             try:
                 chart_history, chart_info = fetch_yahoo_income_history(cleaned_symbol)
                 if income_history is None or needs_chart_metadata:
@@ -7368,9 +7366,8 @@ def _cached_yahoo_history(key, now):
 
 @contextmanager
 def history_refresh_slot():
-    direct = YAHOO_HISTORY_TRANSPORT == "chart"
-    lock = YAHOO_HISTORY_REFRESH_LOCK if direct else YAHOO_REFRESH_LOCK
-    acquired = lock.acquire(timeout=0.05) if direct else lock.acquire()
+    lock = YAHOO_HISTORY_REFRESH_LOCK
+    acquired = lock.acquire(timeout=0.05)
     try:
         yield acquired
     finally:
@@ -7388,7 +7385,7 @@ def safe_history(ticker, _ticker_object=None, **kwargs):
     # Transport timeouts do not change observations. Canonical defaults let chart
     # and income consumers reuse the same validated one-year request.
     key = (ticker, tuple(sorted((name, repr(value)) for name, value in kwargs.items() if name != "timeout")))
-    if YAHOO_HISTORY_TRANSPORT == "chart" and key not in YAHOO_HISTORY_CACHE:
+    if key not in YAHOO_HISTORY_CACHE:
         restored = load_history(YAHOO_HISTORY_DIRECTORY, key, time.time())
         if restored and (extract_history_price_series(restored["history"], ticker) > 0).any():
             with YAHOO_CACHE_LOCK:
@@ -7421,15 +7418,20 @@ def safe_history(ticker, _ticker_object=None, **kwargs):
                     raise RuntimeError("yfinance is not installed")
                 stock = _ticker_object if _ticker_object is not None else yf.Ticker(ticker)
                 try:
-                    history = stock.history(**kwargs)
+                    history = stock.history(**kwargs, raise_errors=True)
                 except TypeError:
                     kwargs.pop("timeout", None)
-                    history = stock.history(**kwargs)
+                    history = stock.history(**kwargs, raise_errors=True)
+                metadata = getattr(getattr(stock, "_price_history", None), "_history_metadata", None)
+                if isinstance(metadata, dict):
+                    history.attrs.update(currency=metadata.get("currency", ""),
+                                         exchange_timezone=metadata.get("exchangeTimezoneName", "UTC"),
+                                         provider_quote_at=metadata.get("regularMarketTime"))
             if not (extract_history_price_series(history, ticker) > 0).any():
                 raise ValueError("Yahoo history empty")
         except Exception as exc:
             record_yahoo_failure(exc)
-            if YAHOO_HISTORY_TRANSPORT == "chart" and provider_failure_kind(exc) == "rate-limit":
+            if type(exc).__name__ == "YFRateLimitError" or provider_failure_kind(exc) == "rate-limit":
                 YAHOO_CHART_COOLDOWN_UNTIL = max(YAHOO_CHART_COOLDOWN_UNTIL, time.time() + YAHOO_RETRY_SECONDS)
             with YAHOO_CACHE_LOCK:
                 cached = YAHOO_HISTORY_CACHE.get(key)
@@ -7450,13 +7452,12 @@ def safe_history(ticker, _ticker_object=None, **kwargs):
             ttl = (21600 if kwargs.get("period") == "max" else
                    60 if kwargs.get("interval", "1d").endswith(("m", "h")) else 300)
             entry = {"timestamp": history.attrs["retrieved_at"], "history": history.copy(deep=True),
-                     "ttl": ttl if YAHOO_HISTORY_TRANSPORT == "chart" else YAHOO_RETRY_SECONDS}
+                     "ttl": ttl}
             YAHOO_HISTORY_CACHE[key] = entry
-        if YAHOO_HISTORY_TRANSPORT == "chart":
-            try:
-                save_history(YAHOO_HISTORY_DIRECTORY, key, entry, YAHOO_HISTORY_CACHE_LIMIT)
-            except (OSError, ValueError, TypeError):
-                app.logger.warning("History persistence failed; validated in-memory data retained")
+        try:
+            save_history(YAHOO_HISTORY_DIRECTORY, key, entry, YAHOO_HISTORY_CACHE_LIMIT)
+        except (OSError, ValueError, TypeError):
+            app.logger.warning("History persistence failed; validated in-memory data retained")
         return history.copy(deep=True)
 
 
