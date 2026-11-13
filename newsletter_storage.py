@@ -28,6 +28,7 @@ STORE_DEFAULTS = {
     "turnstile_tokens": {"tokens": {}},
     "opportunity_radar": {"snapshots": {}, "latest_snapshot_date": ""},
     "opportunity_alerts": {"preferences": {}, "events": []},
+    "analytics": {"consents": {}, "checkouts": {}, "events": {}},
 }
 
 
@@ -37,6 +38,7 @@ APPLICATION_STATE_STORES = {
     "turnstile_tokens",
     "opportunity_radar",
     "opportunity_alerts",
+    "analytics",
 }
 
 

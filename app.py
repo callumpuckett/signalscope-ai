@@ -715,11 +715,11 @@ def add_security_headers(response):
         "object-src 'none'",
         "frame-ancestors 'self'",
         "form-action 'self'",
-        "script-src 'self' https://challenges.cloudflare.com https://cdn.jsdelivr.net",
+        "script-src 'self' https://challenges.cloudflare.com https://cdn.jsdelivr.net https://www.googletagmanager.com",
         "style-src 'self'",
         "img-src 'self' data: https:",
         "font-src 'self'",
-        "connect-src 'self' https://challenges.cloudflare.com",
+        "connect-src 'self' https://challenges.cloudflare.com https://www.google-analytics.com https://region1.google-analytics.com",
         "frame-src https://challenges.cloudflare.com",
         "upgrade-insecure-requests",
     ))
@@ -13049,6 +13049,7 @@ def newsletter_auto_send_loop():
         except Exception:
             record_scheduled_job_check("newsletter", "check_failed", failed=True)
             app.logger.exception("Newsletter auto-send scheduler failed")
+        consent_analytics.safely(consent_analytics.retry_pending)
         time.sleep(max(60, NEWSLETTER_AUTO_SEND_CHECK_INTERVAL_SECONDS))
 
 
@@ -15578,6 +15579,9 @@ def health():
         "dashboard_cache_ttl_seconds": DASHBOARD_CACHE_TTL_SECONDS,
         "market_data": market_data_health(),
         "scheduled_jobs_this_worker": copy.deepcopy(SCHEDULED_JOB_STATUS),
+        "analytics": {"enabled": consent_analytics.enabled,
+                      "server_events_configured": bool(consent_analytics.api_secret),
+                      "durable_store": bool(NEWSLETTER_STORAGE and NEWSLETTER_STORAGE.durable)},
         "newsletter": newsletter_status_snapshot(),
     })
 
@@ -15783,6 +15787,12 @@ def privacy():
         <p>Payment processing is handled by Stripe when Premium checkout is available. StockRadar does not store full payment-card details.</p>
         <h2>Your choices</h2>
         <p>You may contact support to ask about personal information associated with your use of StockRadar, subject to applicable legal requirements.</p>
+        <h2>Optional Google Analytics</h2>
+        <p>When analytics is enabled, you can accept or reject it using the analytics banner, and change your choice using Analytics preferences. We use Google Analytics 4 through Google Tag Manager to understand visits, traffic sources and the journey to Premium. Google tags are blocked until you accept. Rejecting analytics does not affect research, checkout or Premium access.</p>
+        <p>After acceptance, pseudonymous browser and session identifiers, simplified page categories, known campaign labels and Premium journey events may be sent to Google. Google also processes technical request information, such as IP address and browser/device characteristics, to provide analytics. We do not send names, email addresses, card details, portfolio entries, raw query strings or Stripe customer identifiers. Advertising features are not enabled by this integration.</p>
+        <p>Our signed analytics preference cookie lasts up to six months. After acceptance, Google Analytics may set its own analytics cookies. Withdrawal stops further browser tracking and removes accessible Google Analytics cookies; a preference in this browser also prevents reloading tags. It does not erase information already received by Google. Browser privacy controls or blockers may prevent measurement.</p>
+        <p>For consented checkouts, a separate pseudonymous association is valid for up to 24 hours to measure checkout creation and verified, positive paid subscription confirmation. Payment values and payment details are not sent. Unmatched, rejected, withdrawn, expired, test-mode and zero-value checkouts are excluded. Pseudonymous delivery-deduplication records expire after 400 days; consent records after six months. Expired records are removed during subsequent analytics updates. Counts are not a complete billing ledger.</p>
+        <p>Google processes analytics data under its applicable service and data-processing terms, including international processing. See <a href="https://policies.google.com/privacy">Google's privacy information</a>. Contact StockRadar support about your information or withdrawal requests. The Google property currently uses two-month event-data retention and 14-month user-data retention. These settings do not limit most aggregated reports, and user retention may reset with new activity.</p>
         """,
     )
 
@@ -16135,6 +16145,7 @@ def create_checkout_session():
             metadata=checkout_metadata,
             subscription_data={"metadata": checkout_metadata},
         )
+        consent_analytics.safely(consent_analytics.checkout_created, checkout_session, checkout_intent)
         return redirect(checkout_session.url, code=303)
     except Exception:
         session.pop("checkout_intent", None)
@@ -16410,6 +16421,8 @@ def stripe_webhook():
 
     if entitlement_record is None:
         return jsonify({"error": "Webhook processing is temporarily unavailable."}), 503
+    if event_type == "checkout.session.completed":
+        consent_analytics.safely(consent_analytics.paid_checkout, event_data, event_created)
     event_outcome = entitlement_record.pop("_event_outcome", "applied")
     app.logger.info(
         "Stripe webhook transition: event=%s type=%s outcome=%s",
@@ -16489,6 +16502,11 @@ app.process_response = measured("response.headers_and_session")(app.process_resp
 app.preprocess_request = measured("request.security_hooks")(app.preprocess_request)
 app.session_interface = TimedSessionInterface(app.session_interface)
 app.wsgi_app = TimingMiddleware(app.wsgi_app)
+
+
+from analytics import ConsentAnalytics
+
+consent_analytics = ConsentAnalytics(app, lambda: NEWSLETTER_STORAGE)
 
 
 def start_runtime_schedulers():
