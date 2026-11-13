@@ -89,7 +89,7 @@ def test_public_hero_leads_with_compass_and_preserves_stock_search():
     assert response.status_code == 200
     assert "<h1>Not Sure Where to Invest? Start Here.</h1>" in page
     assert (
-        "answer five plain-English questions to see an educational starter profile, example allocations and ideas to research."
+        "Learn about investing with Investment Compass: get an educational starter profile, then research companies and portfolio ideas."
         in page
     )
     assert "Search stocks &amp; ETFs" in page

@@ -14050,7 +14050,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 	    <div class="card hero-card {% if is_public_home %}public-hero{% endif %}" id="investment-compass-card">
         {% if is_public_home %}
 	        <h1>Not Sure Where to Invest? Start Here.</h1>
-	        <p class="hero-subtitle">Explore investment ideas with Investment Compass: answer five plain-English questions to see an educational starter profile, example allocations and ideas to research.</p>
+	        <p class="hero-subtitle">Learn about investing with Investment Compass: get an educational starter profile, then research companies and portfolio ideas. Premium adds deeper research and risk explanations for just £5/month.</p>
             <div class="hero-actions public-home-actions" aria-label="Investment discovery and portfolio tools">
                 <a class="cta-primary" href="/beginner">Explore Investment Compass</a>
                 <a class="cta-secondary public-portfolio-cta" href="/portfolio-fit">Build Your Portfolio</a>
@@ -14059,7 +14059,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
                     <p id="homepage-newsletter-description">Market insights, stock analysis &amp; investing tips • Every Friday</p>
                 </div>
             </div>
-            <p class="example-reassurance">Understand the risks before building a portfolio. Educational guidance, not personalised investment recommendations.</p>
+            <p class="example-reassurance">Start with a company you know. Understand its risks before building a portfolio. Educational research, not personalised investment recommendations.</p>
             <section class="hero-search-panel" id="stock-search" aria-labelledby="stock-search-heading">
                 <h2 id="stock-search-heading">Search stocks &amp; ETFs</h2>
                 <form class="smart-search" onsubmit="return runSmartSearch(event)">
@@ -14081,8 +14081,8 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
         {% else %}
 	        <p style="color:#4adea3;font-weight:950;text-transform:uppercase;letter-spacing:0.13em;font-size:12px;margin:0 0 12px;">AI-assisted market research</p>
 	        <h1>Learn to think like an investor.</h1>
-	        <p class="hero-subtitle">We help people become better investors through plain-English market signals, practical decision support and investing education—without the noise.</p>
-	        <p style="color:#91a3b4;font-size:14px;line-height:1.6;margin:18px 0 0;">Start free with StockRadar Weekly, explore the live signal dashboard, then upgrade when you want the reasoning and risk read behind each signal.</p>
+	        <p class="hero-subtitle">Learn about companies, research opportunities and review portfolio risks with plain-English investing tools. Go deeper with Premium for just £5/month.</p>
+	        <p style="color:#91a3b4;font-size:14px;line-height:1.6;margin:18px 0 0;">Use Free to explore signals. Choose Premium for company reasoning, risk explanations and portfolio context before making your own investment decisions.</p>
             <div class="hero-actions">
                 <a class="cta-primary" href="/newsletter">Join Free</a>
                 <a class="cta-secondary" href="/upgrade">Upgrade to Premium — £5/month</a>
@@ -14152,7 +14152,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
 	        <div class="premium-brief-card" aria-label="Premium Decision Brief preview">
 	            <p class="premium-home-kicker">{% if has_premium_access %}Today's Decision Brief{% else %}Locked Decision Brief preview{% endif %}</p>
 	            <h3 style="color:#f8fafc;margin:0 0 6px;font-size:22px;line-height:1.2;">What Premium helps you sort first.</h3>
-	            <p>{% if has_premium_access %}A quick decision-support scan from the current StockRadar universe.{% else %}Premium turns the signal table into a practical review of strongest setups, caution names and portfolio role.{% endif %}</p>
+	            <p>{% if has_premium_access %}A quick decision-support scan from the current StockRadar universe.{% else %}For £5/month, go beyond signals: understand company research, question the risks and review how an idea could fit your portfolio.{% endif %}</p>
 	            <div class="premium-brief-grid">
 	                {% if has_premium_access %}
 	                {% if premium_decision_brief.strongest %}
@@ -14188,13 +14188,13 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
             <div class="premium-home-feature"><strong>Opportunity Radar</strong><span>StockRadar scans daily to highlight the strongest research opportunities.</span></div>
             <div class="premium-home-feature"><strong>Before You Act</strong><span>Use a checklist before treating a signal as actionable research.</span></div>
             <div class="premium-home-feature premium-home-tier"><strong>Free</strong><span>Signal preview, market news, basic research prompts and StockRadar Weekly.</span></div>
-            <div class="premium-home-feature premium-home-tier"><strong>Premium</strong><span>Full reasoning, risk read, portfolio fit, comparisons and before-you-act checks.</span></div>
+            <div class="premium-home-feature premium-home-tier"><strong>Premium</strong><span>£5/month for company reasoning, risk explanations, portfolio fit and full comparisons.</span></div>
         </div>
         <div class="premium-home-actions">
             {% if has_premium_access %}
             <a class="premium-home-cta-banner" href="/opportunities"><span>See today’s strongest StockRadar research opportunities</span><small>Open the daily Premium Opportunity Radar.</small></a>
             {% else %}
-            <a class="premium-home-cta-banner" href="/upgrade"><span>Upgrade to Premium — £5/month</span><small>Unlock daily opportunity research, signal reasoning and risk context.</small></a>
+            <a class="premium-home-cta-banner" href="/upgrade"><span>Upgrade to Premium — £5/month</span><small>Understand companies, compare opportunities and review portfolio risks.</small></a>
             {% endif %}
         </div>
     </div>
@@ -14960,8 +14960,8 @@ a{color:#80d4f4}button:focus-visible,a:focus-visible,.comparison-scroll:focus-vi
             <span class="badge">StockRadar Premium</span>
             <h1>Stop Guessing.<br>Start Understanding.</h1>
             <p><strong>Free shows the signal. Premium explains the decision.</strong></p>
-            <p>Go beyond stock prices with detailed investment intelligence, clearer risk analysis, portfolio insights and the information that matters before making investment decisions.</p>
-            <p class="note">One Intelligence Report brings the opportunity, risks and next research questions together.</p>
+            <p>Learn what matters in company research, compare opportunities and question the risks. Use Premium reports and portfolio tools to make more informed decisions of your own.</p>
+            <p class="note">Build a research habit: revisit company risks, compare ideas and review portfolio fit as your understanding develops.</p>
             <a class="button secondary" href="#report-guide">Explore the Intelligence Report ↓</a>
         </div>
         <div class="card">
@@ -14969,7 +14969,7 @@ a{color:#80d4f4}button:focus-visible,a:focus-visible,.comparison-scroll:focus-vi
             <div class="price">£5<span>/month</span></div>
             <p><strong>£5/month · Cancel anytime</strong></p>
             {% if premium_payments_enabled %}
-            <p>One monthly subscription unlocks the Premium research toolkit.</p>
+            <p>Just £5/month unlocks full reports, risk explanations, comparisons and portfolio-fit checks.</p>
             <form method="POST" action="/create-checkout-session">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button class="button" type="submit" style="border:none;cursor:pointer;width:100%;">Start Premium — £5/month</button>
@@ -15004,7 +15004,7 @@ a{color:#80d4f4}button:focus-visible,a:focus-visible,.comparison-scroll:focus-vi
     </section>
     <section class="card difference-card" aria-labelledby="premium-comparison">
         <h2 id="premium-comparison">Choose the research depth you need</h2>
-        <p>Keep the Free tools. Add the complete research experience for £5/month.</p>
+        <p>Free helps you discover ideas. For £5/month, Premium helps you understand the reasoning, compare risks and review portfolio fit.</p>
         <div class="comparison-scroll" role="region" aria-label="Free and Premium feature comparison" tabindex="0">
         <table class="plan-comparison">
             <caption>Free vs Premium · existing features</caption>
@@ -15024,7 +15024,7 @@ a{color:#80d4f4}button:focus-visible,a:focus-visible,.comparison-scroll:focus-vi
         <p class="note">Data coverage varies by stock. Scores organise research; they are not verified financial measurements or predictions. Portfolio tools use entered tickers, not a connected brokerage account.</p>
         {% if premium_payments_enabled %}
         <div class="pay-box">
-            <p><strong>Understand the opportunity. Know the risks. See what matters next.</strong></p>
+            <p><strong>Make deeper research part of your investing routine — just £5/month.</strong></p>
             <form method="POST" action="/create-checkout-session">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button class="button" type="submit" style="border:none;cursor:pointer;width:100%;">Start Premium — £5/month</button>
@@ -15039,7 +15039,7 @@ a{color:#80d4f4}button:focus-visible,a:focus-visible,.comparison-scroll:focus-vi
             <div class="mini"><strong>Portfolio Fit Checker</strong>Review core and satellite roles, theme balance and concentration by holding count.<p><a href="/portfolio-fit">Explore Portfolio Fit</a></p></div>
             <div class="mini"><strong>Compare Stocks</strong>Compare two research cases before deciding what deserves a closer look.<p><a href="/compare/MSFT/GOOGL">Preview a comparison</a></p></div>
         </div>
-        <p class="note">Premium Watchlist Intelligence keeps setups and caution groups together. Open any supported stock’s Intelligence Report for the complete research review.</p>
+        <p class="note">Keep researching as your portfolio develops: revisit watchlist risks, compare new ideas and review each company’s Intelligence Report.</p>
         <p class="note"><a href="/how-it-works#opportunity-score">How the Opportunity Score is calculated →</a></p>
     </section>
     <section class="card difference-card" aria-labelledby="premium-details">
@@ -15066,8 +15066,8 @@ a{color:#80d4f4}button:focus-visible,a:focus-visible,.comparison-scroll:focus-vi
     <div class="card" style="margin-top:24px;background:linear-gradient(135deg,rgba(56,189,248,0.10),rgba(15,23,42,0.78));border-color:rgba(56,189,248,0.22);">
         <span class="badge">Free first step</span>
         <h2>Not ready for Premium yet?</h2>
-        <p>Join StockRadar Weekly free and follow the market signal before upgrading.</p>
-        <p class="note">Start with the free weekly signal. Upgrade when you want risk read, portfolio fit and full AI reasoning.</p>
+        <p>Start with StockRadar Weekly free. Choose Premium when you want to research companies and portfolio fit in more depth.</p>
+        <p class="note">Keep Free for basic research. Choose Premium for full reports, comparisons and portfolio research at £5/month.</p>
         <a class="button secondary" href="/newsletter">Join Free</a>
     </div>
     {% endif %}
@@ -15244,7 +15244,7 @@ stock_detail_html = """
 </section>
 {% endif %}
 
-	{% if not has_premium_access %}<section class="premium-banner stock-locked-preview" aria-label="Premium Intelligence Report"><div><small>Premium locked preview · £5/month</small><h2>Understand the opportunity. Know the risks.</h2><p>The {{ stock_display_label(symbol) }} Intelligence Report brings the Decision Score explanation, opportunities, Risk Read, Portfolio Fit and Watch-Next into one research review.</p><p>Sources, heuristic inputs and unavailable information are labelled so you can see the limits of the analysis.</p></div><div class="premium-cta-box"><a class="payment-button" href="/upgrade">Explore Premium — £5/month</a><div class="payment-note"><a href="/premium-decision/{{ symbol }}">View the locked report preview</a></div><div class="payment-note">Educational research. No return promises.</div></div></section>{% endif %}
+	{% if not has_premium_access %}<section class="premium-banner stock-locked-preview" aria-label="Premium Intelligence Report"><div><small>Premium locked preview · £5/month</small><h2>Understand the opportunity. Know the risks.</h2><p>Understand {{ stock_display_label(symbol) }} beyond its price: explore the reasoning, challenge the risks and review its potential portfolio role. Full Premium research is just £5/month.</p><p>Sources, heuristic inputs and unavailable information are labelled so you can see the limits of the analysis.</p></div><div class="premium-cta-box"><a class="payment-button" href="/upgrade">Explore Premium — £5/month</a><div class="payment-note"><a href="/premium-decision/{{ symbol }}">View the locked report preview</a></div><div class="payment-note">Educational research. No return promises.</div></div></section>{% endif %}
 
 {% if dividend_context %}
 {% set income_status = income_status_from_context(dividend_context) %}
