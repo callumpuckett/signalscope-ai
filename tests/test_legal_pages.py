@@ -93,7 +93,7 @@ def test_refund_policy_uses_support_email_when_configured(monkeypatch):
     response = app.app.test_client().get("/refund-policy")
 
     assert response.status_code == 200
-    assert b"Refund requests can be sent to:" in response.data
+    assert b"To request a cancellation or refund review, contact" in response.data
     assert b"support@example.test" in response.data
 
 

@@ -56,7 +56,9 @@ def test_free_report_preview_reuses_only_existing_free_fields():
         "strength": "Moderate",
         "is_current": True,
         "explanation": (
-            "The current HOLD signal is StockRadar's latest free research prompt for Microsoft."
+            "HOLD research prompt for Microsoft. "
+            "Signal data unavailable · Observation time unavailable; freshness cannot be confirmed. "
+            "Cache: not cached. Cache retrieval is not an observation time."
         ),
         "research_next": (
             "Open the report to review the current signal, strength and chart context."
@@ -73,10 +75,10 @@ def test_free_report_preview_has_a_claim_free_fallback():
     assert preview["confidence"] == ""
     assert preview["strength"] == ""
     assert preview["explanation"] == (
-        "Example preview — open the live report for the current signal."
+        "Example preview — open the report to check available signal evidence and timestamps."
     )
     assert preview["research_next"] == (
-        "The live Microsoft report is the authoritative current view."
+        "Check the source and observation time in the Microsoft report."
     )
 
 
@@ -155,7 +157,7 @@ def test_four_step_journey_preserves_the_free_report_preview():
     assert "Signal strength: Moderate" in page
     assert "65% confidence" not in page
     assert (
-        "The current HOLD signal is StockRadar&#39;s latest free research prompt for Microsoft."
+        "HOLD research prompt for Microsoft. Signal data unavailable"
         in page
     )
     assert "Research next:" in page

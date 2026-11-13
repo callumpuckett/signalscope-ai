@@ -1,6 +1,10 @@
 import time as _startup_clock
 _APP_IMPORT_STARTED = _startup_clock.perf_counter()
-from flask import Flask, Response, render_template_string, redirect, url_for, request, session, jsonify, has_request_context, g, abort
+from flask import Flask, Response, render_template, current_app, redirect, url_for, request, session, jsonify, has_request_context, g, abort
+from functools import lru_cache
+from yahoo_chart import fetch_chart_history
+from history_cache import load_history, save_history
+from market_calendar import scheduled_session_open
 from datetime import datetime, time as dt_time, timedelta, timezone
 from difflib import SequenceMatcher
 from email.utils import format_datetime
@@ -18,6 +22,7 @@ import hashlib
 import hmac
 import ipaddress
 import json
+import logging
 import math
 import os
 import pandas as pd
@@ -36,7 +41,15 @@ from performance_timing import (
     TimingMiddleware, TimedSessionInterface, measured, stage, count, operation,
 )
 
-render_template_string = measured("template.compile_render")(render_template_string)
+@lru_cache(maxsize=48)
+def _compiled_inline_template(environment, source):
+    return environment.from_string(source)
+
+
+@measured("template.compile_render")
+def render_template_string(source, **context):
+    # Cache compiled code only. User/session context is supplied afresh each render.
+    return render_template(_compiled_inline_template(current_app.jinja_env, source), **context)
 
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash
@@ -2573,7 +2586,7 @@ def internal_server_error(error):
 
 CHART_RANGES = {
     "1h": {"label": "1 hour", "period": "1d", "interval": "5m"},
-    "24h": {"label": "24 hours", "period": "1d", "interval": "15m"},
+    "24h": {"label": "24 hours", "period": "5d", "interval": "15m"},
     "1mo": {"label": "1 month", "period": "1mo", "interval": "1d"},
     "6mo": {"label": "6 months", "period": "6mo", "interval": "1d"},
     "1y": {"label": "1 year", "period": "1y", "interval": "1d"},
@@ -2681,18 +2694,41 @@ DIVIDEND_CONTEXT_UNAVAILABLE_CACHE_TTL_SECONDS = 300
 DIVIDEND_CONTEXT_CACHE = {}
 INCOME_HISTORY_CACHE_TTL_SECONDS = 300
 INCOME_HISTORY_CACHE = {}
-# One reentrant lock coordinates refreshes across the existing Yahoo entry points.
+# Metadata and chart requests have separate, bounded provider refresh coordination.
 YAHOO_REFRESH_LOCK = threading.RLock()
+YAHOO_HISTORY_REFRESH_LOCK = threading.RLock()
 # Cache reads/copies never hold the provider lock while another ticker refreshes.
 YAHOO_CACHE_LOCK = threading.RLock()
 YAHOO_COOLDOWN_UNTIL = 0.0
+YAHOO_CHART_COOLDOWN_UNTIL = 0.0
 YAHOO_RETRY_SECONDS = 300
 YAHOO_HISTORY_CACHE = {}
 YAHOO_HISTORY_CACHE_LIMIT = 256
+YAHOO_HISTORY_TRANSPORT = os.environ.get("YAHOO_HISTORY_TRANSPORT", "chart")
+YAHOO_HISTORY_DIRECTORY = stockradar_data_path("market_history")
+YAHOO_METADATA_ASYNC_ENABLED = True
+YAHOO_METADATA_PENDING = set()
+YAHOO_METADATA_PENDING_LOCK = threading.Lock()
+SCHEDULED_JOB_STATUS = {}
+SCHEDULED_JOB_STATUS_LOCK = threading.Lock()
+OPERATIONS_LOG = logging.getLogger("stockradar.operations")
+OPERATIONS_LOG.setLevel(logging.INFO)
+if not OPERATIONS_LOG.handlers:
+    OPERATIONS_LOG.addHandler(logging.StreamHandler())
 
 
 def yahoo_refresh_allowed():
     return time.time() >= YAHOO_COOLDOWN_UNTIL and not (
+        has_request_context() and "semrushbot" in request.headers.get("User-Agent", "").lower()
+    )
+
+
+def history_refresh_allowed():
+    if YAHOO_HISTORY_TRANSPORT != "chart":
+        return yahoo_refresh_allowed()
+    # quoteSummary/authentication throttling must not disable the independent chart
+    # endpoint. A chart 429 has its own full cooldown; never retry another host.
+    return time.time() >= YAHOO_CHART_COOLDOWN_UNTIL and not (
         has_request_context() and "semrushbot" in request.headers.get("User-Agent", "").lower()
     )
 
@@ -3926,6 +3962,7 @@ def build_homepage_free_report_preview(recommendations=None):
         signal = clean_signal(item.get("signal"), item.get("confidence"))
         confidence = normalise_confidence(item.get("confidence"))
         strength = signal_strength_label(confidence)
+        provenance = signal_provenance(item)
         return {
             "company_name": "Microsoft",
             "ticker": "MSFT",
@@ -3934,7 +3971,7 @@ def build_homepage_free_report_preview(recommendations=None):
             "strength": strength,
             "is_current": True,
             "explanation": (
-                f"The current {signal} signal is StockRadar's latest free research prompt for Microsoft."
+                f"{signal} research prompt for Microsoft. {provenance['signal_data_note']}"
             ),
             "research_next": (
                 "Open the report to review the current signal, strength and chart context."
@@ -3948,8 +3985,8 @@ def build_homepage_free_report_preview(recommendations=None):
         "confidence": "",
         "strength": "",
         "is_current": False,
-        "explanation": "Example preview — open the live report for the current signal.",
-        "research_next": "The live Microsoft report is the authoritative current view.",
+        "explanation": "Example preview — open the report to check available signal evidence and timestamps.",
+        "research_next": "Check the source and observation time in the Microsoft report.",
     }
 
 
@@ -4970,6 +5007,17 @@ app.jinja_env.globals["income_status_from_context"] = income_status_from_context
 def normalized_income_history(history):
     if not isinstance(history, pd.DataFrame) or history.empty:
         return None
+    if history.attrs.get("stale"):
+        return None
+
+    # A short price chart cannot establish a year's income or confirm its absence.
+    # Event-only frames originate from an explicitly requested one-year feed.
+    price_columns = any(str(part).upper() in {"CLOSE", "ADJ CLOSE"}
+                        for column in history.columns
+                        for part in (column if isinstance(column, tuple) else (column,)))
+    if price_columns and (not isinstance(history.index, pd.DatetimeIndex)
+                          or history.index.max() - history.index.min() < pd.Timedelta(days=330)):
+        return None
 
     dividend_column = None
     if "Dividends" in history.columns:
@@ -4998,10 +5046,14 @@ def normalized_income_history(history):
 def cache_income_history(symbol, history):
     income_history = normalized_income_history(history)
     if income_history is not None:
-        INCOME_HISTORY_CACHE[canonical_stock_symbol(symbol)] = {
-            "timestamp": time.time(),
-            "history": income_history,
-        }
+        key = canonical_stock_symbol(symbol)
+        with YAHOO_CACHE_LOCK:
+            if len(INCOME_HISTORY_CACHE) >= YAHOO_HISTORY_CACHE_LIMIT and key not in INCOME_HISTORY_CACHE:
+                INCOME_HISTORY_CACHE.pop(next(iter(INCOME_HISTORY_CACHE)))
+            INCOME_HISTORY_CACHE[key] = {
+                "timestamp": fundamental_number(history.attrs.get("retrieved_at")) or time.time(),
+                "history": income_history,
+            }
 
 
 def cached_income_history(symbol, now=None):
@@ -5062,13 +5114,16 @@ def provider_failure_kind(exc):
 
 
 def fetch_yahoo_income_history(symbol):
-    with YAHOO_REFRESH_LOCK:
-        if not yahoo_refresh_allowed():
+    global YAHOO_CHART_COOLDOWN_UNTIL
+    with history_refresh_slot() as acquired:
+        if not acquired or not history_refresh_allowed():
             raise yahoo_deferred_error()
         try:
             return _fetch_yahoo_income_history(symbol)
         except Exception as exc:
             record_yahoo_failure(exc)
+            if YAHOO_HISTORY_TRANSPORT == "chart" and provider_failure_kind(exc) == "rate-limit":
+                YAHOO_CHART_COOLDOWN_UNTIL = max(YAHOO_CHART_COOLDOWN_UNTIL, time.time() + YAHOO_RETRY_SECONDS)
             raise
 
 
@@ -5160,6 +5215,11 @@ def _cached_dividend_context(symbol, outlook_refresh_date, now):
         ttl = (DIVIDEND_CONTEXT_UNAVAILABLE_CACHE_TTL_SECONDS
                if income_status_from_context(context) == INCOME_STATUS_UNAVAILABLE
                else DIVIDEND_CONTEXT_CACHE_TTL_SECONDS)
+        context["metadata_retrieved_at"] = cached["timestamp"]
+        context["stale"] = now - cached["timestamp"] >= ttl
+        context["source_note"] = (str(context.get("source_note", "")) +
+                                  (" Cached metadata is stale; refresh pending." if context["stale"] else " Cached metadata.") +
+                                  " Retrieved " + datetime.fromtimestamp(cached["timestamp"], timezone.utc).strftime("%d %b %Y %H:%M UTC") + ".")
         daily_complete = (context["return_outlook"].get("cases")
                           and outlook_retrieval_date(context["return_outlook"]) == outlook_refresh_date)
         reusable = ((daily_complete if outlook_refresh_date else now - cached["timestamp"] < ttl)
@@ -5174,13 +5234,31 @@ def get_dividend_context(symbol, *, outlook_refresh_date=None):
     _, context, reusable = _cached_dividend_context(cleaned_symbol, outlook_refresh_date, time.time())
     if reusable:
         return context
+    chart_fallback_allowed = YAHOO_HISTORY_TRANSPORT == "chart" and history_refresh_allowed()
+    if not yahoo_refresh_allowed() and not chart_fallback_allowed:
+        return _fetch_dividend_context(cleaned_symbol, allow_network=False)
+    if YAHOO_METADATA_ASYNC_ENABLED and has_request_context():
+        # yfinance metadata can perform several opaque network calls. Keep it off
+        # page requests, with one process-wide background refresh and no queue.
+        with YAHOO_METADATA_PENDING_LOCK:
+            if not YAHOO_METADATA_PENDING:
+                YAHOO_METADATA_PENDING.add(cleaned_symbol)
+                try:
+                    threading.Thread(target=_background_metadata_refresh, args=(cleaned_symbol,),
+                                     name="stockradar-metadata-refresh", daemon=True).start()
+                except Exception:
+                    YAHOO_METADATA_PENDING.discard(cleaned_symbol)
+                    app.logger.warning("Metadata refresh scheduling failed")
+        pending = context or _fetch_dividend_context(cleaned_symbol, allow_network=False)
+        pending["source_note"] = str(pending.get("source_note", "")) + " Metadata refresh pending; revisit to check for an update."
+        return pending
     with YAHOO_REFRESH_LOCK:
         now = time.time()
         # Another request may have filled the cache while we waited for the provider.
         cached, context, reusable = _cached_dividend_context(cleaned_symbol, outlook_refresh_date, now)
         if reusable:
             return context
-        if not yahoo_refresh_allowed():
+        if not yahoo_refresh_allowed() and not chart_fallback_allowed:
             return _fetch_dividend_context(cleaned_symbol)
         try:
             fresh = _fetch_dividend_context(cleaned_symbol)
@@ -5188,6 +5266,11 @@ def get_dividend_context(symbol, *, outlook_refresh_date=None):
             record_yahoo_failure(exc)
             if not cached:
                 raise
+            with YAHOO_CACHE_LOCK:
+                DIVIDEND_CONTEXT_CACHE[cleaned_symbol] = {**cached, "retry_after": now + YAHOO_RETRY_SECONDS}
+            return context
+        if context and context.get("provider_response_received") and not fresh.get("provider_response_received"):
+            context["stale"] = True
             with YAHOO_CACHE_LOCK:
                 DIVIDEND_CONTEXT_CACHE[cleaned_symbol] = {**cached, "retry_after": now + YAHOO_RETRY_SECONDS}
             return context
@@ -5201,13 +5284,26 @@ def get_dividend_context(symbol, *, outlook_refresh_date=None):
                 }
             return fresh
         with YAHOO_CACHE_LOCK:
+            if len(DIVIDEND_CONTEXT_CACHE) >= YAHOO_HISTORY_CACHE_LIMIT and cleaned_symbol not in DIVIDEND_CONTEXT_CACHE:
+                DIVIDEND_CONTEXT_CACHE.pop(next(iter(DIVIDEND_CONTEXT_CACHE)))
             DIVIDEND_CONTEXT_CACHE[cleaned_symbol] = {
                 "timestamp": now, "context": copy.deepcopy(fresh),
             }
         return fresh
 
 
-def _fetch_dividend_context(cleaned_symbol):
+def _background_metadata_refresh(symbol):
+    try:
+        get_dividend_context(symbol)
+    except Exception as exc:
+        record_yahoo_failure(exc)
+        app.logger.warning("Metadata background refresh failed (%s)", provider_failure_kind(exc))
+    finally:
+        with YAHOO_METADATA_PENDING_LOCK:
+            YAHOO_METADATA_PENDING.discard(symbol)
+
+
+def _fetch_dividend_context(cleaned_symbol, *, allow_network=True):
     now = time.time()
     universe_item = next(
         (
@@ -5224,7 +5320,7 @@ def _fetch_dividend_context(cleaned_symbol):
     provider_response_received = False
     ticker_object = None
 
-    if yf is not None and cleaned_symbol and yahoo_refresh_allowed():
+    if allow_network and yf is not None and cleaned_symbol and yahoo_refresh_allowed():
         try:
             ticker_object = yf.Ticker(cleaned_symbol)
             get_info = getattr(ticker_object, "get_info", None)
@@ -5271,9 +5367,9 @@ def _fetch_dividend_context(cleaned_symbol):
         )
     )
     history_evidence_received = False
-    if needs_history_evidence and yahoo_refresh_allowed():
+    if allow_network and needs_history_evidence:
         income_history = cached_income_history(cleaned_symbol, now=now)
-        if income_history is None and ticker_object is not None:
+        if income_history is None and ticker_object is not None and yahoo_refresh_allowed():
             try:
                 income_history = safe_history(cleaned_symbol, _ticker_object=ticker_object, period="1y", auto_adjust=False,
                                               actions=True, timeout=6)
@@ -5292,7 +5388,7 @@ def _fetch_dividend_context(cleaned_symbol):
             or not str(info.get("currency") or "").strip()
             or not market_price_available
         )
-        if (income_history is None or needs_chart_metadata) and yahoo_refresh_allowed():
+        if (income_history is None or needs_chart_metadata) and history_refresh_allowed():
             try:
                 chart_history, chart_info = fetch_yahoo_income_history(cleaned_symbol)
                 if income_history is None or needs_chart_metadata:
@@ -5446,6 +5542,8 @@ def _fetch_dividend_context(cleaned_symbol):
 
     context = {
         "ticker": cleaned_symbol,
+        "metadata_retrieved_at": now if provider_response_received else None,
+        "quote_observed_at": fundamental_number(info.get("regularMarketTime")),
         "currency": quote_currency or financial_currency,
         "is_etf": is_etf,
         "income_status": income_status,
@@ -6729,7 +6827,7 @@ def opportunities():
         # Reuse existing persisted pairs without creating a daily ranking for Free requests.
         try:
             state = (OPPORTUNITY_PAGE_CACHE[1][1] if OPPORTUNITY_PAGE_CACHE is not None
-                     else newsletter_storage_load("opportunity_radar"))
+                     else newsletter_storage_load("opportunity_radar") if snapshot.get("opportunities") else {})
             saved_outlooks = persisted_opportunity_outlooks(state)
         except Exception:
             saved_outlooks = {}
@@ -6738,7 +6836,8 @@ def opportunities():
     for item in snapshot["opportunities"][:None if premium else 3]:
         item["return_outlook"] = (
             eligible_return_outlook(item.get("return_outlook")) if premium
-            else saved_outlooks.get(item["ticker"]) or opportunity_return_outlook(item["ticker"])
+            else saved_outlooks.get(item["ticker"]) or eligible_return_outlook(
+                DIVIDEND_CONTEXT_CACHE.get(item["ticker"], {}).get("context", {}).get("return_outlook"))
         )
     response = render_template_string(opportunities_html, premium=premium, snapshot=snapshot)
     return response
@@ -7254,57 +7353,110 @@ def portfolio_fit():
 def _cached_yahoo_history(key, now):
     with YAHOO_CACHE_LOCK:
         cached = YAHOO_HISTORY_CACHE.get(key)
-        if cached and (now - cached["timestamp"] < YAHOO_RETRY_SECONDS
+        if cached and (now - cached["timestamp"] < cached.get("ttl", YAHOO_RETRY_SECONDS)
                        or now < cached.get("retry_after", 0)
-                       or (now < YAHOO_COOLDOWN_UNTIL and cached.get("history") is not None)):
+                       or (not history_refresh_allowed() and cached.get("history") is not None)):
             if cached.get("history") is not None:
-                return cached["history"].copy(deep=True)
+                result = cached["history"].copy(deep=True)
+                result.attrs.update(retrieved_at=cached["timestamp"],
+                                    stale=now - cached["timestamp"] >= cached.get("ttl", YAHOO_RETRY_SECONDS),
+                                    cached=True)
+                return result
             raise RuntimeError("Yahoo history temporarily unavailable")
     return None
 
 
+@contextmanager
+def history_refresh_slot():
+    direct = YAHOO_HISTORY_TRANSPORT == "chart"
+    lock = YAHOO_HISTORY_REFRESH_LOCK if direct else YAHOO_REFRESH_LOCK
+    acquired = lock.acquire(timeout=0.05) if direct else lock.acquire()
+    try:
+        yield acquired
+    finally:
+        if acquired:
+            lock.release()
+
+
 @measured("provider.history_cache_or_fetch")
 def safe_history(ticker, _ticker_object=None, **kwargs):
+    global YAHOO_CHART_COOLDOWN_UNTIL
     ticker = canonical_stock_symbol(ticker)
     kwargs.setdefault("auto_adjust", False)
-    # Keep all supplied parameters (range, interval, actions, adjustment, etc.) distinct.
-    key = (ticker, tuple(sorted((name, repr(value)) for name, value in kwargs.items())))
+    kwargs.setdefault("interval", "1d")
+    kwargs.setdefault("actions", True)
+    # Transport timeouts do not change observations. Canonical defaults let chart
+    # and income consumers reuse the same validated one-year request.
+    key = (ticker, tuple(sorted((name, repr(value)) for name, value in kwargs.items() if name != "timeout")))
+    if YAHOO_HISTORY_TRANSPORT == "chart" and key not in YAHOO_HISTORY_CACHE:
+        restored = load_history(YAHOO_HISTORY_DIRECTORY, key, time.time())
+        if restored and (extract_history_price_series(restored["history"], ticker) > 0).any():
+            with YAHOO_CACHE_LOCK:
+                if len(YAHOO_HISTORY_CACHE) >= YAHOO_HISTORY_CACHE_LIMIT:
+                    YAHOO_HISTORY_CACHE.pop(next(iter(YAHOO_HISTORY_CACHE)))
+                YAHOO_HISTORY_CACHE.setdefault(key, restored)
     cached_history = _cached_yahoo_history(key, time.time())
     if cached_history is not None:
         return cached_history
-    with YAHOO_REFRESH_LOCK:
+    with history_refresh_slot() as acquired:
+        if not acquired:
+            with YAHOO_CACHE_LOCK:
+                retained = YAHOO_HISTORY_CACHE.get(key)
+                if retained and retained.get("history") is not None:
+                    result = retained["history"].copy(deep=True)
+                    result.attrs.update(retrieved_at=retained["timestamp"], stale=True, cached=True)
+                    return result
+            raise YahooRefreshDeferred("Price history refresh is already in progress")
         now = time.time()
         cached_history = _cached_yahoo_history(key, now)
         if cached_history is not None:
             return cached_history
-        if not yahoo_refresh_allowed():
+        if not history_refresh_allowed():
             raise yahoo_deferred_error()
         try:
-            if yf is None:
-                raise RuntimeError("yfinance is not installed")
-            stock = _ticker_object if _ticker_object is not None else yf.Ticker(ticker)
-            try:
-                history = stock.history(**kwargs)
-            except TypeError:
-                kwargs.pop("timeout", None)
-                history = stock.history(**kwargs)
+            if YAHOO_HISTORY_TRANSPORT == "chart" and _ticker_object is None:
+                history = fetch_chart_history(ticker, **kwargs)
+            else:
+                if yf is None:
+                    raise RuntimeError("yfinance is not installed")
+                stock = _ticker_object if _ticker_object is not None else yf.Ticker(ticker)
+                try:
+                    history = stock.history(**kwargs)
+                except TypeError:
+                    kwargs.pop("timeout", None)
+                    history = stock.history(**kwargs)
             if not (extract_history_price_series(history, ticker) > 0).any():
                 raise ValueError("Yahoo history empty")
         except Exception as exc:
             record_yahoo_failure(exc)
+            if YAHOO_HISTORY_TRANSPORT == "chart" and provider_failure_kind(exc) == "rate-limit":
+                YAHOO_CHART_COOLDOWN_UNTIL = max(YAHOO_CHART_COOLDOWN_UNTIL, time.time() + YAHOO_RETRY_SECONDS)
             with YAHOO_CACHE_LOCK:
                 cached = YAHOO_HISTORY_CACHE.get(key)
                 if cached and cached.get("history") is not None:
                     cached["retry_after"] = now + YAHOO_RETRY_SECONDS
-                    return cached["history"].copy(deep=True)
+                    result = cached["history"].copy(deep=True)
+                    result.attrs.update(retrieved_at=cached["timestamp"], stale=True, cached=True)
+                    count("provider.history.stale_retained")
+                    return result
                 if len(YAHOO_HISTORY_CACHE) >= YAHOO_HISTORY_CACHE_LIMIT and key not in YAHOO_HISTORY_CACHE:
                     YAHOO_HISTORY_CACHE.pop(next(iter(YAHOO_HISTORY_CACHE)))
                 YAHOO_HISTORY_CACHE[key] = {"timestamp": now, "history": None}
             raise
+        history.attrs.update(retrieved_at=time.time(), stale=False, cached=False)
         with YAHOO_CACHE_LOCK:
             if len(YAHOO_HISTORY_CACHE) >= YAHOO_HISTORY_CACHE_LIMIT and key not in YAHOO_HISTORY_CACHE:
                 YAHOO_HISTORY_CACHE.pop(next(iter(YAHOO_HISTORY_CACHE)))
-            YAHOO_HISTORY_CACHE[key] = {"timestamp": now, "history": history.copy(deep=True)}
+            ttl = (21600 if kwargs.get("period") == "max" else
+                   60 if kwargs.get("interval", "1d").endswith(("m", "h")) else 300)
+            entry = {"timestamp": history.attrs["retrieved_at"], "history": history.copy(deep=True),
+                     "ttl": ttl if YAHOO_HISTORY_TRANSPORT == "chart" else YAHOO_RETRY_SECONDS}
+            YAHOO_HISTORY_CACHE[key] = entry
+        if YAHOO_HISTORY_TRANSPORT == "chart":
+            try:
+                save_history(YAHOO_HISTORY_DIRECTORY, key, entry, YAHOO_HISTORY_CACHE_LIMIT)
+            except (OSError, ValueError, TypeError):
+                app.logger.warning("History persistence failed; validated in-memory data retained")
         return history.copy(deep=True)
 
 
@@ -7327,8 +7479,9 @@ def extract_history_price_series(history, symbol):
                     continue
                 candidates.append((0 if symbol_token in column_parts else 1, column))
 
-            if candidates:
-                selected_column = sorted(candidates, key=lambda item: item[0])[0][1]
+            exact = [column for priority, column in candidates if priority == 0]
+            if exact:
+                selected_column = exact[0]
         else:
             for column in history.columns:
                 if str(column).strip().upper() == field_token:
@@ -7371,7 +7524,7 @@ def normalize_history_points(history, symbol):
         points.append({
             "date": date_value,
             "label": str(index)[:16],
-            "price": round(float(value), 2),
+            "price": float(value),
             "timestamp_ms": timestamp_ms,
         })
 
@@ -7380,7 +7533,10 @@ def normalize_history_points(history, symbol):
 
 def money(value):
     try:
-        return f"{float(value):,.2f}"
+        number = float(value)
+        if not math.isfinite(number):
+            return "—"
+        return f"{number:,.6f}" if 0 < abs(number) < 1 else f"{number:,.2f}"
     except Exception:
         return "—"
 
@@ -7433,7 +7589,7 @@ def format_chart_price(value, currency, signed=False):
 
     metadata = chart_currency_metadata(currency)
     sign = "-" if number < 0 else "+" if signed and number > 0 else ""
-    amount = f"{abs(number):,.2f}"
+    amount = f"{abs(number):,.6f}" if 0 < abs(number) < 0.01 else f"{abs(number):,.2f}"
     return f"{sign}{metadata['prefix']}{amount}{metadata['suffix']}"
 
 
@@ -7504,6 +7660,46 @@ def stock_chart_points(chart_data, range_key):
     return points
 
 
+def history_freshness(history, points):
+    stamps = [point["timestamp_ms"] for point in points if point.get("timestamp_ms") is not None]
+    observed = datetime.fromtimestamp(max(stamps) / 1000, timezone.utc).strftime("%d %b %Y %H:%M UTC") if stamps else "unknown"
+    retrieved = fundamental_number(history.attrs.get("retrieved_at"))
+    checked = (datetime.fromtimestamp(retrieved, timezone.utc).strftime("%d %b %Y %H:%M UTC")
+               if retrieved is not None else "unknown")
+    observation_old = bool(stamps and time.time() - max(stamps) / 1000 > 4 * 86400)
+    status = ("Stale cached history — refresh pending" if history.attrs.get("stale") else
+              "Historical data — latest observation is more than four days old" if observation_old else
+              "Delayed historical data")
+    return f"{status}. Latest bar timestamp: {observed}. Retrieved: {checked}. Source: Yahoo Finance; not real-time."
+
+
+def market_data_health():
+    now = time.time()
+    with YAHOO_CACHE_LOCK:
+        entries = list(YAHOO_HISTORY_CACHE.values())
+        valid = [entry for entry in entries if entry.get("history") is not None]
+        stale = sum(now - entry["timestamp"] >= entry.get("ttl", YAHOO_RETRY_SECONDS) for entry in valid)
+    return {"history_transport": YAHOO_HISTORY_TRANSPORT,
+            "history_entries": len(valid), "history_stale_entries": stale,
+            "history_failed_entries": len(entries) - len(valid),
+            "chart_cooldown_seconds": max(0, round(YAHOO_CHART_COOLDOWN_UNTIL - now)),
+            "metadata_cooldown_seconds": max(0, round(YAHOO_COOLDOWN_UNTIL - now)),
+            "dashboard_refresh_pending": DASHBOARD_REFRESH_PENDING,
+            "metadata_refresh_pending": bool(YAHOO_METADATA_PENDING),
+            "history_refresh_seconds": {"intraday": 60, "daily": 300, "lifetime": 21600},
+            "history_persistence": "local filesystem; requires a durable volume to survive deployments"}
+
+
+def record_scheduled_job_check(name, status, failed=False):
+    with SCHEDULED_JOB_STATUS_LOCK:
+        previous = SCHEDULED_JOB_STATUS.get(name, {})
+        stamp = datetime.now(timezone.utc).isoformat()
+        SCHEDULED_JOB_STATUS[name] = {"last_checked_at": stamp, "status": status,
+                                    "last_success_at": previous.get("last_success_at") if failed else stamp,
+                                    "failed": failed}
+    OPERATIONS_LOG.info("Scheduled job check: job=%s status=%s failed=%s", name, status, failed)
+
+
 @measured("stock.history")
 def stock_history(symbol, range_key):
     symbol = canonical_stock_symbol(symbol)
@@ -7519,6 +7715,11 @@ def stock_history(symbol, range_key):
         cache_income_history(symbol, history)
 
         points = normalize_history_points(history, symbol)
+        if range_key in {"1h", "24h"} and points:
+            latest = max(point["timestamp_ms"] for point in points if point["timestamp_ms"] is not None)
+            window_ms = 3600_000 if range_key == "1h" else 86400_000
+            points = [point for point in points if point["timestamp_ms"] is not None
+                      and latest - window_ms <= point["timestamp_ms"] <= latest]
         if not points:
             raise ValueError("Live price data is temporarily unavailable for this ticker.")
 
@@ -7548,6 +7749,8 @@ def stock_history(symbol, range_key):
             "change_percent": f"{percent:+.2f}%",
             "direction": direction,
             "error": "",
+            "freshness": history_freshness(history, points),
+            "currency": history.attrs.get("currency", ""),
         }
 
     except Exception as exc:
@@ -7565,7 +7768,11 @@ def stock_history(symbol, range_key):
             "change_amount": "—",
             "change_percent": "—",
             "direction": "hold",
-            "error": str(exc),
+            "error": ("Price history is being refreshed. Please try again shortly."
+                      if isinstance(exc, YahooRefreshDeferred) and "in progress" in str(exc) else
+                      "Yahoo Finance is temporarily rate limited. Please try again after the automatic cooldown."
+                      if isinstance(exc, YahooRefreshDeferred) or provider_failure_kind(exc) == "rate-limit"
+                      else "Verified price history is temporarily unavailable. Please try again shortly."),
         }
 
 
@@ -7573,11 +7780,15 @@ def stock_history(symbol, range_key):
 def stock_lifetime_growth(symbol):
     symbol = canonical_stock_symbol(symbol)
     try:
-        history = safe_history(symbol, period="max", interval="1mo", timeout=8)
-        cache_income_history(symbol, history)
+        history = safe_history(symbol, period="max", interval="1mo", timeout=8, auto_adjust=True)
         close = extract_history_price_series(history, symbol)
-        if close.empty:
+        close = close[close > 0].sort_index()
+        close = close[~close.index.duplicated(keep="last")]
+        if len(close) < 2:
             raise ValueError("No lifetime close data available")
+        ratios = close / close.shift(1)
+        if ((ratios > 100) | (ratios < 0.01)).any():
+            raise ValueError("Historical adjustment requires verification")
 
         start = float(close.iloc[0])
         end = float(close.iloc[-1])
@@ -7591,6 +7802,9 @@ def stock_lifetime_growth(symbol):
             "change_amount": f"{change:+.2f}",
             "change_percent": f"{percent:+.2f}%",
             "direction": direction,
+            "freshness": history_freshness(history, normalize_history_points(history, symbol)),
+            "start_date": str(close.index[0])[:10],
+            "end_date": str(close.index[-1])[:10],
         }
 
     except Exception as exc:
@@ -7612,6 +7826,7 @@ def fetch_symbol_snapshot(symbol, label, market):
     try:
         history = safe_history(symbol, period="5d", timeout=4)
         close = extract_history_price_series(history, symbol)
+        close = close[close > 0].sort_index()
         if close.empty:
             raise ValueError("No data")
         latest = float(close.iloc[-1])
@@ -7627,6 +7842,7 @@ def fetch_symbol_snapshot(symbol, label, market):
             "price": money(latest),
             "change": f"{change:+.2f} ({percent:+.2f}%)",
             "direction": direction,
+            "freshness": history_freshness(history, normalize_history_points(history, symbol)),
         }
 
     except Exception:
@@ -7668,6 +7884,12 @@ def market_status():
 
     uk_open = not market_christmas_closure(london_now.date(), "UK") and london_now.weekday() < 5 and dt_time(8, 0) <= london_now.time() <= dt_time(16, 30)
     us_open = not market_christmas_closure(new_york_now.date(), "US") and new_york_now.weekday() < 5 and dt_time(9, 30) <= new_york_now.time() <= dt_time(16, 0)
+    uk_scheduled = scheduled_session_open(london_now, "UK")
+    us_scheduled = scheduled_session_open(new_york_now, "US")
+    if uk_scheduled is not None:
+        uk_open = uk_scheduled
+    if us_scheduled is not None:
+        us_open = us_scheduled
 
     return {
         "uk_status": "OPEN" if uk_open else "CLOSED",
@@ -12796,6 +13018,7 @@ def newsletter_auto_send_loop():
     while True:
         try:
             summary = run_due_newsletter_automation(delivery_type="auto")
+            record_scheduled_job_check("newsletter", str(summary.get("status") or "checked")[:80])
             if summary.get("automation_due"):
                 app.logger.info(
                     "Newsletter Beehiiv workflow checked %s: status=%s",
@@ -12803,6 +13026,7 @@ def newsletter_auto_send_loop():
                     summary.get("status"),
                 )
         except Exception:
+            record_scheduled_job_check("newsletter", "check_failed", failed=True)
             app.logger.exception("Newsletter auto-send scheduler failed")
         time.sleep(max(60, NEWSLETTER_AUTO_SEND_CHECK_INTERVAL_SECONDS))
 
@@ -12831,6 +13055,7 @@ def opportunity_snapshot_loop():
         try:
             snapshot, state, created = ensure_daily_opportunity_snapshot()
             enrich_opportunity_outlooks(snapshot, state)
+            record_scheduled_job_check("opportunities", "created" if created else "checked")
             if created:
                 app.logger.info(
                     "Opportunity Radar snapshot created: date=%s rows=%s",
@@ -12838,6 +13063,7 @@ def opportunity_snapshot_loop():
                     len(snapshot.get("opportunities", [])),
                 )
         except Exception:
+            record_scheduled_job_check("opportunities", "check_failed", failed=True)
             app.logger.exception("Opportunity Radar snapshot scheduler failed")
         time.sleep(max(300, OPPORTUNITY_SNAPSHOT_CHECK_INTERVAL_SECONDS))
 
@@ -13993,6 +14219,7 @@ th{color:#94a3b8;text-transform:uppercase;font-size:12px;letter-spacing:0.08em;}
             <h3><a class="stock-link" href="/stock/{{ item.symbol }}">{{ stock_identity(item.symbol, stock_display_label(item.symbol), 'card') }}</a></h3>
             <p style="margin:0;">Price: <strong>{{ item.price }}</strong></p>
             <p class="{{ item.direction }}" style="margin-bottom:0;">Move: {{ item.change }}</p>
+            <p class="muted">{{ item.freshness }}</p>
         </div>
         {% endfor %}
     </div>
@@ -15043,8 +15270,8 @@ stock_detail_html = """
 
 <div class="range-row">{% for key, settings in chart_ranges.items() %}<a class="range-button {% if key == active_range %}active{% endif %}" href="/stock/{{ symbol }}?range={{ key }}">{{ settings.label }}</a>{% endfor %}</div>
 <div class="metric-grid"><div class="metric"><small>Range start</small><h2>{{ chart_data.start_price }}</h2></div><div class="metric"><small>Range latest</small><h2>{{ chart_data.end_price }}</h2></div><div class="metric"><small>Range move</small><h2 class="{{ chart_data.direction }}">{{ chart_data.change_amount }}</h2></div><div class="metric"><small>Range % move</small><h2 class="{{ chart_data.direction }}">{{ chart_data.change_percent }}</h2></div></div>
-<div class="card chart-card">{% if chart_data.ok %}<div class="chart-card-header"><div><h2>Price chart</h2><span>{{ stock_display_label(symbol) }} close price over {{ range_label }}</span></div><div class="chart-range-pill">{{ range_label }}</div></div><p class="visually-hidden" id="stock-chart-summary">{{ chart_accessible_summary }}</p><div class="chart-shell" id="stock-chart-shell"><canvas id="stockChart" role="img" tabindex="0" aria-describedby="stock-chart-summary" data-latest-index="{{ chart_data.points|length - 1 }}"></canvas><div class="chart-tooltip" id="stock-chart-tooltip" role="status" aria-live="polite"></div></div>{% else %}<h2>Chart unavailable</h2><p style="color:#fca5a5;">{{ chart_data.error }}</p>{% endif %}</div>
-<div class="card"><h2>Since market data began</h2><div class="metric-grid"><div class="metric"><small>Earliest available price</small><h2>{{ lifetime.start_price }}</h2></div><div class="metric"><small>Latest available price</small><h2>{{ lifetime.end_price }}</h2></div><div class="metric"><small>Total growth / decrease</small><h2 class="{{ lifetime.direction }}">{{ lifetime.change_amount }}</h2></div><div class="metric"><small>Total % growth / decrease</small><h2 class="{{ lifetime.direction }}">{{ lifetime.change_percent }}</h2></div></div></div>
+<div class="card chart-card">{% if chart_data.ok %}<div class="chart-card-header"><div><h2>Price chart</h2><span>{{ stock_display_label(symbol) }} close price over {{ range_label }}</span></div><div class="chart-range-pill">{{ range_label }}</div></div><p class="chart-data-freshness">{{ chart_data.freshness }}{% if active_range in ["1h", "24h"] %} Window ends at the latest available trading bar; closed markets do not produce new bars.{% endif %}</p><p class="visually-hidden" id="stock-chart-summary">{{ chart_accessible_summary }}</p><div class="chart-shell" id="stock-chart-shell"><canvas id="stockChart" role="img" tabindex="0" aria-describedby="stock-chart-summary" data-latest-index="{{ chart_data.points|length - 1 }}"></canvas><div class="chart-tooltip" id="stock-chart-tooltip" role="status" aria-live="polite"></div></div>{% else %}<h2>Chart unavailable</h2><p style="color:#fca5a5;">{{ chart_data.error }}</p>{% endif %}</div>
+<div class="card"><h2>Since market data began</h2><p>Adjusted historical change, including provider adjustments for splits and distributions. This is not an investor-specific total return.</p><p>{{ lifetime.freshness }}{% if lifetime.start_date %} Coverage: {{ lifetime.start_date }} to {{ lifetime.end_date }}.{% endif %}</p><div class="metric-grid"><div class="metric"><small>Earliest available price</small><h2>{{ lifetime.start_price }}</h2></div><div class="metric"><small>Latest available price</small><h2>{{ lifetime.end_price }}</h2></div><div class="metric"><small>Total growth / decrease</small><h2 class="{{ lifetime.direction }}">{{ lifetime.change_amount }}</h2></div><div class="metric"><small>Total % growth / decrease</small><h2 class="{{ lifetime.direction }}">{{ lifetime.change_percent }}</h2></div></div></div>
 {{ disclaimer_footer() | safe }}
 <script>
 const stockChartPoints={{ chart_data.points | tojson }};
@@ -15328,6 +15555,8 @@ def health():
         "stock_universe_csv": STOCK_UNIVERSE_CSV,
         "stock_universe_cache_ttl_seconds": STOCK_UNIVERSE_CACHE_TTL_SECONDS,
         "dashboard_cache_ttl_seconds": DASHBOARD_CACHE_TTL_SECONDS,
+        "market_data": market_data_health(),
+        "scheduled_jobs_this_worker": copy.deepcopy(SCHEDULED_JOB_STATUS),
         "newsletter": newsletter_status_snapshot(),
     })
 
@@ -15636,9 +15865,10 @@ def manage_subscription():
 
 @app.route("/feedback")
 def feedback():
+    support_email = SUPPORT_EMAIL or "stock.radar.support@gmail.com"
     return render_legal_page(
         "StockRadar Feedback",
-        """
+        render_template_string("""
         <p>StockRadar is in soft launch. Short, honest feedback from early testers helps us improve clarity, usefulness and trust before a wider release.</p>
         <p>You do not need to write a long review. A few direct answers are genuinely useful.</p>
         <h2>Useful questions to answer</h2>
@@ -15651,9 +15881,9 @@ def feedback():
             <li>Did anything look broken on mobile?</li>
         </ul>
         <h2>Send your feedback</h2>
-        <p>Email <span class="feedback-email">stock.radar.support@gmail.com</span>. If something looked broken, please include the page, device and browser you used.</p>
-        <a class="feedback-cta" href="mailto:stock.radar.support@gmail.com?subject=StockRadar%20Feedback">Send Feedback</a>
-        """,
+        <p>Email <span class="feedback-email">{{ support_email }}</span>. If something looked broken, please include the page, device and browser you used.</p>
+        <a class="feedback-cta" href="mailto:{{ support_email }}?subject=StockRadar%20Feedback">Send Feedback</a>
+        """, support_email=support_email),
     )
 
 
@@ -15787,11 +16017,11 @@ def stock_detail(symbol):
     lifetime = stock_lifetime_growth(cleaned_symbol)
     ai_context = get_stock_ai_context(cleaned_symbol)
     dividend_context = get_dividend_context(cleaned_symbol) or {}
-    chart_currency = chart_currency_metadata(dividend_context.get("currency"))
+    chart_currency = chart_currency_metadata(chart_data.get("currency") or dividend_context.get("currency"))
     chart_accessible_summary = stock_chart_accessible_summary(
         chart_data,
         CHART_RANGES[active_range]["label"],
-        dividend_context.get("currency"),
+        chart_data.get("currency") or dividend_context.get("currency"),
     )
     has_premium_access = premium_has_access()
     intelligence_report = (build_intelligence_report(cleaned_symbol, ai_context, dividend_context)

@@ -34,6 +34,12 @@ def main():
             line = raw_line.strip()
             if not line or line.startswith("#"):
                 continue
+            if line.startswith("--hash="):
+                if not re.fullmatch(r"--hash=sha256:[0-9a-f]{64}(?:\s*\\)?", line):
+                    print(f"{filename}:{number}: invalid dependency hash", file=sys.stderr)
+                    failed = True
+                continue
+            line = line.removesuffix("\\").rstrip()
             if filename == "requirements-dev.in" and line == "-r requirements.txt":
                 continue
             if not PIN.fullmatch(line):

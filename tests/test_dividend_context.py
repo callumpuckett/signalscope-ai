@@ -319,7 +319,7 @@ def test_profile_without_income_evidence_is_not_confirmed_absent_when_history_fa
     assert context["no_data_message"] == "Dividend data is temporarily unavailable."
 
 
-def test_successful_history_with_explicit_zero_payments_confirms_absence():
+def test_short_history_with_zero_payments_cannot_confirm_annual_absence():
     clear_dividend_cache()
     info = {"quoteType": "EQUITY", "regularMarketPrice": 100}
     history = pd.DataFrame(
@@ -333,8 +333,8 @@ def test_successful_history_with_explicit_zero_payments_confirms_absence():
     ):
         context = app.get_dividend_context("NVDA")
 
-    assert context["income_status"] == app.INCOME_STATUS_ABSENT
-    assert context["no_data_message"].startswith("No regular dividend found")
+    assert context["income_status"] == app.INCOME_STATUS_UNAVAILABLE
+    assert context["no_data_message"] == "Dividend data is temporarily unavailable."
 
 
 def test_direct_yahoo_chart_fallback_restores_distribution_after_yfinance_failure():

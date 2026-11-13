@@ -70,7 +70,7 @@
         const sign = price < 0 ? "-" : "";
         const amount = Math.abs(price).toLocaleString("en-GB", {
             minimumFractionDigits: 2,
-            maximumFractionDigits: 2
+            maximumFractionDigits: Math.abs(price) > 0 && Math.abs(price) < 0.01 ? 6 : 2
         });
         return sign + String(metadata.prefix || "") + amount + String(metadata.suffix || "");
     }

@@ -22,16 +22,13 @@ def test_homepage_explains_product_and_has_primary_calls_to_action():
     page = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "AI-powered stock market research dashboard" in page
-    assert "stock signals, risk summaries, chart context and portfolio-fit tools" in page
-    assert "StockRadar is not financial advice" in page
-    assert (
-        "StockRadar is currently in early access. Premium features and support "
-        "processes are still being improved."
-    ) in page
-    assert 'href="/universe">Explore Stocks</a>' in page
-    assert 'href="/upgrade">Unlock Premium</a>' in page
-    assert 'href="/feedback">Send Feedback</a>' in page
+    assert "Investment Compass" in page
+    assert "educational starter profile" in page
+    assert "not personalised investment recommendations" in page
+    assert 'href="/beginner">Explore Investment Compass</a>' in page
+    assert 'href="/portfolio-fit">Build Your Portfolio</a>' in page
+    assert 'id="smartSearchInput"' in page
+    assert 'href="/newsletter"' in page
 
 
 def test_upgrade_page_clearly_lists_price_and_premium_tools():

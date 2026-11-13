@@ -151,7 +151,6 @@ def test_normal_public_templates_render_side_tab_once():
 
     for route in (
         "/universe",
-        "/upgrade",
         "/how-it-works",
         "/privacy",
         "/terms",
@@ -164,6 +163,9 @@ def test_normal_public_templates_render_side_tab_once():
         assert response.status_code == 200
         assert_newsletter_tab(response)
         assert_shared_stockradar_shell(response)
+
+    # The Premium conversion page deliberately uses its own focused CTA.
+    assert_newsletter_tab(client.get("/upgrade"), expected=False)
 
 
 def test_equivalent_public_research_templates_render_side_tab_once():

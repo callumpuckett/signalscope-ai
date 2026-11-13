@@ -287,7 +287,7 @@ def test_header_reserves_logo_column_and_mobile_overrides_dense_layout():
 
     assert "grid-template-columns:310px minmax(0,1fr) auto" in header
     assert ".public-header{box-sizing:border-box;" in header
-    assert "@media(max-width:1100px)" in header
+    assert "@media(max-width:1320px)" in header
     assert ".stockradar-menu-toggle,.public-header-inner.nav-density-high .stockradar-menu-toggle{display:inline-flex;grid-column:2;}" in header
     assert ".public-nav-links,.public-header-inner.nav-density-high .public-nav-links{grid-column:1/-1;right:0;left:0;width:auto;" in header
 
@@ -478,6 +478,7 @@ def test_return_outlook_free_metric_and_server_side_premium_gate():
         patch.object(app, "newsletter_storage_load", return_value={}),
         patch.object(app, "get_recommendations", return_value=[recommendation("MSFT")]),
         patch.object(app, "get_dividend_context", return_value={"return_outlook": outlook}),
+        patch.dict(app.DIVIDEND_CONTEXT_CACHE, {"MSFT": {"context": {"return_outlook": outlook}}}),
         patch.object(app, "get_opportunity_page_snapshot", return_value=(snapshot, {"snapshots": {}})),
         patch.object(app, "premium_has_access", return_value=False),
     ):
