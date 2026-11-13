@@ -28,7 +28,7 @@ This change addresses reproducible reliability, calculation, latency and freshne
 
 | Data | Refresh opportunity | Failure behaviour |
 | --- | --- | --- |
-| Intraday history | 60 seconds, on demand | Preserve validated history, label stale; 300-second failure cooldown |
+| Intraday history | 60 seconds during known US/UK sessions; 300 seconds when closed; 60 seconds for unclassified/24-hour markets | Preserve validated history, label cached/stale; 300-second failure cooldown |
 | Daily history / index and ETF snapshots | 300 seconds, on demand | Same; latest bar and retrieval timestamps shown |
 | Lifetime adjusted history | 6 hours, on demand | Preserve history, label stale; reject invalid/discontinuous calculations |
 | Metadata and fundamentals | Existing 1-hour TTL; 5 minutes when unavailable | Deduplicated background refresh; preserve original successful data/time |

@@ -7452,6 +7452,10 @@ def safe_history(ticker, _ticker_object=None, **kwargs):
                 YAHOO_HISTORY_CACHE.pop(next(iter(YAHOO_HISTORY_CACHE)))
             ttl = (21600 if kwargs.get("period") == "max" else
                    60 if kwargs.get("interval", "1d").endswith(("m", "h")) else 300)
+            market_zone = history.attrs.get("exchange_timezone")
+            market = {"America/New_York": "US", "Europe/London": "UK"}.get(market_zone)
+            if ttl == 60 and market and scheduled_session_open(datetime.now(ZoneInfo(market_zone)), market) is False:
+                ttl = 300
             entry = {"timestamp": history.attrs["retrieved_at"], "history": history.copy(deep=True),
                      "ttl": ttl}
             YAHOO_HISTORY_CACHE[key] = entry
@@ -7671,7 +7675,7 @@ def history_freshness(history, points):
     observation_old = bool(stamps and time.time() - max(stamps) / 1000 > 4 * 86400)
     status = ("Stale cached history — refresh pending" if history.attrs.get("stale") else
               "Historical data — latest observation is more than four days old" if observation_old else
-              "Delayed historical data")
+              "Cached / delayed historical data" if history.attrs.get("cached") else "Delayed historical data")
     return f"{status}. Latest bar timestamp: {observed}. Retrieved: {checked}. Source: Yahoo Finance; not real-time."
 
 
@@ -7688,7 +7692,7 @@ def market_data_health():
             "metadata_cooldown_seconds": max(0, round(YAHOO_COOLDOWN_UNTIL - now)),
             "dashboard_refresh_pending": DASHBOARD_REFRESH_PENDING,
             "metadata_refresh_pending": bool(YAHOO_METADATA_PENDING),
-            "history_refresh_seconds": {"intraday": 60, "daily": 300, "lifetime": 21600},
+            "history_refresh_seconds": {"intraday": 60, "closed_us_uk_intraday": 300, "daily": 300, "lifetime": 21600},
             "history_persistence": "local filesystem; requires a durable volume to survive deployments"}
 
 

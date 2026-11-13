@@ -275,3 +275,16 @@ def test_gunicorn_worker_hook_initializes_runtime_jobs(monkeypatch):
     configuration = runpy.run_path(str(Path(app.APP_ROOT) / "gunicorn.conf.py"))
     configuration["post_worker_init"](Mock())
     start.assert_called_once_with()
+
+
+@pytest.mark.parametrize(("session_open", "expected_ttl"), [(True, 60), (False, 300)])
+def test_intraday_refresh_respects_known_market_sessions(direct, monkeypatch, session_open, expected_ttl):
+    history = frame()
+    history.index = pd.date_range(pd.Timestamp.now(tz="UTC").normalize() - pd.Timedelta(days=1), periods=2)
+    history.attrs["exchange_timezone"] = "America/New_York"
+    monkeypatch.setattr(app, "scheduled_session_open", lambda *args: session_open)
+    with patch.object(app, "fetch_chart_history", return_value=history):
+        app.safe_history("MSFT", period="1d", interval="5m")
+        cached = app.safe_history("MSFT", period="1d", interval="5m")
+    assert next(iter(app.YAHOO_HISTORY_CACHE.values()))["ttl"] == expected_ttl
+    assert "Cached / delayed" in app.history_freshness(cached, app.normalize_history_points(cached, "MSFT"))
