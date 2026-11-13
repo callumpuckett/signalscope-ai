@@ -79,6 +79,8 @@ def test_beginner_rejects_untrusted_payloads_without_reflection(
         re.sub(r"<style\b[^>]*>.*?</style>", "", page, flags=re.S | re.I)
         if payload == "-1" else page
     )
+    # Random CSRF tokens can coincidentally contain short strings such as NaN.
+    reflected_content = re.sub(r'<input\b[^>]*name="csrf_token"[^>]*>', "", reflected_content, flags=re.I)
     assert payload not in reflected_content
     assert "role=\"alert\"" in page
     assert 'id="beginner-result"' not in page

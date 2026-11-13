@@ -22,6 +22,7 @@ This change addresses reproducible reliability, calculation, latency and freshne
 - Some genuine provider news URLs contained double-escaped query separators, producing broken article links. A narrow normalizer repairs only those separators, preserves encoded query values and rejects non-HTTP(S)/credential-bearing URLs. Newsletter canonicalization and public news serialization use the same correction.
 - The release runner's combined dependency install was incompatible with the newly hashed production lock; production and development installation are now separate. The runner also expected superseded homepage/Premium marketing headings. Those assertions were updated to the current interface; the real chart requirement remains release-blocking.
 - Read-only authenticated health diagnostics now include chart/metadata cooldowns, cache freshness counts, pending refreshes and scheduled-job check status. Public liveness responses remain minimal. Scheduled checks produce actionable status logs; a successful check is not a claim of email delivery.
+- Render startup traces ran in PID 58 while serving-request traces ran in PID 69 on the same instance. Preloaded import-time scheduler threads and their process-local heartbeat state were therefore outside the serving worker. Startup is now deferred to Gunicorn's `post_worker_init` hook; existing per-job guards prevent duplicate initialization in one worker. Deployment must verify the worker's actual heartbeat, not merely an enabled configuration flag.
 
 ## Refresh and fallback policy
 

@@ -1,6 +1,8 @@
 import json
 import threading
 import time
+import runpy
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pandas as pd
@@ -265,3 +267,11 @@ def test_slow_metadata_refresh_is_background_and_deduplicated(monkeypatch):
 ])
 def test_provider_news_urls_repair_escaped_separators_without_decoding_data(url, expected):
     assert app.normalize_provider_news_url(url) == expected
+
+
+def test_gunicorn_worker_hook_initializes_runtime_jobs(monkeypatch):
+    start = Mock()
+    monkeypatch.setattr(app, "start_runtime_schedulers", start)
+    configuration = runpy.run_path(str(Path(app.APP_ROOT) / "gunicorn.conf.py"))
+    configuration["post_worker_init"](Mock())
+    start.assert_called_once_with()

@@ -30,6 +30,7 @@ import re
 import secrets
 import smtplib
 import ssl
+import sys
 import tempfile
 import threading
 import time
@@ -16485,6 +16486,14 @@ app.preprocess_request = measured("request.security_hooks")(app.preprocess_reque
 app.session_interface = TimedSessionInterface(app.session_interface)
 app.wsgi_app = TimingMiddleware(app.wsgi_app)
 
+
+def start_runtime_schedulers():
+    """Start guarded background jobs in the process that will serve requests."""
+    start_newsletter_startup_catch_up()
+    start_newsletter_auto_send_scheduler()
+    start_opportunity_snapshot_scheduler()
+    OPERATIONS_LOG.info("Scheduler lifecycle initialized in serving process pid=%s", os.getpid())
+
 with operation("startup") as startup_timing:
     if startup_timing is not None:
         startup_timing["module_init_before_storage_ms"] = round(
@@ -16497,9 +16506,11 @@ with operation("startup") as startup_timing:
     with stage("startup.storage_migration"):
         NEWSLETTER_STORAGE_MIGRATION_RESULT = migrate_selected_newsletter_storage()
     with stage("startup.schedulers"):
-        start_newsletter_startup_catch_up()
-        start_newsletter_auto_send_scheduler()
-        start_opportunity_snapshot_scheduler()
+        # With Gunicorn preload, import runs in the master. Its thread flags and
+        # heartbeat dictionaries would otherwise be inherited by threadless workers.
+        # The Gunicorn post_worker_init hook owns scheduler startup in that case.
+        if "gunicorn" not in sys.modules:
+            start_runtime_schedulers()
     if startup_timing is not None:
         startup_timing["module_init_ms"] = round(
             (_startup_clock.perf_counter() - _APP_IMPORT_STARTED) * 1000, 3,
