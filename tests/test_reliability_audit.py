@@ -251,3 +251,13 @@ def test_slow_metadata_refresh_is_background_and_deduplicated(monkeypatch):
         while app.YAHOO_METADATA_PENDING and time.monotonic() < deadline:
             time.sleep(.01)
         assert not app.YAHOO_METADATA_PENDING
+
+
+@pytest.mark.parametrize(("url", "expected"), [
+    (r"https://example.com/story?id\\u003d123\\u0026page\\u003d2", "https://example.com/story?id=123&page=2"),
+    ("https://example.com/story?id%5C%5Cu003d123", "https://example.com/story?id=123"),
+    ("https://example.com/story?value=a%3Db%26c", "https://example.com/story?value=a%3Db%26c"),
+    ("javascript:alert(1)", ""),
+])
+def test_provider_news_urls_repair_escaped_separators_without_decoding_data(url, expected):
+    assert app.normalize_provider_news_url(url) == expected

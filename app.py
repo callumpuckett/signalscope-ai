@@ -8085,8 +8085,23 @@ def normalize_newsletter_title(title):
     return re.sub(r"\s+", " ", text).strip()
 
 
-def canonical_newsletter_url(value):
+def normalize_provider_news_url(value):
     raw_url = str(value or "").strip()
+    # Some provider responses contain a second layer of JSON escaping in query
+    # separators. Decode only those separators, never arbitrary Unicode or URL data.
+    raw_url = re.sub(r"(?:\\|%5[cC])+u00(26|3[dD])",
+                     lambda match: "&" if match.group(1) == "26" else "=", raw_url)
+    try:
+        parsed = urlsplit(raw_url)
+        if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
+            return ""
+    except ValueError:
+        return ""
+    return raw_url
+
+
+def canonical_newsletter_url(value):
+    raw_url = normalize_provider_news_url(value)
     try:
         parsed = urlsplit(raw_url)
     except ValueError:
@@ -8365,7 +8380,7 @@ def normalize_weekly_news_article(article, provider, fetched_at=None):
         or article.get("publishedAt")
         or article.get("seendate")
     )
-    url = str(article.get("url") or "").strip()
+    url = normalize_provider_news_url(article.get("url"))
     canonical_url = canonical_newsletter_url(url)
     if not title or not normalized_title or published_at is None or not canonical_url:
         return None
@@ -8978,7 +8993,7 @@ def build_live_headlines(recommendations, impact_radar):
         stock_text = ", ".join(matched_stocks)
         direction, signal_influence, impact_score = score_news_impact(title)
         source = str(article.get("source") or "Market News").strip()
-        article_url = str(article.get("url") or "/").strip()
+        article_url = normalize_provider_news_url(article.get("url")) or "/"
         published_label = format_news_time(str(article.get("published_at") or "").strip())
 
         headlines.append({
@@ -13648,7 +13663,7 @@ def serialize_market_news_items(headlines, limit=MARKET_NEWS_TICKER_LIMIT):
             "source": str(headline.get("source") or "StockRadar Market Impact Feed").strip(),
             "published_label": str(headline.get("published_label") or "Theme watch").strip(),
             "headline": str(headline.get("headline") or "Market headlines are reconnecting").strip(),
-            "article_url": str(headline.get("article_url") or "/").strip(),
+            "article_url": normalize_provider_news_url(headline.get("article_url")) or "/",
             "impact_score": str(headline.get("impact_score") or "Pending").strip(),
             "direction": str(headline.get("direction") or "Theme watch").strip(),
             "stock_links": stock_links,

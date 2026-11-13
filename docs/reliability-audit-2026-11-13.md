@@ -19,6 +19,8 @@ This change addresses reproducible reliability, calculation, latency and freshne
 - Free Opportunities previews no longer initiate provider metadata requests. Persisted and in-memory validated outlooks remain available; unavailable figures are omitted rather than invented. Empty previews avoid an unnecessary storage read.
 - Market status accounted for Christmas but omitted other holidays/early closes. Published 2026–2028 NYSE and LSE schedules now cover those dates. Unscheduled closures are outside a static calendar's capabilities.
 - The feedback page ignored the configured support address. It now renders the configured address with template escaping.
+- Some genuine provider news URLs contained double-escaped query separators, producing broken article links. A narrow normalizer repairs only those separators, preserves encoded query values and rejects non-HTTP(S)/credential-bearing URLs. Newsletter canonicalization and public news serialization use the same correction.
+- The release runner's combined dependency install was incompatible with the newly hashed production lock; production and development installation are now separate. The runner also expected superseded homepage/Premium marketing headings. Those assertions were updated to the current interface; the real chart requirement remains release-blocking.
 - Read-only authenticated health diagnostics now include chart/metadata cooldowns, cache freshness counts, pending refreshes and scheduled-job check status. Public liveness responses remain minimal. Scheduled checks produce actionable status logs; a successful check is not a claim of email delivery.
 
 ## Refresh and fallback policy

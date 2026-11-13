@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from dataclasses import dataclass, field
 from urllib.parse import urljoin, urlsplit
@@ -246,7 +247,7 @@ def _desktop_smoke(browser: Browser, base_url: str, timeout_ms: int, report: Smo
         report.passed("health endpoint")
 
         _goto(page, base_url, "/", timeout_ms)
-        _assert_visible(page.get_by_role("heading", name="Learn to think like an investor."), "homepage hero")
+        _assert_visible(page.locator("#investment-compass-card h1"), "homepage hero")
         _assert_no_global_loading_blocker(page)
         _assert_interactable(page, "#smartSearchInput", "homepage stock search")
         report.passed("desktop homepage renders without an interaction blocker")
@@ -256,7 +257,7 @@ def _desktop_smoke(browser: Browser, base_url: str, timeout_ms: int, report: Smo
             ("Investment Compass", "/beginner", "Build your starter profile"),
             ("How It Works", "/how-it-works", "How StockRadar Works"),
             ("Newsletter", "/newsletter", "StockRadar Weekly"),
-            ("Premium", "/upgrade", "Understand the signal before you act."),
+            ("Premium", "/upgrade", re.compile(r"Stop Guessing\.\s*Start Understanding\.")),
             ("Login", "/login", "🔐 Login"),
         )
         for label, destination, heading in nav_checks:
