@@ -28,13 +28,26 @@ DEFAULT_TIMEOUT_MS = 20_000
 IGNORED_CONSOLE_ERRORS = (
     "a listener indicated an asynchronous response",
     "the content security policy directive 'upgrade-insecure-requests' is ignored when delivered in a report-only policy",
-    "%c%d font-size:0;color:transparent nan",
     "failed to load resource: the server responded with a status of 404",
 )
 
 
 class SmokeFailure(AssertionError):
     """Release-blocking smoke-test failure."""
+
+
+def _turnstile_console_diagnostic(source_url: str, message: str) -> bool:
+    source = urlsplit(source_url)
+    if (source.scheme != "https" or source.netloc != "challenges.cloudflare.com"
+            or not source.path.startswith("/cdn-cgi/challenge-platform/")
+            or "/turnstile/" not in source.path):
+        return False
+    text = message.lower()
+    return (
+        text in {"%c%d font-size:0;color:transparent nan", "%c%o font-size:0;color:transparent {}"}
+        or text.startswith("connecting to 'data:,' violates the following content security policy directive: \"connect-src ")
+        or text == "fetch api cannot load data:,. refused to connect because it violates the document's content security policy."
+    )
 
 
 @dataclass
@@ -44,6 +57,7 @@ class BrowserSignals:
     page_errors: list[str] = field(default_factory=list)
     failed_requests: list[str] = field(default_factory=list)
     bad_responses: list[str] = field(default_factory=list)
+    turnstile_diagnostics: int = 0
 
     def attach(self, page: Page) -> None:
         page.on("console", self._console)
@@ -57,6 +71,9 @@ class BrowserSignals:
         text = str(message.text or "").strip()
         if any(ignored in text.lower() for ignored in IGNORED_CONSOLE_ERRORS):
             return
+        if _turnstile_console_diagnostic(message.location.get("url", ""), text):
+            self.turnstile_diagnostics += 1
+            return
         self.console_errors.append(text[:500])
 
     def _request_failed(self, request) -> None:
@@ -67,7 +84,9 @@ class BrowserSignals:
     def _response(self, response) -> None:
         if not _is_critical_url(response.url, self.base_origin):
             return
-        if response.status >= 500:
+        if response.headers.get("cf-mitigated", "").lower() == "challenge":
+            self.bad_responses.append(f"Cloudflare access challenge {_safe_path(response.url)}")
+        elif response.status >= 500 or response.status in {401, 403, 429}:
             self.bad_responses.append(f"HTTP {response.status} {_safe_path(response.url)}")
         elif response.status == 404 and response.request.resource_type in {
             "document",
@@ -77,6 +96,8 @@ class BrowserSignals:
             self.bad_responses.append(f"HTTP 404 {_safe_path(response.url)}")
 
     def assert_clean(self, label: str) -> None:
+        if self.turnstile_diagnostics:
+            print(f"WARN {label}: {self.turnstile_diagnostics} known Turnstile iframe console diagnostics")
         problems = {
             "console errors": self.console_errors,
             "page errors": self.page_errors,

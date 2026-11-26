@@ -44,8 +44,9 @@ def test_safe_path_drops_query_values():
 class ConsoleMessage:
     type = "error"
 
-    def __init__(self, text):
+    def __init__(self, text, source=""):
         self.text = text
+        self.location = {"url": source}
 
 
 @pytest.mark.parametrize(
@@ -55,7 +56,6 @@ class ConsoleMessage:
             "The Content Security Policy directive 'upgrade-insecure-requests' "
             "is ignored when delivered in a report-only policy."
         ),
-        "%c%d font-size:0;color:transparent NaN",
         "Failed to load resource: the server responded with a status of 404 ()",
     ],
 )
@@ -81,11 +81,72 @@ def test_browser_signals_still_block_app_owned_script_404():
         url = "https://www.stockradarhq.com/static/app.js"
         status = 404
         request = Request()
+        headers = {}
 
     signals = smoke.BrowserSignals("https://www.stockradarhq.com")
     signals._response(Response())
 
     assert signals.bad_responses == ["HTTP 404 /static/app.js"]
+
+
+TURNSTILE_SOURCE = "https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/g/turnstile/f/example"
+TURNSTILE_CSP = (
+    "Connecting to 'data:,' violates the following Content Security Policy directive: "
+    '\"connect-src \'self\' https://hagen.challenges.cloudflare.com\". The action has been blocked.'
+)
+
+
+@pytest.mark.parametrize("text", [
+    TURNSTILE_CSP,
+    "Fetch API cannot load data:,. Refused to connect because it violates the document's Content Security Policy.",
+    "%c%d font-size:0;color:transparent NaN",
+    "%c%o font-size:0;color:transparent {}",
+])
+def test_turnstile_frame_diagnostics_are_visible_but_do_not_fail_gate(text, capsys):
+    signals = smoke.BrowserSignals("https://www.stockradarhq.com")
+    signals._console(ConsoleMessage(text, TURNSTILE_SOURCE))
+    signals.assert_clean("desktop")
+    assert "1 known Turnstile iframe console diagnostics" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("source,text", [
+    ("", TURNSTILE_CSP),
+    ("https://www.stockradarhq.com/newsletter", TURNSTILE_CSP),
+    ("https://challenges.cloudflare.com.evil.example/cdn-cgi/challenge-platform/turnstile/x", TURNSTILE_CSP),
+    ("https://challenges.cloudflare.com/turnstile/v0/api.js", TURNSTILE_CSP),
+    (TURNSTILE_SOURCE, "Refused to execute an inline script due to Content Security Policy."),
+])
+def test_unattributed_or_other_csp_errors_still_fail_gate(source, text):
+    signals = smoke.BrowserSignals("https://www.stockradarhq.com")
+    signals._console(ConsoleMessage(text, source))
+    with pytest.raises(smoke.SmokeFailure, match="console errors"):
+        signals.assert_clean("desktop")
+
+
+@pytest.mark.parametrize("status,headers,expected", [
+    (200, {"cf-mitigated": "challenge"}, "Cloudflare access challenge"),
+    (403, {}, "HTTP 403"),
+    (429, {}, "HTTP 429"),
+])
+def test_critical_access_failures_still_block_with_turnstile_diagnostics(status, headers, expected):
+    from types import SimpleNamespace
+
+    signals = smoke.BrowserSignals("https://www.stockradarhq.com")
+    signals._console(ConsoleMessage(TURNSTILE_CSP, TURNSTILE_SOURCE))
+    signals._response(SimpleNamespace(url="https://www.stockradarhq.com/api/market-news",
+                                      status=status, headers=headers))
+    with pytest.raises(smoke.SmokeFailure, match=expected):
+        signals.assert_clean("desktop")
+
+
+def test_failed_turnstile_request_still_blocks():
+    from types import SimpleNamespace
+
+    signals = smoke.BrowserSignals("https://www.stockradarhq.com")
+    signals._console(ConsoleMessage(TURNSTILE_CSP, TURNSTILE_SOURCE))
+    signals._request_failed(SimpleNamespace(url=TURNSTILE_SOURCE, failure="net::ERR_ABORTED"))
+    with pytest.raises(smoke.SmokeFailure, match="failed critical requests"):
+        signals.assert_clean("desktop")
 
 
 def logo_details(**overrides):
