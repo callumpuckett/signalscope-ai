@@ -752,6 +752,27 @@ def add_security_headers(response):
     return response
 
 
+@app.after_request
+def search_indexing_headers(response):
+    # Keep these URLs crawlable so engines can observe noindex. Authentication
+    # remains the access control; this header only controls search eligibility.
+    excluded_prefixes = ("/api/", "/admin/", "/premium-decision/")
+    excluded_paths = {
+        "/login", "/logout", "/signup", "/owner", "/dashboard", "/watchlist",
+        "/create-checkout-session", "/checkout-success", "/manage-subscription",
+        "/feedback", "/health", "/healthz", "/news-health", "/deploy-version",
+    }
+    if (request.path.startswith(excluded_prefixes)
+            or request.path in excluded_paths
+            or (request.path == "/universe" and request.args.get("q", "").strip())
+            or (request.endpoint == "stock_detail" and request.view_args
+                and canonical_stock_symbol(request.view_args["symbol"]) not in {
+                    str(item.get("ticker", "")).strip().upper() for item in get_stock_universe()
+                })):
+        response.headers["X-Robots-Tag"] = "noindex, follow"
+    return response
+
+
 IS_PRODUCTION = is_production_environment()
 SESSION_SECRET = (
     os.environ.get("SIGNALSCOPE_SECRET_KEY")
@@ -13683,17 +13704,18 @@ html = """
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>StockRadar — AI-Assisted Market Signals</title>
-<meta name="description" content="Learn to think like an investor with AI-assisted market signals, practical decision support, live market news and investing education from StockRadar.">
+<title>StockRadar HQ — Stock Market Research &amp; Investment Analysis</title>
+<meta name="description" content="StockRadar HQ is a stock market research and investment analysis platform. Explore stock signals, market news and educational research, with deeper Premium reports for £5/month.">
 <link rel="canonical" href="https://www.stockradarhq.com/">
-<meta property="og:title" content="StockRadar — AI-Assisted Market Signals">
-<meta property="og:description" content="Learn to think like an investor with AI-assisted market signals, practical decision support, live market news and investing education from StockRadar.">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"StockRadar HQ","alternateName":"StockRadar","url":"https://www.stockradarhq.com/"}</script>
+<meta property="og:title" content="StockRadar HQ — Stock Market Research &amp; Investment Analysis">
+<meta property="og:description" content="StockRadar HQ is a stock market research and investment analysis platform. Explore stock signals, market news and educational research, with deeper Premium reports for £5/month.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://www.stockradarhq.com/">
 <meta property="og:site_name" content="StockRadar">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="StockRadar — AI-Assisted Market Signals">
-<meta name="twitter:description" content="Learn to think like an investor with AI-assisted market signals, practical decision support, live market news and investing education from StockRadar.">
+<meta name="twitter:title" content="StockRadar HQ — Stock Market Research &amp; Investment Analysis">
+<meta name="twitter:description" content="StockRadar HQ is a stock market research and investment analysis platform. Explore stock signals, market news and educational research, with deeper Premium reports for £5/month.">
 {{ company_identity_assets() }}
 <style>
 *{box-sizing:border-box;}
@@ -15092,8 +15114,8 @@ stock_detail_html = """
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 {% set report_label = stock_display_label(symbol) %}
-{% set report_title = report_label ~ ' Stock Detail' %}
-{% set report_description = 'Explore ' ~ report_label ~ ' on StockRadar: a public signal and confidence preview, with price history where available. Educational research, not financial advice.' %}
+{% set report_title = report_label ~ ' Stock Research & Analysis | StockRadar HQ' %}
+{% set report_description = 'Explore ' ~ report_label ~ ' stock research on StockRadar HQ: a public signal and confidence preview, price history and dividend context where available. Educational investment analysis, not financial advice.' %}
 <title>{{ report_title }}</title>
 <meta name="description" content="{{ report_description }}">
 <link rel="canonical" href="{{ report_canonical_url }}">
@@ -15105,6 +15127,7 @@ stock_detail_html = """
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="{{ report_title }}">
 <meta name="twitter:description" content="{{ report_description }}">
+<script type="application/ld+json">{{ {'@context': 'https://schema.org', '@type': 'WebPage', 'name': report_title, 'description': report_description, 'url': report_canonical_url, 'isPartOf': {'@type': 'WebSite', 'name': 'StockRadar HQ', 'url': 'https://www.stockradarhq.com/'}} | tojson }}</script>
 {{ company_identity_assets() }}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="{{ url_for('static', filename='stock_chart.js') }}"></script>
@@ -15394,6 +15417,14 @@ def newsletter_latest():
             count=1,
             flags=re.IGNORECASE,
         )
+    # Response-only metadata also covers older immutable published artifacts.
+    newsletter_head = ""
+    if not re.search(r'rel\s*=\s*[\"\x27]canonical[\"\x27]', published_html, re.IGNORECASE):
+        newsletter_head += '<link rel="canonical" href="https://www.stockradarhq.com/newsletter/latest">'
+    if not re.search(r'name\s*=\s*[\"\x27]description[\"\x27]', published_html, re.IGNORECASE):
+        newsletter_head += '<meta name="description" content="Read the latest published StockRadar Weekly market brief from StockRadar HQ, a stock market research and investment analysis platform.">'
+    published_html = re.sub(r"</head\s*>", lambda match: newsletter_head + match.group(0),
+                            published_html, count=1, flags=re.IGNORECASE)
     return Response(
         published_html,
         content_type="text/html; charset=utf-8",
@@ -15638,11 +15669,9 @@ def sitemap_xml():
         "/refund-policy",
         "/risk-disclaimer",
         "/contact",
-        "/manage-subscription",
-        "/feedback",
     ]
     stock_paths = [
-        f"/stock/{quote(item['ticker'], safe='.-')}"
+        f"/stock/{quote(canonical_stock_symbol(item['ticker']), safe='.-')}"
         for item in get_stock_universe()
         if item.get("ticker")
     ]
@@ -16033,15 +16062,17 @@ def watchlist():
 def stock_detail(symbol):
     if len(symbol) > 16:
         return Response("Invalid ticker symbol.", status=400, mimetype="text/plain")
-    requested_symbol = symbol.strip().upper()
     cleaned_symbol = canonical_stock_symbol(symbol)
     active_range = request.args.get("range", "1mo")
 
     if active_range not in CHART_RANGES:
         active_range = "1mo"
 
-    if cleaned_symbol != requested_symbol:
-        return redirect(url_for("stock_detail", symbol=cleaned_symbol, range=active_range))
+    if cleaned_symbol != symbol:
+        destination = url_for("stock_detail", symbol=cleaned_symbol)
+        if request.query_string:
+            destination += "?" + request.query_string.decode("latin-1")
+        return redirect(destination, code=301)
 
     chart_data = dict(stock_history(cleaned_symbol, active_range) or {})
     chart_data["points"] = stock_chart_points(chart_data, active_range)
