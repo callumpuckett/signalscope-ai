@@ -86,7 +86,8 @@ class BrowserSignals:
             return
         if response.headers.get("cf-mitigated", "").lower() == "challenge":
             self.bad_responses.append(f"Cloudflare access challenge {_safe_path(response.url)}")
-        elif response.status >= 500 or response.status in {401, 403, 429}:
+        elif (response.status >= 500 or response.status in {403, 429}
+              or (response.status == 401 and _origin(response.url) == self.base_origin)):
             self.bad_responses.append(f"HTTP {response.status} {_safe_path(response.url)}")
         elif response.status == 404 and response.request.resource_type in {
             "document",

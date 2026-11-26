@@ -125,6 +125,7 @@ def test_unattributed_or_other_csp_errors_still_fail_gate(source, text):
 
 @pytest.mark.parametrize("status,headers,expected", [
     (200, {"cf-mitigated": "challenge"}, "Cloudflare access challenge"),
+    (401, {}, "HTTP 401"),
     (403, {}, "HTTP 403"),
     (429, {}, "HTTP 429"),
 ])
